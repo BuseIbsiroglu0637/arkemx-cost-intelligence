@@ -264,3 +264,53 @@ class BulkJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class CostEstimate(Base):
+    """Immutable, user-priced draft; NOT an approved quote or public rate schedule."""
+    __tablename__ = "cost_estimates"
+    __table_args__ = (
+        UniqueConstraint("project_id", "request_key", name="uq_cost_estimate_request"),
+        CheckConstraint("currency = 'TRY'", name="ck_cost_currency"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    run_id: Mapped[str] = mapped_column(ForeignKey("match_runs.id"), index=True, nullable=False)
+    import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
+    version_id: Mapped[str] = mapped_column(ForeignKey("catalog_versions.id"), nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    request_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="TRY", nullable=False)
+    total: Mapped[float] = mapped_column(Numeric(22, 2), nullable=False)
+    line_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    catalog_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class CostEstimateLine(Base):
+    """Frozen metraj/poz, explicit manual price and rounded line amount."""
+    __tablename__ = "cost_estimate_lines"
+    __table_args__ = (
+        UniqueConstraint("estimate_id", "candidate_id", name="uq_cost_line_candidate"),
+        UniqueConstraint("estimate_id", "work_item_id", name="uq_cost_line_item"),
+        CheckConstraint("quantity > 0 AND unit_price > 0 AND amount >= 0", name="ck_cost_positive"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    estimate_id: Mapped[str] = mapped_column(ForeignKey("cost_estimates.id"), index=True, nullable=False)
+    candidate_id: Mapped[str] = mapped_column(ForeignKey("match_candidates.id"), nullable=False)
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), nullable=False)
+    position_id: Mapped[str] = mapped_column(ForeignKey("catalog_positions.id"), nullable=False)
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    position_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False)
+    unit_price: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(22, 2), nullable=False)
+    price_source: Mapped[str] = mapped_column(String(200), nullable=False)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)

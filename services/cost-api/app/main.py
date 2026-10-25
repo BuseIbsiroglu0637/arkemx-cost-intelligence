@@ -299,3 +299,8 @@ app.include_router(m42_router)
 # M4.3 durable local batch queue
 from .m43 import router as m43_router
 app.include_router(m43_router)
+
+
+# M5 locally priced draft cost snapshots (not official tariffs or final offers)
+from .m5 import router as m5_router
+app.include_router(m5_router)
