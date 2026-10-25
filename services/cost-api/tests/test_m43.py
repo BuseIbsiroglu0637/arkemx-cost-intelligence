@@ -1,5 +1,5 @@
 """M4.3 local bulk job acceptance: durable chunk progress and 100/250/500 rows."""
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,timezone
 from io import BytesIO
 from time import perf_counter
 from uuid import uuid4
@@ -121,14 +121,14 @@ def test_failure_retry_and_expired_lease(client,monkeypatch):
     try:
         obj=db.get(BulkJob,job["id"])
         obj.status="running";obj.lease_owner=str(uuid4())
-        obj.lease_until=datetime.utcnow()+timedelta(minutes=20)
+        obj.lease_until=datetime.now(timezone.utc).replace(tzinfo=None)+timedelta(minutes=20)
         db.commit()
     finally:g.close()
     assert not step(client,job["id"])
     db,g=session_for(client)
     try:
         obj=db.get(BulkJob,job["id"])
-        obj.lease_until=datetime.utcnow()-timedelta(minutes=1)
+        obj.lease_until=datetime.now(timezone.utc).replace(tzinfo=None)-timedelta(minutes=1)
         db.commit()
     finally:g.close()
     original=m43_worker.similarity

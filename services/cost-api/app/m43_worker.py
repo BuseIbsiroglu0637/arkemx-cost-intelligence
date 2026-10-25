@@ -8,7 +8,7 @@ For this SQLite pilot run ONE worker only (no distributed queue guarantees).
 import argparse
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -37,7 +37,8 @@ class JobBlocked(Exception):
 
 
 def _utc():
-    return datetime.utcnow()
+    # Store UTC naive lease timestamps for SQLite/PostgreSQL compatibility.
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _rights_check(db: Session, job: BulkJob):
