@@ -7,9 +7,10 @@ from .database import get_db
 from .security import current_user
 from .models import (User, CatalogVersion, CatalogSource, CatalogPosition,
                      ImportBatch, WorkItem, MatchRun, MatchCandidate,
-                     TechnicalComparison)
+                     TechnicalComparison, TechnicalEvidence)
 from .matching import similarity, MAX_MATCH_ROWS
 from .technical import compare, VERSION
+from .evidence_v41 import analyze as analyze_evidence, VERSION as EVIDENCE_VERSION, ALGORITHM as EVIDENCE_ALGORITHM
 from .revisions import effective_item, frozen_snapshot
 from .m2 import tenant_project, latest_run, DEMO_INSTITUTION, DEMO_SCOPE
 
@@ -20,6 +21,10 @@ MAX_POSITIONS = 500
 @router.post("/projects/{project_id}/m4/run", status_code=201)
 def run_comparison(project_id: str, user: User = Depends(current_user),
                    db: Session = Depends(get_db)):
+    return _build_run(project_id, user, db, with_evidence=False)
+
+
+def _build_run(project_id: str, user: User, db: Session, *, with_evidence: bool):
     tenant_project(db, user, project_id)
     prior = latest_run(db, project_id)
     if not prior:
@@ -46,7 +51,8 @@ def run_comparison(project_id: str, user: User = Depends(current_user),
                        .order_by(WorkItem.source_row)).all()
     run = MatchRun(project_id=project_id, import_id=batch.id, version_id=version.id,
                    parent_run_id=prior.id, changed_item_count=0, created_by_id=user.id,
-                   row_count=len(items), candidate_count=0, algorithm=VERSION)
+                   row_count=len(items), candidate_count=0,
+                   algorithm=EVIDENCE_ALGORITHM if with_evidence else VERSION)
     db.add(run)
     db.flush()
     stats = {"compatible": 0, "review": 0, "blocked": 0}
@@ -64,9 +70,27 @@ def run_comparison(project_id: str, user: User = Depends(current_user),
                 quantity_known=active.quantity is not None,
                 review_required=active.review_required,
             )
-            shortlist.append((lex, pos.code, pos, evidence))
+            if with_evidence:
+                proof = analyze_evidence(active.raw_description, active.normalized_unit,
+                                         pos.description, pos.unit,
+                                         quantity_known=active.quantity is not None,
+                                         review_required=active.review_required,
+                                         source_refs={
+                                             "metraj": {"import_id": batch.id, "import_sha256": batch.sha256,
+                                                        "source_row": active.source_row, "work_item_id": active.id,
+                                                        "revision_id": active.revision_id},
+                                             "catalog": {"version_id": version.id, "version_sha256": version.sha256,
+                                                         "position_id": pos.id, "position_code": pos.code},
+                                         })
+                evidence["status"] = proof["status"]
+                evidence["manual_approval_allowed"] = proof["approval_allowed"]
+                evidence["blockers"] = proof["blockers"]
+                evidence["review_flags"] = proof["review_flags"]
+            else:
+                proof = None
+            shortlist.append((lex, pos.code, pos, evidence, proof))
         shortlist.sort(key=lambda result: (-result[0], result[1]))
-        for rank, (lex, _code, pos, report) in enumerate(shortlist[:3], 1):
+        for rank, (lex, _code, pos, report, proof) in enumerate(shortlist[:3], 1):
             candidate = MatchCandidate(
                 run_id=run.id, work_item_id=item.id, position_id=pos.id,
                 rank=rank, similarity=lex,
@@ -79,10 +103,15 @@ def run_comparison(project_id: str, user: User = Depends(current_user),
             db.add(TechnicalComparison(
                 candidate_id=candidate.id, version=VERSION, status=report["status"],
                 report_json=json.dumps(report, ensure_ascii=False)))
+            if proof is not None:
+                db.add(TechnicalEvidence(candidate_id=candidate.id,
+                    schema_version=proof["schema"], status=proof["status"],
+                    evidence_sha256=proof["evidence_sha256"],
+                    payload_json=json.dumps(proof, ensure_ascii=False)))
             stats[report["status"]] += 1
             run.candidate_count += 1
     db.commit()
-    return {"id": run.id, "parent_run_id": prior.id, "algorithm": VERSION,
+    return {"id": run.id, "parent_run_id": prior.id, "algorithm": run.algorithm,
             "row_count": run.row_count, "candidate_count": run.candidate_count,
             "technical_statuses": stats, "human_approval_required": True,
             "legacy_runs_unchanged": True}
