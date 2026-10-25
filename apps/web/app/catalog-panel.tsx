@@ -141,3 +141,4 @@ export default function CatalogPanel({token,project,onMatch}:{token:string|null;
   </button>
   <p className="hint">Katalog izin belgesi yalnızca sunucu yöneticisi tarafından, yerel operatör komutuyla incelenip kayda alınır. DEMO katalogları M2'de kalır.</p>
  </section>;
+}
