@@ -291,3 +291,7 @@ app.include_router(m4_router)
 # M4.1 versioned source-attributed technical evidence
 from .m41 import router as m41_router
 app.include_router(m41_router)
+
+# M4.2 paginated engineer review queue and on-demand evidence/history
+from .m42 import router as m42_router
+app.include_router(m42_router)

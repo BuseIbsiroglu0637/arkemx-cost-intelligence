@@ -5,7 +5,7 @@ import MatchPanel from "./match-panel";
 import CorrectionPanel from "./correction-panel";
 import CatalogPanel from "./catalog-panel";
 import TechnicalPanel from "./technical-panel";
-import EvidencePanel from "./evidence-panel";
+import EngineerReviewPanel from "./engineer-review-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
@@ -37,6 +37,7 @@ export default function Home() {
   const [items,setItems] = useState<Row[]>([]); const [message,setMessage] = useState(""); const [error,setError] = useState("");
   const [busy,setBusy] = useState(false);
   const [revisionTick,setRevisionTick] = useState(0);
+  const [showLegacy,setShowLegacy] = useState(false);
   const loadProjects = useCallback(async (t:string) => {setProjects(await request<Project[]>("/api/projects",t));},[]);
   useEffect(()=>{const stored = sessionStorage.getItem("arkemx_dev_token"); if(stored){setToken(stored);loadProjects(stored).catch(()=>{sessionStorage.removeItem("arkemx_dev_token");setToken(null);});}},[loadProjects]);
   const handleError = (e:unknown)=>setError(e instanceof Error?e.message:"Beklenmeyen hata");
@@ -99,10 +100,18 @@ export default function Home() {
         <section className="card stack"><div className="flex between"><h2>Orijinal metraj kaydı (değiştirilemez)</h2><span className="tag">{items.length} görüntülenen</span></div>{items.length?<Rows rows={items}/>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
         <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>
         <CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>
-        <TechnicalPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
-        <EvidencePanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
-        <MatchPanel token={token} project={project} refreshKey={revisionTick}/>
-      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4.1 · Kaynaklı teknik kanıt pilotu · Tam şartname ve fiyat doğrulaması henüz yoktur.</p></main>}
+        <EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
+        <section className="legacy-tools">
+          <button className="secondary" type="button" aria-expanded={showLegacy}
+            onClick={()=>setShowLegacy(value=>!value)}>
+            {showLegacy?"Eski M4/M2 test ekranlarını kapat":"Eski M4/M2 test ekranlarını aç"}
+          </button>
+          {showLegacy&&<div className="stack">
+            <TechnicalPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
+            <MatchPanel token={token} project={project} refreshKey={revisionTick}/>
+          </div>}
+        </section>
+      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4.2 · Mühendis İnceleme Pilotu · Katalog sınırı 500 poz / çalışma başına 100 metraj satırı.</p></main>}
   </>;
 }
 

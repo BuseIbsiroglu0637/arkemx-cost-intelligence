@@ -2,6 +2,14 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M4.2 — Mühendis inceleme merkezi (sayfalı)
+
+- 100 metraj satırı/run × en fazla 3 poz adayı; katalog başına 500 poz pilot sınırı.
+- Aday durum/karar filtreleri, sunucu tarafında sayfalama ve arama.
+- Tıklanınca doğrulanan M4.1 kaynaklı kanıtları, eski/yeni karar geçmişini getirir.
+- Onaylar mevcut sunucu hak/revizyon/kanıt kontrollerinden geçer; otomatik karar verilmez.
+- [M4.2 geliştirme/kabul rehberi](docs/M42_REVIEW_WORKSPACE.md).
+
 ## M4.1 — Kaynaklı teknik kanıt ve kapsam analizi
 
 - İmalat/katalogdan somut `C25/30` beton sınıfı, `TS EN` standardı ve kapsamın dahil/hariç ifadelerini çıkarır.

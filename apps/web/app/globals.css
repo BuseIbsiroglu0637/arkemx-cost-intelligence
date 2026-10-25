@@ -19,3 +19,28 @@ header{background:#11264b;color:#fff;padding:18px 26px;display:flex;justify-cont
 .m21-editor{border:1px solid var(--border);background:#f8faff;padding:16px;border-radius:12px}
 .m21-editor input{max-width:100%}
 .m21-editor .notice{margin:2px 0}
+
+.review-panel{display:grid;gap:16px}.review-panel h3,.review-panel h4{margin:4px 0}
+.review-top,.review-pagination{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.review-top .hint{flex:1;min-width:250px}
+.review-stats{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px}
+button.review-stat{display:grid;gap:2px;text-align:left;background:#f2f6fc;color:var(--ink);border:1px solid var(--border);min-width:0}
+.review-stat strong{font-size:22px}.review-stat span{font-size:12px;color:var(--muted)}
+button.review-stat.active{background:#e8f0ff;border:2px solid #2c61d0}
+.review-filters{display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:10px;align-items:end}
+.review-table td{vertical-align:middle;min-width:70px}
+.review-table td:nth-child(2){min-width:230px;overflow-wrap:anywhere}
+.review-state{display:inline-block;padding:3px 9px;border-radius:8px;font-weight:650;font-size:12px}
+.review-compatible{color:#087b57;background:#e6f6ef}
+.review-blocked{color:#a52525;background:#fdebed}
+.review-review{color:#84540f;background:#fff3d9}
+.review-missing{color:#475569;background:#eef2f7}
+.review-detail{display:grid;gap:10px;border:1px solid var(--border);padding:16px;border-radius:12px;background:#fafcff}
+.review-decision{display:grid;gap:10px;padding:14px;border:1px solid var(--border);border-radius:9px;background:#fff}
+.review-panel textarea{font:inherit;border:1px solid #cbd5e1;border-radius:9px;padding:10px;width:100%}
+.review-panel textarea:focus{outline:2px solid #a6bdf7}
+.legacy-tools{border:1px solid var(--border);background:#fff;border-radius:12px;padding:14px}
+.legacy-tools summary{cursor:pointer;font-weight:600;color:#315da2}
+.legacy-tools .stack{margin-top:14px}
+@media(max-width:900px){.review-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.review-filters{grid-template-columns:1fr 1fr}.review-filters button{width:100%}}
+@media(max-width:600px){.review-filters{grid-template-columns:1fr}.review-pagination{align-items:stretch}.review-top button{width:100%}}
