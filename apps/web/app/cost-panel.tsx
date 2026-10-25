@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
+import CostAnalysisPanel from "./cost-analysis-panel";
 
 type Candidate = {candidate_id:string;source_row:number;description:string;position_code:string;
  quantity:string;unit:string;evidence_sha256:string};
@@ -186,5 +187,6 @@ export default function CostPanel({token,project}:{token:string|null;project:str
     <p className="hint">Taslak SHA-256: <code>{detail.snapshot_sha256}</code></p>
    </div>}
   </div>
+  <CostAnalysisPanel token={token} project={project} history={history}/>
  </section>;
 }

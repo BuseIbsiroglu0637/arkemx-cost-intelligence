@@ -91,3 +91,22 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
 .cost-result strong.amount{font-size:26px;color:var(--blue)}
 .cost-drafts .flex{border-bottom:1px solid var(--border);padding:8px 0}
 @media(max-width:600px){.cost-toolbar label{min-width:100%}}
+
+/* M5.1 compact analysis workspace */
+.m51-card{padding:0;overflow:hidden}
+.m51-card>summary{cursor:pointer;list-style:none;padding:18px 20px;font-size:17px;font-weight:700;color:var(--ink);display:flex;gap:10px;align-items:center;justify-content:space-between}
+.m51-card>summary::after{content:"Aç";color:var(--blue);font-size:13px;font-weight:600}
+.m51-card[open]>summary::after{content:"Kapat"}
+.m51-body{padding:0 20px 20px;display:grid;gap:17px}
+.m51-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.m51-fields label{min-width:0}
+.m51-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.m51-stat{background:#f1f5fb;border:1px solid var(--border);border-radius:10px;padding:12px;display:grid;gap:5px}
+.m51-stat strong{font-size:20px;font-variant-numeric:tabular-nums}
+.m51-stat small{color:var(--muted);font-size:12px}
+.m51-subtitle{font-size:15px;font-weight:700}
+.m51-table td{vertical-align:top}
+.m51-divider{border-top:1px solid var(--border);padding-top:16px}
+.m51-note{background:#f6f9ff;border:1px solid var(--border);border-radius:9px;padding:12px;font-size:12px;color:var(--muted)}
+.m51-summary .m51-stat:last-child{background:#e9f0fc}
+@media(max-width:700px){.m51-fields{grid-template-columns:1fr}.m51-summary{grid-template-columns:1fr 1fr}.m51-body{padding:0 12px 14px}}
