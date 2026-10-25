@@ -260,10 +260,10 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
             if evidence is None or evidence.status != "compatible":
                 raise HTTPException(409, "Verified technical evidence required")
             try:
-                payload = json.loads(evidence.payload_json)
+                evidence_payload = json.loads(evidence.payload_json)
             except (ValueError, TypeError):
                 raise HTTPException(409, "Invalid evidence payload") from None
-            if not verify_evidence(payload) or payload.get("evidence_sha256") != evidence.evidence_sha256:
+            if not verify_evidence(evidence_payload) or evidence_payload.get("evidence_sha256") != evidence.evidence_sha256:
                 raise HTTPException(409, "Technical evidence integrity failed")
     version = db.get(CatalogVersion, run.version_id)
     source = db.get(CatalogSource, version.source_id)
