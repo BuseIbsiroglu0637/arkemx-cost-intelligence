@@ -2,6 +2,16 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M3 — Kaynak kontrollü poz katalog yönetimi
+
+- **M3, sentetik DEMO kodlarının ötesinde hakları doğrulanmış kurum kataloglarını içe alma altyapısıdır.**
+- Çoklu kurum, sürümlü yıl/dönem, CSV/XLSX tarifi/birim/fiyat doğrulama, SHA-256, denetim izi.
+- Yüklenen gerçek kataloglar `pending` statüsündedir; firma admini M1 kaynak onayı yapsa bile M3 eşleştirme açılamaz.
+- Yalnız ayrı **yerel operatör** ve yazılı veri kullanım hakkı kontrolünden sonra eşleştirmeye açılır. İşletmeci onayı hukuki hakkı kendiliğinden vermez.
+- Kişisel/resmî verileri izinsiz kopyalamayın veya yayımlamayın; kod ve örnek katalog *tamamen sentetiktir*.
+- Kullanım, migration ve kabul testi: [M3 Katalog Rehberi](docs/M3_CATALOG.md).
+- `feat/m3-licensed-poz-catalog` ayrı geliştirme dalıdır; M1/M2/M2.1 PR'ları birleştirilmez.
+
 ## M2.1 — Akıllı Metraj Düzeltme (yeni)
 
 - Ayrı geliştirme dalı: `feat/m2-1-metraj-revizyon`; bu dal M2'yi temel alır.

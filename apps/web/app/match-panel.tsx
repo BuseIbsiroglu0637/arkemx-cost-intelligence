@@ -13,7 +13,8 @@ type MatchedItem = {
 type Latest = {run: null|{
   id:string; row_count:number; candidate_count:number; algorithm:string;
   catalog_period:string; source:string; synthetic:boolean; scores_are_probabilities:boolean;
-  parent_run_id?:string|null;changed_item_count?:number;outdated_import?:boolean
+  parent_run_id?:string|null;changed_item_count?:number;outdated_import?:boolean;
+  rights_active?:boolean;catalog_year?:number;catalog_sha256?:string
 }; items: MatchedItem[]};
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -69,9 +70,9 @@ export default function MatchPanel({token,project,refreshKey}:{token:string|null
   }
 
   return <section className="card stack" aria-label="M2 poz eşleştirme">
-    <div className="flex between"><div><h2>M2 · AI Poz Eşleştirme</h2><p className="hint">Metin benzerliği + zorunlu malzeme, ebat ve birim denetimi.</p></div><span className="tag">SENTETİK DEMO</span></div>
-    <p className="notice">Bu pilot gerçek kamu pozlarını veya fiyatlarını içermez. DEMO- kodları resmî poz numarası değildir.
-      Benzerlik puanları doğruluk olasılığı değildir. Hatalı/eksik metrajlar onaylanamaz.</p>
+    <div className="flex between"><div><h2>M2 · AI Poz Eşleştirme</h2><p className="hint">Metin benzerliği + zorunlu malzeme, ebat ve birim denetimi.</p></div><span className="tag">{result?.run&&!result.run.synthetic?"HAK ONAYLI KATALOG":"SENTETİK DEMO"}</span></div>
+    <p className="notice">M2 düğmesi sentetik DEMO- kodlarını kullanır. M3 düğmesi yalnızca kullanım hakları kayda alınmış katalogları kullanır.
+      Her iki durumda da benzerlik puanı doğruluk olasılığı değildir; mühendis kontrolü zorunludur.</p>
     <div className="flex between">
       <label className="match-check"><input type="checkbox" checked={localAI} onChange={e=>setLocalAI(e.target.checked)}/>
         Yerel Ollama varsa ek yeniden sıralama yap (isteğe bağlı)</label>
@@ -83,7 +84,8 @@ export default function MatchPanel({token,project,refreshKey}:{token:string|null
       <div className="kpi"><b>{result.run.row_count}</b><span>İncelenen kalem</span></div>
       <div className="kpi"><b>{result.run.candidate_count}</b><span>Poz adayı</span></div>
       <div className="kpi"><b>{result.items.filter(item=>!item.stale&&item.decision?.action==="approve").length}</b><span>Mühendis onaylı</span></div>
-      <p className="hint">Katalog: {result.run.catalog_period} · Motor: {result.run.algorithm}</p>
+      <p className="hint">Katalog: {result.run.source} / {result.run.catalog_year} / {result.run.catalog_period} · Motor: {result.run.algorithm}</p>
+      {result.run.rights_active===false&&<p className="warning">Kaynak kullanım izni geri çekilmiş; yeni onay kapalı.</p>}
       {result.run.parent_run_id&&<p className="hint">Yeni eşleştirmede {result.run.changed_item_count} kalem yeniden hesaplandı. Önceki onaylar otomatik taşınmadı.</p>}
     </div>}
     {result?.run&&result.items.map(item=><article key={item.id} className="match-row">
@@ -98,7 +100,7 @@ export default function MatchPanel({token,project,refreshKey}:{token:string|null
         <p className="hint">{candidate.unit} · {candidate.reasons.join(" · ")}</p>
         {!!candidate.warnings.length&&<p className="warning">Kontrol: {candidate.warnings.join(", ")}</p>}
         <div className="flex">
-          <button disabled={busy||!candidate.approvable||!!item.stale} onClick={()=>decide(candidate,"approve")}>Mühendis onayı</button>
+          <button disabled={busy||!candidate.approvable||!!item.stale||result?.run?.rights_active===false} onClick={()=>decide(candidate,"approve")}>Mühendis onayı</button>
           <button disabled={busy} className="secondary" onClick={()=>decide(candidate,"reject")}>Reddet</button>
           {item.decision?.candidate_id===candidate.id&&<span className="tag">
             {item.stale?"Tarihî karar (güncel değil): ":"Son karar: "}{item.decision.action==="approve"?"Onaylandı":"Reddedildi"}</span>}

@@ -172,3 +172,44 @@ class MatchRunItemSnapshot(Base):
     quantity: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
     unit: Mapped[str | None] = mapped_column(String(30), nullable=True)
     review_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class CatalogImport(Base):
+    """Staged local catalog; tenant admin cannot make it matchable."""
+    __tablename__ = "catalog_imports"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "sha256", "source_id", "year", "period",
+                         name="uq_catalog_import_file_period"),
+        CheckConstraint("status IN ('pending','approved','rejected')",
+                        name="ck_catalog_import_status"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    source_id: Mapped[str] = mapped_column(ForeignKey("catalog_sources.id"), nullable=False)
+    version_id: Mapped[str] = mapped_column(ForeignKey("catalog_versions.id"), unique=True, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    period: Mapped[str] = mapped_column(String(40), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    approval_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approval_scope: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CatalogReviewEvent(Base):
+    """Append-only privileged, local-operator rights review ledger."""
+    __tablename__ = "catalog_review_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    catalog_import_id: Mapped[str] = mapped_column(ForeignKey("catalog_imports.id"), index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(160), nullable=False)
+    scope: Mapped[str] = mapped_column(String(80), nullable=False)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    catalog_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
