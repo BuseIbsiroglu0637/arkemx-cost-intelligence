@@ -143,7 +143,7 @@ def test_only_changed_rows_recomputed_and_old_approvals_kept_historically(client
     recorded = client.get(f"/api/projects/{pid}/m21/run-history", headers=headers)
     assert recorded.status_code == 200
     assert len(recorded.json()) == 2
-    historical = client.get(f"/api/projects/{pid}/m21/run-history/{original_run[\'id\']}", headers=headers)
+    historical = client.get(f"/api/projects/{pid}/m21/run-history/{original_run['id']}", headers=headers)
     assert historical.status_code == 200, historical.text
     assert historical.json()["items"][0]["candidates"][0]["decisions"][0]["action"] == "approve"
     assert historical.json()["items"][1]["quantity"] is None
