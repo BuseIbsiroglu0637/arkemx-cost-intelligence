@@ -26,6 +26,8 @@ def run_comparison(project_id: str, user: User = Depends(current_user),
 
 def _build_run(project_id: str, user: User, db: Session, *, with_evidence: bool):
     tenant_project(db, user, project_id)
+    from .m43 import guard_no_active
+    guard_no_active(db, project_id)
     prior = latest_run(db, project_id)
     if not prior:
         raise HTTPException(409, "First run M2/M3 catalog matching")

@@ -6,6 +6,7 @@ import CorrectionPanel from "./correction-panel";
 import CatalogPanel from "./catalog-panel";
 import TechnicalPanel from "./technical-panel";
 import EngineerReviewPanel from "./engineer-review-panel";
+import BulkPanel from "./bulk-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
@@ -100,6 +101,7 @@ export default function Home() {
         <section className="card stack"><div className="flex between"><h2>Orijinal metraj kaydı (değiştirilemez)</h2><span className="tag">{items.length} görüntülenen</span></div>{items.length?<Rows rows={items}/>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
         <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>
         <CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>
+        <BulkPanel token={token} project={project} onCompleted={()=>setRevisionTick(v=>v+1)}/>
         <EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
         <section className="legacy-tools">
           <button className="secondary" type="button" aria-expanded={showLegacy}
@@ -111,7 +113,7 @@ export default function Home() {
             <MatchPanel token={token} project={project} refreshKey={revisionTick}/>
           </div>}
         </section>
-      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4.2 · Mühendis İnceleme Pilotu · Katalog sınırı 500 poz / çalışma başına 100 metraj satırı.</p></main>}
+      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4.3 · 500 metraj satırına kadar yerel toplu işlem · Uzman incelemesi zorunludur.</p></main>}
   </>;
 }
 

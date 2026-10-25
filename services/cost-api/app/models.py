@@ -236,3 +236,31 @@ class TechnicalEvidence(Base):
     evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+class BulkJob(Base):
+    """M4.3 durable, bounded, single-worker batch job. One row per request."""
+    __tablename__ = "bulk_jobs"
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_bulk_project_request"),
+        CheckConstraint("status IN ('queued','running','completed','failed','blocked')",
+                        name="ck_bulk_job_status"),
+        CheckConstraint("processed_rows >= 0 AND candidate_count >= 0", name="ck_bulk_job_counts"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
+    version_id: Mapped[str] = mapped_column(ForeignKey("catalog_versions.id"), nullable=False)
+    run_id: Mapped[str] = mapped_column(ForeignKey("match_runs.id"), unique=True, nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    processed_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)

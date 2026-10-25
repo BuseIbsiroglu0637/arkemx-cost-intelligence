@@ -295,3 +295,7 @@ app.include_router(m41_router)
 # M4.2 paginated engineer review queue and on-demand evidence/history
 from .m42 import router as m42_router
 app.include_router(m42_router)
+
+# M4.3 durable local batch queue
+from .m43 import router as m43_router
+app.include_router(m43_router)

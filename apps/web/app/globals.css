@@ -44,3 +44,7 @@ button.review-stat.active{background:#e8f0ff;border:2px solid #2c61d0}
 .legacy-tools .stack{margin-top:14px}
 @media(max-width:900px){.review-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.review-filters{grid-template-columns:1fr 1fr}.review-filters button{width:100%}}
 @media(max-width:600px){.review-filters{grid-template-columns:1fr}.review-pagination{align-items:stretch}.review-top button{width:100%}}
+
+.bulk-progress{display:grid;gap:10px;padding:16px;background:#f7f9fd;border:1px solid var(--border);border-radius:10px}
+.bulk-progress progress{width:100%;height:14px;accent-color:#1348c4}
+.bulk-progress code{overflow-wrap:anywhere}

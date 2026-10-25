@@ -19,6 +19,7 @@ from .models import (
 from .m2 import tenant_project, latest_run, DEMO_INSTITUTION, DEMO_SCOPE
 from .revisions import effective_item, fingerprint, previously_frozen
 from .evidence_v41 import ALGORITHM, verify_evidence
+from .m43_worker import ALGORITHM as BULK_ALGORITHM
 
 router = APIRouter(prefix="/api/projects/{project_id}/m42", tags=["M4.2 Engineer Review"])
 
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/api/projects/{project_id}/m42", tags=["M4.2 Engineer
 def _context(db: Session, user: User, project_id: str):
     tenant_project(db, user, project_id)
     run = latest_run(db, project_id)
-    if not run or run.algorithm != ALGORITHM:
+    if not run or run.algorithm not in (ALGORITHM, BULK_ALGORITHM):
         return None
     version = db.get(CatalogVersion, run.version_id)
     source = db.get(CatalogSource, version.source_id)

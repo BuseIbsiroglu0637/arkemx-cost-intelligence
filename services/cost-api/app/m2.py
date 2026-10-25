@@ -16,7 +16,7 @@ from .database import get_db
 from .security import current_user
 from .models import (
     User, Project, ImportBatch, WorkItem, CatalogSource, CatalogVersion, CatalogPosition,
-    MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot, CatalogImport,
+    MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot, CatalogImport, BulkJob,
 )
 from .matching import ALGORITHM, MAX_MATCH_ROWS, find_candidates
 from .revisions import effective_item, frozen_snapshot, previously_frozen, fingerprint
@@ -114,6 +114,8 @@ def seed_demo(user: User = Depends(current_user), db: Session = Depends(get_db))
 def generate_matches(project_id: str, payload: RunRequest, user: User = Depends(current_user),
                      db: Session = Depends(get_db)):
     tenant_project(db, user, project_id)
+    from .m43 import guard_no_active
+    guard_no_active(db, project_id)
     version = synthetic_version(db, user.organization_id)
     # The exact marker prevents admin-attested/third-party catalogs from being
     # silently used without a separate operator licence gate.
@@ -161,8 +163,13 @@ def generate_matches(project_id: str, payload: RunRequest, user: User = Depends(
 
 
 def latest_run(db: Session, project_id: str):
-    return db.scalar(select(MatchRun).where(MatchRun.project_id == project_id)
-                     .order_by(MatchRun.created_at.desc(), MatchRun.id.desc()))
+    # M4.3 in-progress runs are not published or eligible for approval.
+    done = select(BulkJob.run_id).where(BulkJob.status == "completed")
+    return db.scalar(select(MatchRun).where(
+        MatchRun.project_id == project_id,
+        (MatchRun.algorithm != "technical-rules-v0.1+evidence-v0.1+bulk-v0.1") |
+        MatchRun.id.in_(done)
+    ).order_by(MatchRun.created_at.desc(), MatchRun.id.desc()))
 
 
 @router.get("/projects/{project_id}/m2/latest")
@@ -246,13 +253,16 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
     item = db.get(WorkItem, candidate.work_item_id)
     # M4 reports are immutable evidence. A new approval must pass its original
     # technical gate; historical M2/M3 decisions are not rewritten.
-    if payload.action == "approve" and run.algorithm in ("technical-rules-v0.1", "technical-rules-v0.1+evidence-v0.1"):
+    if payload.action == "approve" and run.algorithm in (
+        "technical-rules-v0.1", "technical-rules-v0.1+evidence-v0.1",
+        "technical-rules-v0.1+evidence-v0.1+bulk-v0.1"):
         from .models import TechnicalComparison
         report = db.scalar(select(TechnicalComparison).where(
             TechnicalComparison.candidate_id == candidate.id))
         if report is None or report.status != "compatible":
             raise HTTPException(409, "Technical comparison blocks approval; inspect M4 report")
-        if run.algorithm == "technical-rules-v0.1+evidence-v0.1":
+        if run.algorithm in ("technical-rules-v0.1+evidence-v0.1",
+                             "technical-rules-v0.1+evidence-v0.1+bulk-v0.1"):
             from .models import TechnicalEvidence
             from .evidence_v41 import verify_evidence
             evidence = db.scalar(select(TechnicalEvidence).where(

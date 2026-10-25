@@ -2,6 +2,13 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M4.3 — Kalıcı yerel toplu işleme
+
+- 500 metraj kalemi, katalogda 500 poz ve satır başına en çok 3 teknik aday.
+- Ayrı ücretsiz Python işçisi, 20 satırlık transaction, ilerleme ve güvenli retry.
+- Eksik hak ve güncel olmayan metrajda blok; M4.1 kanıtı ve insan kararı korunur.
+- [Windows M4.3 kullanım ve test rehberi](docs/M43_BULK_PROCESSING.md).
+
 ## M4.2 — Mühendis inceleme merkezi (sayfalı)
 
 - 100 metraj satırı/run × en fazla 3 poz adayı; katalog başına 500 poz pilot sınırı.
