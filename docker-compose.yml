@@ -1,0 +1,19 @@
+# Optional free local PostgreSQL, no paid cloud resources required.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: arkemx_cost
+      POSTGRES_USER: arkemx
+      POSTGRES_PASSWORD: change-me-local-only
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - cost_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arkemx -d arkemx_cost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  cost_pgdata:

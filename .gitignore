@@ -1,0 +1,22 @@
+# Node / Next
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+# Secrets and local storage
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+data/
+uploads/
+# Editor / OS
+.DS_Store
+.vscode/
