@@ -79,3 +79,11 @@ Otomatik testlerde 100/250/500 metraj × 3 sentetik poz; 45 satırda araya işle
 - 500 pozdan daha büyük resmi katalog veya çok kullanıcılı bulut üretimi bu sprintin kapsamı değildir.
 - SQLite bir işçi pilotu, üretimde dayanıklı dağıtık job queue/PostgreSQL ayrı test gerekir.
 - Piyasa fiyatı/standartların lisansı, KVKK, gerçek saha precision/recall ve kurum bazlı standart sürüm hakları doğrulanmadan ticari sürüme geçilmemeli.
+
+## Sekmeli ARKEMX çalışma alanı
+- Tek uzun sayfa yerine beş sekme: Genel Bakış, Metraj (M1/M2.1), Kataloglar (M3), Toplu Analiz (M4.3), Mühendis İnceleme (M4.2).
+- Üstte proje seçici, son toplu işin durumu, son tamamlanan eşleştirmedeki poz sayısı ve onay sayısı; bu değerler mevcut okuma API'lerinden gelir, ayrıca yenilenebilir.
+- Aynı anda yalnızca aktif modül görüntülenir. Metraj kayıtları ilk 20 satırla sınırlı görünür; tamamını açmak kullanıcı tercihidir. Revizyonlar isteğe bağlı yüklenir.
+- Eski M2/M4 test ekranları yalnız Genel Bakış → Gelişmiş Araçlar altında açılır; eski M3 eşleştirme açık onay gerektirir.
+- M4.2'den M4.3'e geçiş, yeni işlem oluşturmadan yalnızca ilgili sekmeyi açar.
+- Migration yoktur. Mevcut 500 metraj, kanıtlar ve mühendis kararları saklanır.

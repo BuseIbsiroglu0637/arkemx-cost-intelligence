@@ -35,8 +35,8 @@ const label:Record<string,string>={
 const badge=(status:string)=>`review-state review-${status}`;
 const display=(value:string|null)=>value??"Belirtilmemiş";
 const quote=(q:Quote)=>q?`“${q.excerpt}” (${q.start}–${q.end})`:"Kanıt gösterilmedi";
-export default function EngineerReviewPanel({token,project,refreshKey}:{
- token:string|null;project:string;refreshKey:number
+export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk}:{
+ token:string|null;project:string;refreshKey:number;onGoToBulk:()=>void
 }){
  const [status,setStatus]=useState<Status>("all");
  const [decision,setDecision]=useState<Decision>("all");
@@ -115,7 +115,7 @@ export default function EngineerReviewPanel({token,project,refreshKey}:{
     adaylar sunucudan sayfa sayfa getirilir.
     {queue?.run&&<> Bu çalışmada <strong>{queue.run.row_count} satır</strong> incelendi
     (çalışma üst sınırı: {queue.run.row_limit}).</>}</p>
-   <a href="#m43-bulk-processing">Yeni toplu analiz için M4.3 bölümüne git</a>
+   <button type="button" className="secondary" onClick={onGoToBulk}>Yeni toplu analiz için M4.3 bölümüne git</button>
   </div>
   {error&&<p role="alert" className="error">{error}</p>}
   {message&&<p role="status" className="success">{message}</p>}
