@@ -113,6 +113,13 @@ export default function Home() {
     setRevisionTick(v=>v+1);
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
+  const hasNewPendingJob=jobSummary?.status==="queued"||jobSummary?.status==="running";
+  const hasPriorReview=Boolean(queueSummary?.run&&queueSummary.run.candidate_count>0);
+  const jobStatusText=jobSummary?.status==="completed"?"Tamamlandı":
+    jobSummary?.status==="queued"?"Kuyrukta":jobSummary?.status==="running"?"İşleniyor":
+    jobSummary?.status==="blocked"?"Engellendi":jobSummary?.status==="failed"?"Hata":
+    "İş yok";
+
   return <>
     <header><div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div><div className="flex"><span className="tag">M1 · Metraj Çekirdeği</span>{token&&<button onClick={logout}>Çıkış</button>}</div></header>
     {!token ? <main className="page"><div className="auth card stack"><div><h1>Akıllı maliyetin temeli</h1><p>Metraj dosyanızı güvenli biçimde projeye alın, kaynağını ve kontrol gerektiren satırları görün.</p></div>
@@ -142,9 +149,9 @@ export default function Home() {
           </details>
         </div>
         <div className="workspace-status" aria-label="Proje durum özeti">
-          <span>Son toplu iş: <strong>{!project?"Proje seçilmedi":jobSummary?.status==="completed"?"Tamamlandı":jobSummary?.status==="queued"?"Kuyrukta":jobSummary?.status==="running"?"İşleniyor":jobSummary?.status==="blocked"?"Engellendi":jobSummary?.status==="failed"?"Hata":"İş yok"}</strong></span>
-          <span>İşlenen: <strong>{jobSummary?`${jobSummary.processed_rows}/${jobSummary.total_rows}`:"—"}</strong></span>
-          <span>Poz adayı: <strong>{queueSummary?.run?.candidate_count??"—"}</strong></span>
+          <span>En yeni toplu iş: <strong>{project?jobStatusText:"Proje seçilmedi"}</strong></span>
+          <span>Bu işin ilerlemesi: <strong>{jobSummary?`${jobSummary.processed_rows}/${jobSummary.total_rows}`:"—"}</strong></span>
+          <span>İnceleme kuyruğu: <strong>{queueSummary?.run?.candidate_count??"—"} aday</strong></span>
           <span>Onay: <strong>{queueSummary?.summary?.decisions?.approved??"—"}</strong></span>
           {project&&<button type="button" className="ghost workspace-refresh" onClick={()=>setSummaryRefresh(v=>v+1)}>Durumu yenile</button>}
         </div>
@@ -165,20 +172,20 @@ export default function Home() {
         <section className="card stack">
           <div className="flex between"><div><h2>Proje özeti</h2><p className="hint">Son analiz ve mühendis inceleme sonuçları</p></div><span className="tag">Geliştirici pilotu</span></div>
           <div className="workspace-kpis">
-            <div className="kpi"><b>{jobSummary?.total_rows??"—"}</b><span>Son toplu iş metrajı</span></div>
-            <div className="kpi"><b>{queueSummary?.run?.candidate_count??"—"}</b><span>Poz adayı</span></div>
+            <div className="kpi"><b>{jobSummary?.total_rows??"—"}</b><span>En yeni işin toplam metrajı</span></div>
+            <div className="kpi"><b>{queueSummary?.run?.candidate_count??"—"}</b><span>İncelemeye açılmış poz adayı</span></div>
             <div className="kpi"><b>{queueSummary?.summary?.decisions?.approved??"—"}</b><span>Güncel mühendis onayı</span></div>
           </div>
-          <div className="workspace-next"><div><strong>{jobSummary?jobSummary.status==="completed"?"Son toplu iş tamamlandı":"Son toplu iş durumu: "+jobSummary.status:"Henüz toplu iş oluşturulmadı"}</strong>
-            <p className="hint">{jobSummary?`${jobSummary.processed_rows}/${jobSummary.total_rows} satır, ${jobSummary.candidate_count} poz adayı.`:"Metraj ve katalog seçerek toplu analizi başlatabilirsiniz."}</p></div>
+          {hasNewPendingJob&&hasPriorReview&&<p className="hint" role="status">
+            Yeni toplu iş {jobSummary?.processed_rows??0}/{jobSummary?.total_rows??0} satırda bekliyor.
+            İnceleme bölümündeki {queueSummary?.run?.candidate_count} aday, önceki tamamlanmış çalışmaya aittir;
+            bekleyen iş tamamlanmadan incelemeye aktarılmaz.
+          </p>}
+          <div className="workspace-next"><div><strong>{jobSummary?"En yeni toplu iş: "+jobStatusText:"Henüz toplu iş oluşturulmadı"}</strong>
+            <p className="hint">{jobSummary?`${jobSummary.processed_rows}/${jobSummary.total_rows} satır, bu işe ait ${jobSummary.candidate_count} aday kaydedildi.`:"Metraj ve katalog seçerek toplu analizi başlatabilirsiniz."}</p></div>
             <button type="button" onClick={()=>goTo(jobSummary?.status==="completed"?"review":jobSummary?"bulk":"metraj")}>
               {jobSummary?.status==="completed"?"İncelemeye geç":jobSummary?"Toplu analize geç":"Metraja geç"}</button>
           </div>
-        </section>
-        <section className="card stack"><h2>İş akışı</h2>
-          <div className="workspace-quicklinks">{tabs.filter(t=>t.id!=="overview").map(t=>
-            <button className="secondary" key={t.id} type="button" onClick={()=>goTo(t.id)}>{t.title}</button>)}</div>
-          <p className="hint">Excel yükle → Katalog seç → Toplu analiz → Mühendis kararı. Kaynak ve SHA-256 denetimi korunur; AI poz önerisi mühendis kararı değildir.</p>
         </section>
         <section className="legacy-tools">
           <button type="button" className="secondary" aria-expanded={showLegacy} onClick={()=>setShowLegacy(v=>!v)}>
