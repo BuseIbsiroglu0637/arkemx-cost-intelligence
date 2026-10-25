@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from itertools import product
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -29,6 +30,8 @@ from .revisions import effective_item, fingerprint, previously_frozen
 
 router = APIRouter(prefix="/api/projects/{project_id}/m5", tags=["M5 Draft Cost Estimates"])
 CENT = Decimal("0.01")
+SCALE_4 = Decimal("0.0001")
+MAX_LEGACY_PRICE_FORMATS = 625  # bounded, one-time read of pre-fix snapshots
 MAX_LINES = 500
 
 
@@ -52,6 +55,42 @@ def _sha(obj: object) -> str:
 
 def _money(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def _fixed4(value: Decimal) -> str:
+    # Numeric(18, 4) stored in SQL: use the exact same representation pre/post DB read.
+    return format(value.quantize(SCALE_4), ".4f")
+
+
+def _verify_legacy_price_scales(canonical: list[dict], expected_hash: str) -> bool:
+    """Pre-fix drafts hashed user-typed price strings rather than Numeric(18, 4).
+    
+    Recover *only* numerically equivalent 0..4 decimal spellings. Every
+    other field (candidate, quantity, position, evidence, source, amount)
+    stays unchanged. The stored original SHA must still match exactly.
+    Limit combinations to avoid unbounded legacy verification for large jobs.
+    """
+    alternatives = []
+    combinations = 1
+    for row in canonical:
+        stored = Decimal(row["unit_price"])
+        options = []
+        for decimals in range(5):
+            candidate = format(stored, f".{decimals}f")
+            if Decimal(candidate) == stored:
+                options.append(candidate)
+        combinations *= len(options)
+        if combinations > MAX_LEGACY_PRICE_FORMATS:
+            return False
+        alternatives.append(options)
+    for prices in product(*alternatives):
+        legacy_rows = [
+            {**row, "unit_price": price}
+            for row, price in zip(canonical, prices)
+        ]
+        if _sha(legacy_rows) == expected_hash:
+            return True
+    return False
 
 
 def _snapshot(db: Session, user: User, project_id: str):
@@ -168,10 +207,13 @@ def get_estimate(project_id: str, estimate_id: str, user: User = Depends(current
         "unit_price": str(line.unit_price), "amount": str(line.amount),
         "price_source": line.price_source, "evidence_sha256": line.evidence_sha256
     } for line in items]
+    # Always check arithmetic and exact stored-line count before any legacy compatibility.
     if (len(items) != estimate.line_count or
-            _sha(canonical) != estimate.snapshot_sha256 or
             _money(sum((line.amount for line in items), Decimal("0"))) != estimate.total or
             any(_money(line.quantity * line.unit_price) != line.amount for line in items)):
+        raise HTTPException(409, "Maliyet taslagi hesap veya kanit butunlugu bozulmus")
+    if (_sha(canonical) != estimate.snapshot_sha256 and
+            not _verify_legacy_price_scales(canonical, estimate.snapshot_sha256)):
         raise HTTPException(409, "Maliyet taslagi hesap veya kanit butunlugu bozulmus")
     return {**_estimate_view(estimate), "lines": [
         {"source_row": line.source_row, "description": line.description,
@@ -226,9 +268,9 @@ def create_estimate(project_id: str, payload: EstimateRequest,
         entries.append((row, unit_price, amount, entry.price_source.strip()))
     # Canonical deterministic digest of frozen input and manual pricing.
     canonical = [{"candidate_id": r["candidate_id"], "description": r["description"],
-                  "source_row": r["source_row"], "quantity": str(r["quantity"]),
+                  "source_row": r["source_row"], "quantity": _fixed4(r["quantity"]),
                   "unit": r["unit"], "position_code": r["position_code"],
-                  "unit_price": str(p), "amount": str(a),
+                  "unit_price": _fixed4(p), "amount": str(a),
                   "price_source": label, "evidence_sha256": r["evidence_sha256"]}
                  for r, p, a, label in sorted(entries, key=lambda e: (e[0]["source_row"], e[0]["candidate_id"]))]
     estimate = CostEstimate(

@@ -1,7 +1,10 @@
 """M5 draft pricing: approved-only, immutable snapshots and tenant/rights safety."""
+from decimal import Decimal
+import pytest
 from sqlalchemy import select
 from app.database import get_db
-from app.models import TechnicalEvidence, WorkItemRevision, User, CostEstimateLine
+from app.models import TechnicalEvidence, WorkItemRevision, User, CostEstimate, CostEstimateLine
+from app.m5 import _sha
 from app import catalog_operator
 from test_m41 import auth
 from test_m42 import ready
@@ -146,3 +149,54 @@ def test_blank_price_provenance_rejected(client, monkeypatch):
     payload["lines"][0]["price_source"] = "                  "
     assert client.post(f"/api/projects/{pid}/m5/estimates",
                        headers=head, json=payload).status_code == 422
+
+
+@pytest.mark.parametrize("price", ["1250", "1250.0", "1250.00", "1250.50"])
+def test_m5_numeric_scale_round_trip(client, monkeypatch, price):
+    head, pid, _, run, cand = setup(client, monkeypatch)
+    approve(client, head, pid, run, cand)
+    payload = price_payload(run, cand["candidate_id"], key="m5-scale-" + price.replace(".", "-"), price=price)
+    result = client.post(f"/api/projects/{pid}/m5/estimates", headers=head, json=payload)
+    assert result.status_code == 201, result.text
+    detail = client.get(f"/api/projects/{pid}/m5/estimates/{result.json()['id']}", headers=head)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["lines"][0]["unit_price"] == format(Decimal(price), ".4f")
+
+
+def test_m5_existing_legacy_scale_snapshot_compatibility(client, monkeypatch):
+    head, pid, _, run, cand = setup(client, monkeypatch)
+    approve(client, head, pid, run, cand)
+    payload = price_payload(run, cand["candidate_id"], key="m5-legacy-scale-0001", price="1250")
+    created = client.post(f"/api/projects/{pid}/m5/estimates", headers=head, json=payload)
+    assert created.status_code == 201, created.text
+    estimate_id = created.json()["id"]
+    # Reproduce exactly the pre-fix 2026-10-25 hash: price was '1250'
+    # although database Numeric(18,4) reads '1250.0000'.
+    gen = client.app.dependency_overrides[get_db]()
+    db = next(gen)
+    draft = db.get(CostEstimate, estimate_id)
+    line = db.scalar(select(CostEstimateLine).where(CostEstimateLine.estimate_id == estimate_id))
+    pre_fix_canonical = [{
+        "candidate_id": line.candidate_id, "description": line.description,
+        "source_row": line.source_row, "quantity": str(line.quantity),
+        "unit": line.unit, "position_code": line.position_code,
+        "unit_price": "1250", "amount": str(line.amount),
+        "price_source": line.price_source, "evidence_sha256": line.evidence_sha256
+    }]
+    draft.snapshot_sha256 = _sha(pre_fix_canonical)
+    db.commit()
+    gen.close()
+    detail = client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}", headers=head)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["total"] == "15625.00"
+    csv = client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}/csv", headers=head)
+    assert csv.status_code == 200, csv.text
+    # Original evidence hash must *never* be silently replaced.
+    gen = client.app.dependency_overrides[get_db]()
+    db = next(gen)
+    line = db.scalar(select(CostEstimateLine).where(CostEstimateLine.estimate_id == estimate_id))
+    line.price_source = "Adversarial tampered price provenance"
+    db.commit()
+    gen.close()
+    assert client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}",
+                      headers=head).status_code == 409
