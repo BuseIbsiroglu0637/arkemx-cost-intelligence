@@ -148,19 +148,21 @@ def correct_item(project_id: str, item_id: str, payload: RevisionRequest,
 def incremental_rematch(project_id: str, user: User = Depends(current_user),
                         db: Session = Depends(get_db)):
     project_or_404(db, project_id, user)
-    from .m2 import latest_run, synthetic_version, DEMO_INSTITUTION, DEMO_SCOPE
+    from .m2 import latest_run, DEMO_INSTITUTION, DEMO_SCOPE
     prior_run = latest_run(db, project_id)
     batch = latest_import(db, project_id)
     if prior_run is None or batch is None or prior_run.import_id != batch.id:
         raise HTTPException(409, "First run full M2 matching for the current import")
     if batch.row_count > MAX_MATCH_ROWS:
         raise HTTPException(422, "M2 pilot limit exceeded")
-    version = synthetic_version(db, user.organization_id)
+    version = db.get(CatalogVersion, prior_run.version_id)
     source = db.get(CatalogSource, version.source_id)
-    if not source or source.institution != DEMO_INSTITUTION or source.permission_scope != DEMO_SCOPE:
-        raise HTTPException(403, "Only the synthetic catalog is authorized")
-    if prior_run.version_id != version.id:
-        raise HTTPException(409, "Catalog changed; run full M2 matching first")
+    if source.institution == DEMO_INSTITUTION:
+        if source.permission_scope != DEMO_SCOPE:
+            raise HTTPException(403, "Demo catalog scope is invalid")
+    else:
+        from .m3 import eligible_version
+        eligible_version(db, user.organization_id, prior_run.version_id)
     items = db.scalars(select(WorkItem).where(WorkItem.import_id == batch.id)
                        .order_by(WorkItem.source_row)).all()
     snapshots = {s.work_item_id: s for s in db.scalars(

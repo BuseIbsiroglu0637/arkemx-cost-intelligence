@@ -16,7 +16,7 @@ from .database import get_db
 from .security import current_user
 from .models import (
     User, Project, ImportBatch, WorkItem, CatalogSource, CatalogVersion, CatalogPosition,
-    MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot,
+    MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot, CatalogImport,
 )
 from .matching import ALGORITHM, MAX_MATCH_ROWS, find_candidates
 from .revisions import effective_item, frozen_snapshot, previously_frozen, fingerprint
@@ -173,6 +173,13 @@ def latest(project_id: str, user: User = Depends(current_user), db: Session = De
         return {"run": None, "items": []}
     version = db.get(CatalogVersion, run.version_id)
     source = db.get(CatalogSource, version.source_id)
+    synthetic = source.institution == DEMO_INSTITUTION
+    approved_import = None if synthetic else db.scalar(select(CatalogImport).where(
+        CatalogImport.organization_id == user.organization_id,
+        CatalogImport.version_id == run.version_id,
+        CatalogImport.status == "approved",
+        CatalogImport.approval_scope == "internal_matching"))
+    rights_active = synthetic or bool(approved_import and approved_import.approval_evidence and approved_import.reviewed_by)
     candidates = db.scalars(select(MatchCandidate).where(MatchCandidate.run_id == run.id)
                             .order_by(MatchCandidate.rank)).all()
     by_item = {}
@@ -208,7 +215,9 @@ def latest(project_id: str, user: User = Depends(current_user), db: Session = De
         "run": {"id": run.id, "algorithm": run.algorithm, "row_count": run.row_count,
                 "candidate_count": run.candidate_count, "created_at": run.created_at,
                 "catalog_period": version.period, "source": source.institution,
-                "synthetic": True, "scores_are_probabilities": False,
+                "synthetic": synthetic, "rights_active": rights_active,
+                "catalog_year": version.year, "catalog_sha256": version.sha256,
+                "scores_are_probabilities": False,
                 "parent_run_id": run.parent_run_id,
                 "changed_item_count": run.changed_item_count,
                 "outdated_import": outdated_import},
@@ -217,7 +226,7 @@ def latest(project_id: str, user: User = Depends(current_user), db: Session = De
                    "quantity": str(frozen[item.id].quantity) if item.id in frozen and frozen[item.id].quantity is not None else (str(item.quantity) if item.id not in frozen and item.quantity is not None else None),
                    "unit": frozen[item.id].unit if item.id in frozen else item.normalized_unit,
                    "review_required": frozen[item.id].review_required if item.id in frozen else item.review_required,
-                   "stale": outdated_import or fingerprint(effective_item(db, item)) != previously_frozen(item, frozen.get(item.id)),
+                   "stale": (not rights_active) or outdated_import or fingerprint(effective_item(db, item)) != previously_frozen(item, frozen.get(item.id)),
                    "candidates": by_item.get(item.id, []),
                    "decision": last_decision.get(item.id)} for item in rows]
     }
@@ -235,6 +244,11 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
     if candidate is None:
         raise HTTPException(404, "Candidate not found")
     item = db.get(WorkItem, candidate.work_item_id)
+    version = db.get(CatalogVersion, run.version_id)
+    source = db.get(CatalogSource, version.source_id)
+    if payload.action == "approve" and source.institution != DEMO_INSTITUTION:
+        from .m3 import eligible_version
+        eligible_version(db, user.organization_id, run.version_id)
     current_import = db.scalar(select(ImportBatch).where(ImportBatch.project_id == project_id)
                     .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
     snapshot = db.scalar(select(MatchRunItemSnapshot).where(

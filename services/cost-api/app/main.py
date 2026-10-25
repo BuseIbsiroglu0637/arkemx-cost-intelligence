@@ -279,3 +279,7 @@ app.include_router(m2_router)
 # Append-only metraj revision routes (M2.1)
 from .m21 import router as m21_router
 app.include_router(m21_router)
+
+# M3 rights-gated external catalog routes
+from .m3 import router as m3_router
+app.include_router(m3_router)
