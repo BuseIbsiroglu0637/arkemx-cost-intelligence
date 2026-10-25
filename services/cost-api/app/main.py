@@ -287,3 +287,7 @@ app.include_router(m3_router)
 # M4 explainable deterministic technical comparison routes
 from .m4 import router as m4_router
 app.include_router(m4_router)
+
+# M4.1 versioned source-attributed technical evidence
+from .m41 import router as m41_router
+app.include_router(m41_router)

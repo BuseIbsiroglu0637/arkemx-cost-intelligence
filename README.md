@@ -2,6 +2,14 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M4.1 — Kaynaklı teknik kanıt ve kapsam analizi
+
+- İmalat/katalogdan somut `C25/30` beton sınıfı, `TS EN` standardı ve kapsamın dahil/hariç ifadelerini çıkarır.
+- Orijinal tariflere bağlı kaynak satırı, poz kodu, revizyon kimliği, yıl/sürüm SHA-256 ve alıntı konumu kaydeder.
+- Eksik alanları tahmin etmez; açık sınıf veya kapsam farklarını engeller, belirsizlikleri mühendis incelemesine atar.
+- Yeni `technical_evidence` tablosu (`0006_m41_evidence`) M4.1 çalışmasına özeldir; önceki onayları değiştirmez.
+- Belgeler, sınırlar ve Windows test adımları: [M4.1 Kanıt Modeli](docs/M41_EVIDENCE.md).
+
 ## M4 — Açıklanabilir teknik poz karşılaştırma
 
 - Teknik özellikler: malzeme, kalınlık, ebat, yüzey, uygulama yöntemi, iç/dış ortam ve birim.

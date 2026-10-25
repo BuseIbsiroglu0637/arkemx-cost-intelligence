@@ -5,6 +5,7 @@ import MatchPanel from "./match-panel";
 import CorrectionPanel from "./correction-panel";
 import CatalogPanel from "./catalog-panel";
 import TechnicalPanel from "./technical-panel";
+import EvidencePanel from "./evidence-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
@@ -99,8 +100,9 @@ export default function Home() {
         <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>
         <CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>
         <TechnicalPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
+        <EvidencePanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
         <MatchPanel token={token} project={project} refreshKey={revisionTick}/>
-      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4 · M4 Teknik Karşılaştırma Pilotu · Sentetik kalite ölçümü; resmî maliyet hesabı yoktur.</p></main>}
+      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4.1 · Kaynaklı teknik kanıt pilotu · Tam şartname ve fiyat doğrulaması henüz yoktur.</p></main>}
   </>;
 }
 

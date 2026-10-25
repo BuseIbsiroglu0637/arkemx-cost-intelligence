@@ -246,12 +246,25 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
     item = db.get(WorkItem, candidate.work_item_id)
     # M4 reports are immutable evidence. A new approval must pass its original
     # technical gate; historical M2/M3 decisions are not rewritten.
-    if payload.action == "approve" and run.algorithm == "technical-rules-v0.1":
+    if payload.action == "approve" and run.algorithm in ("technical-rules-v0.1", "technical-rules-v0.1+evidence-v0.1"):
         from .models import TechnicalComparison
         report = db.scalar(select(TechnicalComparison).where(
             TechnicalComparison.candidate_id == candidate.id))
         if report is None or report.status != "compatible":
             raise HTTPException(409, "Technical comparison blocks approval; inspect M4 report")
+        if run.algorithm == "technical-rules-v0.1+evidence-v0.1":
+            from .models import TechnicalEvidence
+            from .evidence_v41 import verify_evidence
+            evidence = db.scalar(select(TechnicalEvidence).where(
+                TechnicalEvidence.candidate_id == candidate.id))
+            if evidence is None or evidence.status != "compatible":
+                raise HTTPException(409, "Verified technical evidence required")
+            try:
+                payload = json.loads(evidence.payload_json)
+            except (ValueError, TypeError):
+                raise HTTPException(409, "Invalid evidence payload") from None
+            if not verify_evidence(payload) or payload.get("evidence_sha256") != evidence.evidence_sha256:
+                raise HTTPException(409, "Technical evidence integrity failed")
     version = db.get(CatalogVersion, run.version_id)
     source = db.get(CatalogSource, version.source_id)
     if payload.action == "approve" and source.institution != DEMO_INSTITUTION:

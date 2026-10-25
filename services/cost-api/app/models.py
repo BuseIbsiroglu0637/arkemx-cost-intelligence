@@ -224,3 +224,15 @@ class TechnicalComparison(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     report_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class TechnicalEvidence(Base):
+    """M4.1 per-candidate immutable source-backed evidence snapshot."""
+    __tablename__ = "technical_evidence"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    candidate_id: Mapped[str] = mapped_column(ForeignKey("match_candidates.id"), unique=True, index=True, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
