@@ -89,11 +89,15 @@ def evaluate(item, position) -> dict | None:
             issues.append("DIMENSION_MISMATCH")
         else:
             reasons.append("Ebatlar uyumlu")
+    if pos_dims and not item_dims:
+        issues.append("DIMENSION_NOT_SPECIFIED_IN_METRAJ")
     if item_thicks:
         if not pos_thicks or item_thicks != pos_thicks:
             issues.append("THICKNESS_MISMATCH")
         else:
             reasons.append("Kalınlık uyumlu")
+    if pos_thicks and not item_thicks:
+        issues.append("THICKNESS_NOT_SPECIFIED_IN_METRAJ")
     if not item_family or not candidate_family:
         issues.append("MATERIAL_UNVERIFIED")
     if item.review_required or item.quantity is None:

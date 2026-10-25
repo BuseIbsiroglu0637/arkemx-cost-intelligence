@@ -174,3 +174,11 @@ def test_m2_limits(client):
     client.post("/api/m2/demo-catalog", headers=headers)
     res = client.post(f"/api/projects/{project}/m2/run", headers=headers, json={})
     assert res.status_code == 422
+
+
+def test_source_requires_explicit_dimensions_for_specific_catalog():
+    result = evaluate(item("Gazbeton duvar", unit="m²"),
+                      pos("DEMO-GAZ", "Gazbeton duvar 10 cm", unit="m²"))
+    assert result is not None
+    assert "THICKNESS_NOT_SPECIFIED_IN_METRAJ" in result["warnings"]
+    assert result["approvable"] is False
