@@ -6,6 +6,7 @@ type ComparisonRow = {work_item_id:string;source_row:number;description:string;s
  baseline_position:string|null;target_position:string|null;baseline_quantity:string|null;
  target_quantity:string|null;baseline_unit_price:string|null;target_unit_price:string|null;
  baseline_amount:string;target_amount:string;difference:string;
+ baseline_price_source:string|null;target_price_source:string|null;
  price_effect:string;quantity_effect:string;rounding_adjustment:string;
  unattributed_effect:string};
 type Comparison = {status:string;baseline_total:string;target_total:string;difference:string;
@@ -157,9 +158,11 @@ export default function CostAnalysisPanel({token,project,history}:{
         {row.baseline_position??"—"} → {row.target_position??"—"}</div></td>
        <td>{labels[row.status]??row.status}</td>
        <td>{money(row.baseline_amount)}<div className="hint">
-        {row.baseline_quantity??"—"} × {row.baseline_unit_price??"—"}</div></td>
+        {row.baseline_quantity??"—"} × {row.baseline_unit_price??"—"}</div>
+        <div className="hint">{row.baseline_price_source??""}</div></td>
        <td>{money(row.target_amount)}<div className="hint">
-        {row.target_quantity??"—"} × {row.target_unit_price??"—"}</div></td>
+        {row.target_quantity??"—"} × {row.target_unit_price??"—"}</div>
+        <div className="hint">{row.target_price_source??""}</div></td>
        <td><strong>{diff(row.difference)}</strong></td>
       </tr>)}</tbody></table></div>
      {compare.total_rows>20&&<div className="flex between">

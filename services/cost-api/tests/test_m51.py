@@ -123,13 +123,21 @@ def test_m51_tampered_draft_cannot_be_compared_or_simulated(client, monkeypatch)
 def test_scope_change_and_added_removed_not_misclassified_as_price():
     def r(**kwargs):
         return SimpleNamespace(**kwargs)
-    old = r(unit="m3", position_code="DEMO-C25",
-            quantity=Decimal("12.5"), unit_price=Decimal("1250"), price_source="test")
-    new = r(unit="m3", position_code="DEMO-C30",
-            quantity=Decimal("12.5"), unit_price=Decimal("1400"), price_source="test")
+    old = r(unit="m3", position_code="DEMO-C25", description="C25 ready-mix concrete",
+            evidence_sha256="a"*64, quantity=Decimal("12.5"),
+            unit_price=Decimal("1250"), price_source="test")
+    new = r(unit="m3", position_code="DEMO-C30", description="C25 ready-mix concrete",
+            evidence_sha256="a"*64, quantity=Decimal("12.5"),
+            unit_price=Decimal("1400"), price_source="test")
     assert _kind(old, new) == "scope_changed"
     assert _kind(None, new) == "added"
     assert _kind(old, None) == "removed"
-    newer = r(unit="m3", position_code="DEMO-C25",
-              quantity=Decimal("13"), unit_price=Decimal("1400"), price_source="test")
+    newer = r(unit="m3", position_code="DEMO-C25", description=old.description,
+              evidence_sha256=old.evidence_sha256, quantity=Decimal("13"),
+              unit_price=Decimal("1400"), price_source="test")
     assert _kind(old, newer) == "quantity_and_price"
+    newer.description = "C25 ready-mix concrete, different included scope"
+    assert _kind(old, newer) == "scope_changed"
+    newer.description = old.description
+    newer.evidence_sha256 = "b"*64
+    assert _kind(old, newer) == "scope_changed"

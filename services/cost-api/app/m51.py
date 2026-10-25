@@ -75,8 +75,11 @@ def _kind(old, new):
         return "added"
     if new is None:
         return "removed"
-    # Changed scope/unit/poz cannot be attributed to a price movement.
-    if old.unit != new.unit or old.position_code != new.position_code:
+    # Changed description, technical evidence, unit or poz must NOT be
+    # misclassified as a pure price movement even when a row id survives.
+    if (old.unit != new.unit or old.position_code != new.position_code
+            or old.description != new.description
+            or old.evidence_sha256 != new.evidence_sha256):
         return "scope_changed"
     quantity_changed = old.quantity != new.quantity
     price_changed = old.unit_price != new.unit_price

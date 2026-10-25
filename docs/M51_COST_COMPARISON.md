@@ -7,7 +7,7 @@ GET /api/projects/{project_id}/m51/compare?baseline_id=...&target_id=...&page=1&
 
 - Yalnız aynı projede ve aynı kullanıcı kuruluşuna ait SHA-256 doğrulanmış iki M5.0 taslağı.
 - Poz satırları work_item_id ile eşleştirilir. Yeni içe aktarımdaki benzer açıklamalar aynı fiziksel iş sayılmaz.
-- Aynı işte poz kodu veya birim değişmişse scope_changed; fiyat etkisi diye gösterilmez.
+- Aynı işte poz kodu, birim, imalat açıklaması veya teknik kanıt SHA-256 değişmişse scope_changed; salt fiyat etkisi diye gösterilmez.
 - Miktar etkisi = (yeni miktar - eski miktar) × eski fiyat.
 - Fiyat etkisi = yeni miktar × (yeni fiyat - eski fiyat).
 - Ara yuvarlama farkı açıkça gösterilir; eklenen/çıkarılan/kapsamı değişen pozların toplam farkı ayrıca raporlanır.
