@@ -161,6 +161,18 @@ def get_estimate(project_id: str, estimate_id: str, user: User = Depends(current
     items = db.scalars(select(CostEstimateLine).where(
         CostEstimateLine.estimate_id == estimate.id
     ).order_by(CostEstimateLine.source_row, CostEstimateLine.position_code)).all()
+    canonical = [{
+        "candidate_id": line.candidate_id, "description": line.description,
+        "source_row": line.source_row, "quantity": str(line.quantity),
+        "unit": line.unit, "position_code": line.position_code,
+        "unit_price": str(line.unit_price), "amount": str(line.amount),
+        "price_source": line.price_source, "evidence_sha256": line.evidence_sha256
+    } for line in items]
+    if (len(items) != estimate.line_count or
+            _sha(canonical) != estimate.snapshot_sha256 or
+            _money(sum((line.amount for line in items), Decimal("0"))) != estimate.total or
+            any(_money(line.quantity * line.unit_price) != line.amount for line in items)):
+        raise HTTPException(409, "Maliyet taslagi hesap veya kanit butunlugu bozulmus")
     return {**_estimate_view(estimate), "lines": [
         {"source_row": line.source_row, "description": line.description,
          "position_code": line.position_code, "unit": line.unit,
@@ -182,6 +194,10 @@ def create_estimate(project_id: str, payload: EstimateRequest,
             raise HTTPException(409, "Ayni istek anahtari farkli veriler icin kullanilamaz")
         return _estimate_view(existing)
 
+    if len(payload.title.strip()) < 3:
+        raise HTTPException(422, "Baslik en az 3 anlamli karakter olmalidir")
+    if any(len(line.price_source.strip()) < 10 for line in payload.lines):
+        raise HTTPException(422, "Fiyat kaynagi aciklamasi en az 10 karakter olmalidir")
     run, version, imported, eligible = _snapshot(db, user, project_id)
     if payload.run_id != run.id:
         raise HTTPException(409, "Maliyet yalniz guncel teknik calismaya baglanabilir")
@@ -214,7 +230,7 @@ def create_estimate(project_id: str, payload: EstimateRequest,
                   "unit": r["unit"], "position_code": r["position_code"],
                   "unit_price": str(p), "amount": str(a),
                   "price_source": label, "evidence_sha256": r["evidence_sha256"]}
-                 for r, p, a, label in entries]
+                 for r, p, a, label in sorted(entries, key=lambda e: (e[0]["source_row"], e[0]["candidate_id"]))]
     estimate = CostEstimate(
         organization_id=user.organization_id, project_id=project_id, run_id=run.id,
         import_id=imported.id, version_id=run.version_id,
@@ -259,7 +275,7 @@ def download_csv(project_id: str, estimate_id: str, user: User = Depends(current
     estimate = get_estimate(project_id, estimate_id, user, db)
     out = io.StringIO(newline="")
     writer = csv.writer(out)
-    writer.writerow(["ARKEMX M5 - TASLAK MALIYET", estimate["title"], "TRY"])
+    writer.writerow(["ARKEMX M5 - TASLAK MALIYET", _csv_safe(estimate["title"]), "TRY"])
     writer.writerow(["Kaynak Excel SHA-256", estimate["source_file_sha256"]])
     writer.writerow(["Katalog SHA-256", estimate["catalog_sha256"]])
     writer.writerow(["Taslak SHA-256", estimate["snapshot_sha256"]])

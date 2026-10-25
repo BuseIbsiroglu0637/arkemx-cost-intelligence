@@ -1,7 +1,7 @@
 """M5 draft pricing: approved-only, immutable snapshots and tenant/rights safety."""
 from sqlalchemy import select
 from app.database import get_db
-from app.models import TechnicalEvidence, WorkItemRevision, User
+from app.models import TechnicalEvidence, WorkItemRevision, User, CostEstimateLine
 from app import catalog_operator
 from test_m41 import auth
 from test_m42 import ready
@@ -118,3 +118,31 @@ def test_import_change_blocks_new_cost_draft(client, monkeypatch):
     db.commit()
     gen.close()
     assert client.get(f"/api/projects/{pid}/m5/eligible", headers=head).status_code == 409
+
+
+def test_estimate_hash_and_amount_tampering_fail_closed(client, monkeypatch):
+    head, pid, catalog, run, cand = setup(client, monkeypatch)
+    approve(client, head, pid, run, cand)
+    payload = price_payload(run, cand["candidate_id"], key="m5-tamper-check001")
+    result = client.post(f"/api/projects/{pid}/m5/estimates", headers=head, json=payload)
+    assert result.status_code == 201, result.text
+    estimate_id = result.json()["id"]
+    gen = client.app.dependency_overrides[get_db]()
+    db = next(gen)
+    line = db.scalar(select(CostEstimateLine).where(CostEstimateLine.estimate_id == estimate_id))
+    line.amount = line.amount + 1
+    db.commit()
+    gen.close()
+    assert client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}",
+                      headers=head).status_code == 409
+    assert client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}/csv",
+                      headers=head).status_code == 409
+
+
+def test_blank_price_provenance_rejected(client, monkeypatch):
+    head, pid, catalog, run, cand = setup(client, monkeypatch)
+    approve(client, head, pid, run, cand)
+    payload = price_payload(run, cand["candidate_id"], key="m5-blank-source001")
+    payload["lines"][0]["price_source"] = "                  "
+    assert client.post(f"/api/projects/{pid}/m5/estimates",
+                       headers=head, json=payload).status_code == 422
