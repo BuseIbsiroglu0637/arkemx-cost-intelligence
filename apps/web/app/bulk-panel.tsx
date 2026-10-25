@@ -113,3 +113,4 @@ export default function BulkPanel({token,project,onCompleted}:{
   <p className="hint">Pilot sınırları: <strong>500 metraj satırı, 500 katalog pozu, satır başına en çok 3 aday</strong>.
    Performans sayıları gerçek cihazda ayrıca ölçülmelidir; otomatik onay verilmez.</p>
  </section>;
+}
