@@ -2,6 +2,15 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M4 — Açıklanabilir teknik poz karşılaştırma
+
+- Teknik özellikler: malzeme, kalınlık, ebat, yüzey, uygulama yöntemi, iç/dış ortam ve birim.
+- **blocked / review / compatible** statüleri; eksik teknik bilgi otomatik uygun sayılmaz.
+- Karşılaştırmalar ayrı bir `match_run` ve `technical_comparisons` kanıt kayıtlarına saklanır.
+- M4 engelli adaylarının yeni mühendis onayı API seviyesinde reddedilir.
+- 16 kurgusal örnekle şeffaf kalite ölçümü; gerçek iş örneklerinde doğruluk iddiası yoktur.
+- [M4 teknik karşılaştırma rehberi](docs/M4_TECHNICAL_COMPARISON.md).
+
 ## M3 — Kaynak kontrollü poz katalog yönetimi
 
 - **M3, sentetik DEMO kodlarının ötesinde hakları doğrulanmış kurum kataloglarını içe alma altyapısıdır.**

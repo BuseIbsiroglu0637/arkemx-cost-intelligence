@@ -283,3 +283,7 @@ app.include_router(m21_router)
 # M3 rights-gated external catalog routes
 from .m3 import router as m3_router
 app.include_router(m3_router)
+
+# M4 explainable deterministic technical comparison routes
+from .m4 import router as m4_router
+app.include_router(m4_router)

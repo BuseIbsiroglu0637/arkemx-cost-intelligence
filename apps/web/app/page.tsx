@@ -4,6 +4,7 @@ import {useCallback, useEffect, useState, type FormEvent} from "react";
 import MatchPanel from "./match-panel";
 import CorrectionPanel from "./correction-panel";
 import CatalogPanel from "./catalog-panel";
+import TechnicalPanel from "./technical-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
@@ -97,8 +98,9 @@ export default function Home() {
         <section className="card stack"><div className="flex between"><h2>Orijinal metraj kaydı (değiştirilemez)</h2><span className="tag">{items.length} görüntülenen</span></div>{items.length?<Rows rows={items}/>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
         <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>
         <CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>
+        <TechnicalPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
         <MatchPanel token={token} project={project} refreshKey={revisionTick}/>
-      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.3 · M3 Katalog Yönetimi Pilotu · İzinli kaynak doğrulaması gerekir; henüz yaklaşık maliyet hesabı yoktur.</p></main>}
+      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.4 · M4 Teknik Karşılaştırma Pilotu · Sentetik kalite ölçümü; resmî maliyet hesabı yoktur.</p></main>}
   </>;
 }
 
