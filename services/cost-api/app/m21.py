@@ -148,12 +148,15 @@ def correct_item(project_id: str, item_id: str, payload: RevisionRequest,
 def incremental_rematch(project_id: str, user: User = Depends(current_user),
                         db: Session = Depends(get_db)):
     project_or_404(db, project_id, user)
+    from .m43 import guard_no_active
+    guard_no_active(db, project_id)
     from .m2 import latest_run, DEMO_INSTITUTION, DEMO_SCOPE
     prior_run = latest_run(db, project_id)
     batch = latest_import(db, project_id)
     if prior_run is None or batch is None or prior_run.import_id != batch.id:
         raise HTTPException(409, "First run full M2 matching for the current import")
-    if prior_run.algorithm in ("technical-rules-v0.1", "technical-rules-v0.1+evidence-v0.1"):
+    if prior_run.algorithm in ("technical-rules-v0.1", "technical-rules-v0.1+evidence-v0.1",
+                                "technical-rules-v0.1+evidence-v0.1+bulk-v0.1"):
         raise HTTPException(409, "After M4 analysis, rerun M4 for revised metraj; prior technical evidence cannot be copied")
     if batch.row_count > MAX_MATCH_ROWS:
         raise HTTPException(422, "M2 pilot limit exceeded")

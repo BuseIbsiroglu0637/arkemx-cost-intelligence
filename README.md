@@ -2,11 +2,19 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M4.3 — Kalıcı yerel toplu işleme
+
+- 500 metraj kalemi, katalogda 500 poz ve satır başına en çok 3 teknik aday.
+- Ayrı ücretsiz Python işçisi, 20 satırlık transaction, ilerleme ve güvenli retry.
+- Eksik hak ve güncel olmayan metrajda blok; M4.1 kanıtı ve insan kararı korunur.
+- [Windows M4.3 kullanım ve test rehberi](docs/M43_BULK_PROCESSING.md).
+
 ## M4.2 — Mühendis inceleme merkezi (sayfalı)
 
-- 100 metraj satırı/run × en fazla 3 poz adayı; katalog başına 500 poz pilot sınırı.
+- M4.1 geçmiş çalışmalarda 100, M4.3 toplu çalışmalarda 500 metraj satırını inceleyebilir; katalog başına 500 poz ve satır başına en çok 3 aday.
 - Aday durum/karar filtreleri, sunucu tarafında sayfalama ve arama.
 - Tıklanınca doğrulanan M4.1 kaynaklı kanıtları, eski/yeni karar geçmişini getirir.
+- M4.2 yalnızca inceler: yeni toplu çalışma M4.3 bölümünden başlatılır. Eski M3 eşleştirme testi kapalı bir gelişmiş bölümdedir ve açık kullanıcı onayı ister.
 - Onaylar mevcut sunucu hak/revizyon/kanıt kontrollerinden geçer; otomatik karar verilmez.
 - [M4.2 geliştirme/kabul rehberi](docs/M42_REVIEW_WORKSPACE.md).
 

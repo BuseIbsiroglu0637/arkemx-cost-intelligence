@@ -209,6 +209,8 @@ def run_real_catalog(project_id: str, payload: RunRequest,
         Project.id == project_id, Project.organization_id == user.organization_id))
     if not project:
         raise HTTPException(404, "Project not found")
+    from .m43 import guard_no_active
+    guard_no_active(db, project_id)
     imp, version = eligible_version(db, user.organization_id, payload.version_id)
     batch = db.scalar(select(ImportBatch).where(ImportBatch.project_id == project_id)
                       .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
