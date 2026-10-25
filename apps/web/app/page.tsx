@@ -2,6 +2,7 @@
 
 import {useCallback, useEffect, useState, type FormEvent} from "react";
 import MatchPanel from "./match-panel";
+import CorrectionPanel from "./correction-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
@@ -32,6 +33,7 @@ export default function Home() {
   const [mapping,setMapping] = useState<Record<string,string>>({description:"",quantity:"",unit:""});
   const [items,setItems] = useState<Row[]>([]); const [message,setMessage] = useState(""); const [error,setError] = useState("");
   const [busy,setBusy] = useState(false);
+  const [revisionTick,setRevisionTick] = useState(0);
   const loadProjects = useCallback(async (t:string) => {setProjects(await request<Project[]>("/api/projects",t));},[]);
   useEffect(()=>{const stored = sessionStorage.getItem("arkemx_dev_token"); if(stored){setToken(stored);loadProjects(stored).catch(()=>{sessionStorage.removeItem("arkemx_dev_token");setToken(null);});}},[loadProjects]);
   const handleError = (e:unknown)=>setError(e instanceof Error?e.message:"Beklenmeyen hata");
@@ -68,6 +70,7 @@ export default function Home() {
     const result = await request<{row_count:number;review_count:number}>(`/api/projects/${project}/imports`,token,"POST",uploadForm());
     setItems(await request<Row[]>(`/api/projects/${project}/items`,token));setPreview(null);setInspection(null);setFile(null);
     setMessage(`${result.row_count} metraj kalemi kaydedildi. ${result.review_count} kalem kontrol gerektiriyor.`);
+    setRevisionTick(v=>v+1);
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
   return <>
@@ -80,7 +83,7 @@ export default function Home() {
        <button disabled={busy}>{busy?"İşleniyor...":mode==="register"?"Pilot hesabı oluştur":"Giriş yap"}</button></form>
        <p className="notice">Bu sürüm yalnızca yerel pilot içindir. Gerçek müşteri dosyalarını internet üzerinden yüklemeyin; ticari dağıtım öncesinde oturum, depolama ve güvenlik kontrolleri tamamlanacaktır.</p>
        {error&&<div role="alert" className="error">{error}</div>}</div></main>:
-    <main className="page"><div className="hero"><div><h1>Proje ve metraj yönetimi</h1><p>İlk kilometre taşı: metrajı içeri al, incele, izlenebilir şekilde kaydet.</p></div><span className="tag">M2 · Poz eşleştirme pilotu</span></div>
+    <main className="page"><div className="hero"><div><h1>Proje ve metraj yönetimi</h1><p>İlk kilometre taşı: metrajı içeri al, incele, izlenebilir şekilde kaydet.</p></div><span className="tag">M2.1 · Akıllı metraj düzeltme</span></div>
       {message&&<div role="status" className="success">{message}</div>}{error&&<div role="alert" className="error">{error}</div>}
       <div className="grid"><aside className="stack"><section className="card"><h2>Projelerim</h2>{projects.length===0?<p>Henüz proje bulunmuyor.</p>:projects.map(p=><button key={p.id} className={`project ${project===p.id?"selected":""}`} onClick={()=>chooseProject(p.id)}>{p.name}</button>)}<form className="stack" onSubmit={createProject}><label>Yeni proje<input required minLength={2} value={projectName} onChange={e=>setProjectName(e.target.value)} placeholder="Proje adı"/></label><button disabled={busy}>Proje oluştur</button></form></section><section className="card"><h2>Veri güvenliği</h2><p className="hint">Dosyanın SHA-256 özeti, kaynak sayfası ve satır numarası kaydedilir. Poz katalogları lisans onayı bekler. Her proje firma sınırında izole edilir.</p></section></aside>
       <div className="stack">{!project?<section className="card empty">Soldan bir proje seçin veya yeni proje oluşturun.</section>:<>
@@ -90,9 +93,10 @@ export default function Home() {
           {inspection&&<><div className="fields"><label>Çalışma sayfası<select value={selectedSheet} onChange={e=>inspect(e.target.value)}>{inspection.sheets.map(sh=><option key={sh} value={sh}>{sh}</option>)}</select></label><label>Başlık satırı (1-30)<input type="number" min={1} max={30} value={headerRow} onChange={e=>setHeaderRow(Number(e.target.value))}/></label><button className="secondary" disabled={busy||headerRow<1||headerRow>30} onClick={()=>inspect(selectedSheet,headerRow)}>Başlıkları yenile</button></div><p className="hint">Sütun önerilerini kontrol edebilir, değiştirebilirsiniz.</p><div className="fields">{(["description","quantity","unit"] as const).map(field=><label key={field}>{({description:"İmalat açıklaması",quantity:"Miktar",unit:"Birim"})[field]}<select value={mapping[field]||""} onChange={e=>{setMapping({...mapping,[field]:e.target.value});setPreview(null);}}><option value="">Sütun seçin</option>{inspection.headers.map(h=><option key={h} value={h}>{h}</option>)}</select></label>)}</div><div className="flex"><button className="secondary" disabled={busy||!mapping.description||!mapping.quantity||!mapping.unit} onClick={previewRows}>2. Satırları önizle</button><button disabled={busy||!preview} onClick={importRows}>3. Metrajı kaydet</button></div></>}
         </section>
         {preview&&<section className="card stack"><h2>Dosya önizleme</h2><div className="flex"><div className="kpi"><b>{preview.row_count}</b><span>Toplam iş kalemi</span></div><div className="kpi"><b>{preview.review_count}</b><span>İnceleme gerektiren</span></div></div><Rows rows={preview.items}/><p className="hint">İlk 30 satır gösteriliyor. Tüm satırlar kaydetme sırasında yeniden doğrulanır.</p></section>}
-        <section className="card stack"><div className="flex between"><h2>Kaydedilmiş metraj kalemleri</h2><span className="tag">{items.length} görüntülenen</span></div>{items.length?<Rows rows={items}/>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
-        <MatchPanel token={token} project={project} refreshKey={items.length}/>
-      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.2 · M2 Sentetik Poz Eşleştirme Pilotu · Resmî birim fiyatlar dahil değildir.</p></main>}
+        <section className="card stack"><div className="flex between"><h2>Orijinal metraj kaydı (değiştirilemez)</h2><span className="tag">{items.length} görüntülenen</span></div>{items.length?<Rows rows={items}/>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
+        <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>
+        <MatchPanel token={token} project={project} refreshKey={revisionTick}/>
+      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.2.1 · M2.1 Revizyon Pilotu · Sentetik pozlar; resmî fiyatlar dahil değildir.</p></main>}
   </>;
 }
 

@@ -15,3 +15,7 @@ header{background:#11264b;color:#fff;padding:18px 26px;display:flex;justify-cont
 .match-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
 .match-check input{width:auto}
 .match-row strong{font-size:14px}
+
+.m21-editor{border:1px solid var(--border);background:#f8faff;padding:16px;border-radius:12px}
+.m21-editor input{max-width:100%}
+.m21-editor .notice{margin:2px 0}

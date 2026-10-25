@@ -16,9 +16,10 @@ from .database import get_db
 from .security import current_user
 from .models import (
     User, Project, ImportBatch, WorkItem, CatalogSource, CatalogVersion, CatalogPosition,
-    MatchRun, MatchCandidate, MatchDecision,
+    MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot,
 )
 from .matching import ALGORITHM, MAX_MATCH_ROWS, find_candidates
+from .revisions import effective_item, frozen_snapshot, previously_frozen, fingerprint
 
 router = APIRouter(prefix="/api", tags=["M2 Matching"])
 DEMO_INSTITUTION = "ARKEMX-SYNTHETIC-DEMO"
@@ -141,7 +142,9 @@ def generate_matches(project_id: str, payload: RunRequest, user: User = Depends(
     db.flush()
     count = 0
     for item in items:
-        candidates = find_candidates(item, positions, use_ollama=ollama_enabled)
+        current = effective_item(db, item)
+        db.add(frozen_snapshot(run.id, current))
+        candidates = find_candidates(current, positions, use_ollama=ollama_enabled)
         for index, entry in enumerate(candidates, start=1):
             db.add(MatchCandidate(
                 run_id=run.id, work_item_id=item.id, position_id=entry["position_id"],
@@ -193,18 +196,28 @@ def latest(project_id: str, user: User = Depends(current_user), db: Session = De
             "action": d.action, "candidate_id": d.candidate_id,
             "reason": d.reason, "decided_by": d.decided_by_id, "at": d.created_at,
         }
-    # Freeze the import snapshot; later uploads cannot alter old results.
+    # Old M2 runs have no frozen snapshots. They retain their original upload values.
+    frozen = {s.work_item_id: s for s in db.scalars(select(MatchRunItemSnapshot)
+              .where(MatchRunItemSnapshot.run_id == run.id)).all()}
     rows = db.scalars(select(WorkItem).where(WorkItem.import_id == run.import_id)
                       .order_by(WorkItem.source_row)).all()
+    current_import = db.scalar(select(ImportBatch).where(ImportBatch.project_id == project_id)
+                    .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
+    outdated_import = not current_import or current_import.id != run.import_id
     return {
         "run": {"id": run.id, "algorithm": run.algorithm, "row_count": run.row_count,
                 "candidate_count": run.candidate_count, "created_at": run.created_at,
                 "catalog_period": version.period, "source": source.institution,
-                "synthetic": True, "scores_are_probabilities": False},
+                "synthetic": True, "scores_are_probabilities": False,
+                "parent_run_id": run.parent_run_id,
+                "changed_item_count": run.changed_item_count,
+                "outdated_import": outdated_import},
         "items": [{"id": item.id, "source_row": item.source_row,
-                   "description": item.raw_description,
-                   "quantity": str(item.quantity) if item.quantity is not None else None,
-                   "unit": item.normalized_unit, "review_required": item.review_required,
+                   "description": frozen[item.id].description if item.id in frozen else item.raw_description,
+                   "quantity": str(frozen[item.id].quantity) if item.id in frozen and frozen[item.id].quantity is not None else (str(item.quantity) if item.id not in frozen and item.quantity is not None else None),
+                   "unit": frozen[item.id].unit if item.id in frozen else item.normalized_unit,
+                   "review_required": frozen[item.id].review_required if item.id in frozen else item.review_required,
+                   "stale": outdated_import or fingerprint(effective_item(db, item)) != previously_frozen(item, frozen.get(item.id)),
                    "candidates": by_item.get(item.id, []),
                    "decision": last_decision.get(item.id)} for item in rows]
     }
@@ -222,7 +235,14 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
     if candidate is None:
         raise HTTPException(404, "Candidate not found")
     item = db.get(WorkItem, candidate.work_item_id)
-    if payload.action == "approve" and (not candidate.approvable or item.review_required):
+    current_import = db.scalar(select(ImportBatch).where(ImportBatch.project_id == project_id)
+                    .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
+    snapshot = db.scalar(select(MatchRunItemSnapshot).where(
+        MatchRunItemSnapshot.run_id == run.id, MatchRunItemSnapshot.work_item_id == item.id))
+    stale = not current_import or current_import.id != run.import_id or (fingerprint(effective_item(db, item)) != previously_frozen(item, snapshot))
+    if payload.action == "approve" and stale:
+        raise HTTPException(409, "Metraj changed after this run; recompute before approval")
+    if payload.action == "approve" and (not candidate.approvable or (snapshot.review_required if snapshot else item.review_required)):
         raise HTTPException(409, "Candidate has unresolved technical or metraj warnings")
     db.add(MatchDecision(candidate_id=candidate.id, action=payload.action,
                          decided_by_id=user.id, reason=payload.reason))
