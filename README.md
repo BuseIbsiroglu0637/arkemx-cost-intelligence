@@ -2,6 +2,17 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M2 poz eşleştirme pilotu — yeni özellik
+
+M2, M1 metraj satırlarına **sadece sentetik DEMO- kodlarından** teknik filtreli aday önerileri, gerekçeler, zorunlu kontrol uyarıları ve insan onayı/red geçmişi ekler.
+
+- Branch: `feat/m2-ai-poz-eslestirme` (M1 dalını temel alır).
+- API klasöründe önce: `python -m alembic upgrade head`. **Eski yerel SQLite veritabanını silme!**
+- Web ve API'yi yeniden başlat; projeni seç ve **Sentetik katalogla poz önerilerini oluştur** butonuna bas.
+- Çevrimdışı lexical / metin benzerliği ücretsiz varsayılandır. İsteğe bağlı olarak çalışan yerel Ollama ile adayları yeniden sıralayabilirsin (`M2_OLLAMA_MODEL`).
+- Kod, fiyat veya kamu katalog içeriği uydurulmaz ve indirilmez. M2 **ticari kullanıma hazır değildir**.
+- Ayrıntılar ve test kapıları: [docs/M2_MATCHING.md](docs/M2_MATCHING.md).
+
 ## Quick start (free, local-first)
 
 Requirements: Python 3.11+, Node.js 20.9+, npm. PostgreSQL 16 optional; SQLite works for local evaluation. All data stays in your own environment. Never commit `.env`, database files or uploaded customer files.

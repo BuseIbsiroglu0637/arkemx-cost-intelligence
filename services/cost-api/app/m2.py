@@ -1,0 +1,231 @@
+"""M2 matching HTTP routes.
+
+Only a purpose-built synthetic catalog can be used in this pilot. Administrator
+source attestations from M1 are NOT equivalent to independent commercial rights.
+"""
+import hashlib
+import json
+import os
+from datetime import datetime, timezone
+from typing import Literal
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from .database import get_db
+from .security import current_user
+from .models import (
+    User, Project, ImportBatch, WorkItem, CatalogSource, CatalogVersion, CatalogPosition,
+    MatchRun, MatchCandidate, MatchDecision,
+)
+from .matching import ALGORITHM, MAX_MATCH_ROWS, find_candidates
+
+router = APIRouter(prefix="/api", tags=["M2 Matching"])
+DEMO_INSTITUTION = "ARKEMX-SYNTHETIC-DEMO"
+DEMO_SCOPE = "INTERNAL_DEMO_ONLY"
+DEMO_VERSION = "2026-M2-SYNTHETIC"
+DEMO_POSITIONS = (
+    ("DEMO-SER-60", "60 x 60 porselen seramik zemin kaplaması", "m²"),
+    ("DEMO-GAZ-10", "10 cm gazbeton duvar örülmesi", "m²"),
+    ("DEMO-BETON", "Hazır beton dökümü yerinde uygulama", "m³"),
+    ("DEMO-KAPI", "İç kapı montajı, adet", "adet"),
+    ("DEMO-BOYA", "İç duvar yüzeyleri boya işleri", "m²"),
+)
+
+
+class RunRequest(BaseModel):
+    use_local_ollama: bool = False
+
+
+class DecisionRequest(BaseModel):
+    run_id: str = Field(min_length=36, max_length=36)
+    candidate_id: str = Field(min_length=36, max_length=36)
+    action: Literal["approve", "reject"]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+def tenant_project(db: Session, user: User, project_id: str) -> Project:
+    project = db.scalar(select(Project).where(
+        Project.id == project_id, Project.organization_id == user.organization_id
+    ))
+    if project is None:
+        raise HTTPException(404, "Project not found")
+    return project
+
+
+def synthetic_version(db: Session, org_id: str):
+    source = db.scalar(select(CatalogSource).where(
+        CatalogSource.organization_id == org_id,
+        CatalogSource.institution == DEMO_INSTITUTION,
+        CatalogSource.permission_scope == DEMO_SCOPE,
+        CatalogSource.license_status == "verified",
+    ))
+    if source is None:
+        raise HTTPException(409, "First create the synthetic test catalog")
+    version = db.scalar(select(CatalogVersion).where(
+        CatalogVersion.source_id == source.id, CatalogVersion.period == DEMO_VERSION
+    ))
+    if version is None:
+        raise HTTPException(409, "Synthetic test catalog version missing")
+    return version
+
+
+@router.post("/m2/demo-catalog", status_code=201)
+def seed_demo(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if user.role != "admin":
+        raise HTTPException(403, "Admin required")
+    source = db.scalar(select(CatalogSource).where(
+        CatalogSource.organization_id == user.organization_id,
+        CatalogSource.institution == DEMO_INSTITUTION,
+        CatalogSource.permission_scope == DEMO_SCOPE,
+    ))
+    if source is None:
+        source = CatalogSource(
+            organization_id=user.organization_id, institution=DEMO_INSTITUTION,
+            source_url=None, license_status="verified",
+            permission_scope=DEMO_SCOPE,
+            license_evidence="ARKEMX-generated fictional test records, not official prices",
+            verified_by_id=user.id, verified_at=datetime.now(timezone.utc)
+        )
+        db.add(source)
+        db.flush()
+    version = db.scalar(select(CatalogVersion).where(
+        CatalogVersion.source_id == source.id, CatalogVersion.period == DEMO_VERSION
+    ))
+    if version is None:
+        canonical = json.dumps(DEMO_POSITIONS, ensure_ascii=False, separators=(",", ":"))
+        version = CatalogVersion(
+            source_id=source.id, year=2026, period=DEMO_VERSION,
+            sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        )
+        db.add(version)
+        db.flush()
+        for code, description, unit in DEMO_POSITIONS:
+            db.add(CatalogPosition(version_id=version.id, code=code,
+                                   description=description, unit=unit,
+                                   price=None, currency="TRY"))
+    db.commit()
+    return {"version_id": version.id, "source": DEMO_INSTITUTION,
+            "period": DEMO_VERSION, "synthetic": True, "position_count": len(DEMO_POSITIONS)}
+
+
+@router.post("/projects/{project_id}/m2/run", status_code=201)
+def generate_matches(project_id: str, payload: RunRequest, user: User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    tenant_project(db, user, project_id)
+    version = synthetic_version(db, user.organization_id)
+    # The exact marker prevents admin-attested/third-party catalogs from being
+    # silently used without a separate operator licence gate.
+    source = db.get(CatalogSource, version.source_id)
+    if source is None or source.institution != DEMO_INSTITUTION or source.permission_scope != DEMO_SCOPE:
+        raise HTTPException(403, "Unapproved catalog")
+    batch = db.scalar(select(ImportBatch).where(ImportBatch.project_id == project_id)
+                      .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
+    if not batch:
+        raise HTTPException(409, "Import a quantity takeoff before matching")
+    if batch.row_count > MAX_MATCH_ROWS:
+        raise HTTPException(422, f"M2 pilot can match at most {MAX_MATCH_ROWS} items per run")
+    items = db.scalars(select(WorkItem).where(WorkItem.import_id == batch.id)
+                       .order_by(WorkItem.source_row)).all()
+    positions = db.scalars(select(CatalogPosition).where(CatalogPosition.version_id == version.id)
+                           .order_by(CatalogPosition.code)).all()
+    if not positions:
+        raise HTTPException(409, "Catalog has no positions")
+    ollama_enabled = payload.use_local_ollama and bool(os.getenv("M2_OLLAMA_MODEL", "").strip())
+    run = MatchRun(
+        project_id=project_id, import_id=batch.id, version_id=version.id, created_by_id=user.id,
+        algorithm=ALGORITHM + ("+ollama-requested" if ollama_enabled else ""),
+        row_count=len(items), candidate_count=0
+    )
+    db.add(run)
+    db.flush()
+    count = 0
+    for item in items:
+        candidates = find_candidates(item, positions, use_ollama=ollama_enabled)
+        for index, entry in enumerate(candidates, start=1):
+            db.add(MatchCandidate(
+                run_id=run.id, work_item_id=item.id, position_id=entry["position_id"],
+                rank=index, similarity=entry["similarity"], approvable=entry["approvable"],
+                reasons_json=json.dumps(entry["reasons"], ensure_ascii=False),
+                warnings_json=json.dumps(entry["warnings"], ensure_ascii=False)
+            ))
+            count += 1
+    run.candidate_count = count
+    db.commit()
+    return {"id": run.id, "row_count": run.row_count, "candidate_count": count,
+            "version_id": version.id, "mode": run.algorithm,
+            "synthetic": True, "no_auto_approval": True}
+
+
+def latest_run(db: Session, project_id: str):
+    return db.scalar(select(MatchRun).where(MatchRun.project_id == project_id)
+                     .order_by(MatchRun.created_at.desc(), MatchRun.id.desc()))
+
+
+@router.get("/projects/{project_id}/m2/latest")
+def latest(project_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    tenant_project(db, user, project_id)
+    run = latest_run(db, project_id)
+    if run is None:
+        return {"run": None, "items": []}
+    version = db.get(CatalogVersion, run.version_id)
+    source = db.get(CatalogSource, version.source_id)
+    candidates = db.scalars(select(MatchCandidate).where(MatchCandidate.run_id == run.id)
+                            .order_by(MatchCandidate.rank)).all()
+    by_item = {}
+    for candidate in candidates:
+        pos = db.get(CatalogPosition, candidate.position_id)
+        by_item.setdefault(candidate.work_item_id, []).append({
+            "id": candidate.id, "rank": candidate.rank, "position_id": pos.id,
+            "code": pos.code, "description": pos.description, "unit": pos.unit,
+            "similarity": float(candidate.similarity),
+            "reasons": json.loads(candidate.reasons_json),
+            "warnings": json.loads(candidate.warnings_json),
+            "approvable": candidate.approvable,
+        })
+    decisions = db.scalars(select(MatchDecision).join(MatchCandidate)
+                           .where(MatchCandidate.run_id == run.id)
+                           .order_by(MatchDecision.created_at, MatchDecision.id)).all()
+    last_decision = {}
+    for d in decisions:
+        candidate = db.get(MatchCandidate, d.candidate_id)
+        last_decision[candidate.work_item_id] = {
+            "action": d.action, "candidate_id": d.candidate_id,
+            "reason": d.reason, "decided_by": d.decided_by_id, "at": d.created_at,
+        }
+    # Freeze the import snapshot; later uploads cannot alter old results.
+    rows = db.scalars(select(WorkItem).where(WorkItem.import_id == run.import_id)
+                      .order_by(WorkItem.source_row)).all()
+    return {
+        "run": {"id": run.id, "algorithm": run.algorithm, "row_count": run.row_count,
+                "candidate_count": run.candidate_count, "created_at": run.created_at,
+                "catalog_period": version.period, "source": source.institution,
+                "synthetic": True, "scores_are_probabilities": False},
+        "items": [{"id": item.id, "source_row": item.source_row,
+                   "description": item.raw_description,
+                   "quantity": str(item.quantity) if item.quantity is not None else None,
+                   "unit": item.normalized_unit, "review_required": item.review_required,
+                   "candidates": by_item.get(item.id, []),
+                   "decision": last_decision.get(item.id)} for item in rows]
+    }
+
+
+@router.post("/projects/{project_id}/m2/decisions", status_code=201)
+def decide(project_id: str, payload: DecisionRequest, user: User = Depends(current_user),
+           db: Session = Depends(get_db)):
+    tenant_project(db, user, project_id)
+    run = latest_run(db, project_id)
+    if run is None or run.id != payload.run_id:
+        raise HTTPException(409, "Decision must refer to the latest matching run")
+    candidate = db.scalar(select(MatchCandidate).where(
+        MatchCandidate.id == payload.candidate_id, MatchCandidate.run_id == run.id))
+    if candidate is None:
+        raise HTTPException(404, "Candidate not found")
+    item = db.get(WorkItem, candidate.work_item_id)
+    if payload.action == "approve" and (not candidate.approvable or item.review_required):
+        raise HTTPException(409, "Candidate has unresolved technical or metraj warnings")
+    db.add(MatchDecision(candidate_id=candidate.id, action=payload.action,
+                         decided_by_id=user.id, reason=payload.reason))
+    db.commit()
+    return {"candidate_id": candidate.id, "action": payload.action,
+            "approved_automatically": False}
