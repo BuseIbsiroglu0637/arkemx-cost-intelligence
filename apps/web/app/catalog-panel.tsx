@@ -35,6 +35,7 @@ export default function CatalogPanel({token,project,onMatch}:{token:string|null;
  const [preview,setPreview]=useState<Preview|null>(null);
  const [catalogs,setCatalogs]=useState<Catalog[]>([]);
  const [chosen,setChosen]=useState("");
+ const [legacyConfirmed,setLegacyConfirmed]=useState(false);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState("");const [message,setMessage]=useState("");
  useEffect(()=>{
@@ -136,9 +137,16 @@ export default function CatalogPanel({token,project,onMatch}:{token:string|null;
      <td><label><input type="radio" name="m3cat" checked={chosen===cat.version_id} onChange={()=>setChosen(cat.version_id)}
        disabled={!cat.approved}/>{cat.approved?"Seç":"Kilitli"}</label></td></tr>)}
     </tbody></table></div>}
-  <button disabled={busy||!chosen||!catalogs.find(cat=>cat.version_id===chosen)?.approved||!project} onClick={match}>
-   4. Onaylı katalogla poz eşleştir
-  </button>
+  <details className="legacy-tools">
+   <summary>Eski M3 eşleştirmesi (en fazla 100 satır) — yalnızca test</summary>
+   <p className="hint">Bu işlem klasik M3 test eşleştirmesi başlatır; 500 satırlık M4.3 toplu işlem değildir.
+    Mevcut tamamlanmış çalışmanızın yerine yeni bir çalışma oluşturabilir.
+    Güncel toplu işlem için M4.3 bölümünü kullanın.</p>
+   <label><input type="checkbox" checked={legacyConfirmed} onChange={e=>setLegacyConfirmed(e.target.checked)}/>
+    Eski M3 test eşleştirmesini bilerek başlatmak istiyorum.</label>
+   <button type="button" disabled={!legacyConfirmed||busy||!chosen||!catalogs.find(cat=>cat.version_id===chosen)?.approved||!project}
+    onClick={match}>Eski M3 test eşleştirmesini başlat</button>
+  </details>
   <p className="hint">Katalog izin belgesi yalnızca sunucu yöneticisi tarafından, yerel operatör komutuyla incelenip kayda alınır. DEMO katalogları M2'de kalır.</p>
  </section>;
 }

@@ -15,7 +15,7 @@ type Candidate={candidate_id:string;work_item_id:string;source_row:number;metraj
  code:string;position:string;rank:number;similarity:number;status:Status|"missing";
  stale:boolean;can_approve:boolean;last_decision:null|{action:string;at:string;reason:string|null}};
 type Queue={run:null|{id:string;catalog:string;year:number;period:string;
- rights_active:boolean;outdated_import:boolean;row_limit:number;catalog_position_limit:number;
+ rights_active:boolean;outdated_import:boolean;row_count:number;row_limit:number;catalog_position_limit:number;
  candidate_count:number};total:number;page:number;page_size:number;rows:Candidate[];
  summary:{statuses?:Record<string,number>;decisions?:Record<string,number>};message?:string};
 const BASE=process.env.NEXT_PUBLIC_API_URL??"http://127.0.0.1:8000";
@@ -35,8 +35,8 @@ const label:Record<string,string>={
 const badge=(status:string)=>`review-state review-${status}`;
 const display=(value:string|null)=>value??"Belirtilmemiş";
 const quote=(q:Quote)=>q?`“${q.excerpt}” (${q.start}–${q.end})`:"Kanıt gösterilmedi";
-export default function EngineerReviewPanel({token,project,refreshKey,onMatch}:{
- token:string|null;project:string;refreshKey:number;onMatch:()=>void
+export default function EngineerReviewPanel({token,project,refreshKey}:{
+ token:string|null;project:string;refreshKey:number
 }){
  const [status,setStatus]=useState<Status>("all");
  const [decision,setDecision]=useState<Decision>("all");
@@ -93,17 +93,6 @@ export default function EngineerReviewPanel({token,project,refreshKey,onMatch}:{
   }catch(err){setError(err instanceof Error?err.message:String(err));}
   finally{setBusy(false);}
  }
- async function create(){
-  if(!token||busy)return;
-  setBusy(true);setError("");setMessage("");
-  try{
-   const run=await api<{candidate_count:number}>(`/api/projects/${project}/m41/run`,token,"POST");
-   setSelected(null);setDetail(null);setPage(1);setRevision(v=>v+1);
-   onMatch();
-   setMessage(`Yeni M4.1 çalışması: ${run.candidate_count} aday; eski kararlar geçmişte korunur.`);
-  }catch(err){setError(err instanceof Error?err.message:String(err));}
-  finally{setBusy(false);}
- }
  function submitSearch(event:FormEvent<HTMLFormElement>){
   event.preventDefault();setPage(1);setSearch(draftSearch.trim());setSelected(null);setDetail(null);
  }
@@ -120,11 +109,13 @@ export default function EngineerReviewPanel({token,project,refreshKey,onMatch}:{
    <span className="tag">Mühendis çalışma masası</span>
   </div>
   <div className="review-top">
-   <p className="hint">Pilot: çalışma başına en fazla <strong>100 metraj satırı</strong>, katalogda <strong>500 poz</strong>.
-    Liste, adayları sunucudan sayfa sayfa getirir. 500 metraj satırı desteği henüz doğrulanmadı.</p>
-   <button type="button" onClick={create} disabled={!token||busy}>
-    {busy?"İşleniyor...":"Yeni kaynaklı karşılaştırma oluştur"}
-   </button>
+   <p className="hint">M4.2 yalnızca tamamlanan teknik karşılaştırmaları incelemek içindir.
+    Klasik M4.1 çalışmaları en fazla <strong>100 metraj satırı</strong>, M4.3 toplu çalışmaları en fazla
+    <strong> 500 metraj satırı</strong> destekler. Katalog sınırı <strong>500 poz</strong>;
+    adaylar sunucudan sayfa sayfa getirilir.
+    {queue?.run&&<> Bu çalışmada <strong>{queue.run.row_count} satır</strong> incelendi
+    (çalışma üst sınırı: {queue.run.row_limit}).</>}</p>
+   <a href="#m43-bulk-processing">Yeni toplu analiz için M4.3 bölümüne git</a>
   </div>
   {error&&<p role="alert" className="error">{error}</p>}
   {message&&<p role="status" className="success">{message}</p>}
@@ -191,7 +182,7 @@ export default function EngineerReviewPanel({token,project,refreshKey,onMatch}:{
     </div>
    </div>
   </>}
-  {queue?.run===null&&<div className="empty">M4.1 çalışması bulunamadı. Güncel M3 kataloğunu seçip önce eşleştirme oluşturun; ardından burada kaynaklı karşılaştırmayı başlatın.</div>}
+  {queue?.run===null&&<div className="empty">Henüz tamamlanmış teknik karşılaştırma bulunamadı. M4.3 bölümünde izinli kataloğu seçip toplu işi başlatın; sonuçlar tamamlanınca burada görünecek.</div>}
   {selected&&<div className="review-detail" id="engineer-detail" aria-label="Teknik kanıt ve mühendis kararı">
    <h3>Kanıt ve karar geçmişi</h3>
    {loadingDetail&&<p role="status">Kanıt yükleniyor...</p>}

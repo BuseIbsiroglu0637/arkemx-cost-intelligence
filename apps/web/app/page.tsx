@@ -102,7 +102,7 @@ export default function Home() {
         <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>
         <CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>
         <BulkPanel token={token} project={project} onCompleted={()=>setRevisionTick(v=>v+1)}/>
-        <EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
+        <EngineerReviewPanel token={token} project={project} refreshKey={revisionTick}/>
         <section className="legacy-tools">
           <button className="secondary" type="button" aria-expanded={showLegacy}
             onClick={()=>setShowLegacy(value=>!value)}>

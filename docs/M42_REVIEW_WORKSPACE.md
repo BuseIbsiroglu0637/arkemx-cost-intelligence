@@ -4,7 +4,7 @@
 
 ## Kapsam ve performans gerçeği
 
-- M4'te bir katalog **en fazla 500 poz**, bir eşleştirme çalışması **en fazla 100 metraj satırı** ile sınırlandırılmıştır. Her satırdan üç aday çıkabileceğinden inceleme kuyruğu mevcut pilotta en fazla yaklaşık 300 adaya ulaşır. **500 metraj satırı testi henüz yapılmadı.**
+- M4.2 artık yalnızca inceleme ekranıdır: klasik M4.1 çalışması en fazla **100 metraj satırı**, M4.3 toplu çalışma en fazla **500 metraj satırı** destekler; katalog limiti **500 poz**, metraj başına en fazla **3 aday**. 500 metraj / 500 poz sentetik test edildi. Gerçek resmi katalog doğrulaması hâlâ gerekli.
 - `GET /api/projects/{id}/m42/queue`: Aday düzeyinde **sunucu sayfalama** (10/20/50), teknik karar durumu, mühendis son kararı ve poz kodu/açıklaması/metraj metni araması; istatistikler filtrelerden bağımsızdır.
 - Kanıtlar topluca yüklenmez. Bir aday açılınca `GET /api/projects/{id}/m42/candidates/{candidate_id}` ile M4.1 kanıtı, SHA-256 kontrolü, alıntılar ve son 50 mühendis kararı getirilir.
 - Geçmiş, **aynı metraj kalemi ve aynı katalog poz kimliği** ile ilgili güncel ve eski çalışma kararlarını gösterir. Eski kararı yeni çalışma için geçerli onay saymaz.
@@ -41,7 +41,7 @@ npm run dev
 
 ## Kabul testleri
 
-1. `DEMO-2026-TEST` onaylı katalogla M3 eşleştir. M4.2'de `Yeni kaynaklı karşılaştırma oluştur`.
+1. M4.3 bölümünden lisans/izin onaylı katalogla toplu karşılaştırma başlat ve worker'ın tamamlamasını bekle. M4.2 bu tamamlanan çalışmanın sonuçlarını gösterir; burada yeni çalışma başlatan buton yoktur.
 2. Varsayılan kuyrukta aday sayıları, statüler, son kararlar, sayfa sayısı kontrolü.
 3. `review`, `blocked`, `compatible`, `undecided`, `approved`, `rejected` filtreleri ve poz kodu araması; her filtre için sadece seçilen adaylar gelmeli.
 4. **Kanıt ve karar** açıldığında doğrulanmış M4.1 ifade alıntıları ve hangi eski/güncel çalışmadan geldiğiyle karar geçmişi görünmeli.
@@ -53,4 +53,4 @@ npm run dev
 
 ## Ticari açılış öncesi eksikler
 
-Gerçek 500 metraj satırı hedefi için importer, eşleştirme motoru, arka plan işleme, indeksler, API limitleri ve yük testleri genişletilmelidir. Tanınan poz kataloglarının lisansları/izinleri, PostgreSQL, yedekleme, güvenlik testleri, mühendislik kalite ölçümü ve çok kullanıcılı izinler henüz ticari kabulden geçmemiştir.
+Sentetik 500 metraj × 500 katalog pozu geliştirici testinden geçmiştir; gerçek Windows performansı, lisanslı kataloglar ve üretim ölçeği hâlâ değerlendirilmelidir. Tanınan poz kataloglarının lisansları/izinleri, PostgreSQL, yedekleme, güvenlik testleri, mühendislik kalite ölçümü ve çok kullanıcılı izinler henüz ticari kabulden geçmemiştir.

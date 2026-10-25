@@ -183,6 +183,8 @@ def test_synthetic_volume_and_complete_safe_review(client,monkeypatch,rows):
                        params={"page_size":50,"page":1})
     assert listing.status_code==200,listing.text
     assert listing.json()["total"]==rows*3
+    assert listing.json()["run"]["row_count"] == rows
+    assert listing.json()["run"]["row_limit"] == 500
     assert len(listing.json()["rows"])==50
     assert listing.json()["summary"]["statuses"]["blocked"]==rows*2
     assert listing.json()["summary"]["statuses"]["compatible"]==rows

@@ -76,7 +76,7 @@ export default function BulkPanel({token,project,onCompleted}:{
   finally{setBusy(false);}
  }
  const active=job?.status==="queued"||job?.status==="running";
- return <section className="card stack" aria-label="M4.3 toplu metraj işleme">
+ return <section id="m43-bulk-processing" className="card stack" aria-label="M4.3 toplu metraj işleme">
   <div className="flex between"><div>
    <h2>M4.3 · Toplu metraj ve teknik karşılaştırma</h2>
    <p className="hint">500 satıra kadar metraj · kayıtlı ilerleme · kesintiden sonra kaldığı yerden devam</p>

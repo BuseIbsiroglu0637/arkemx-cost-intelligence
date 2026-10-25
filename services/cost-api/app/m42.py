@@ -1,8 +1,8 @@
 """M4.2 paginated candidate review queue, source evidence, and decision history.
 
 No new approval authority: writes go through M2's guarded decision endpoint.
-Pagination is on CANDIDATES, not imported work items; pilot still supports
-100 metraj rows per run and up to 500 catalog positions for M4 matching.
+Pagination is on CANDIDATES, not imported work items. Legacy M4.1 supports
+100 metraj rows; M4.3 bulk supports 500. Both allow 500 catalog positions.
 """
 import json
 from typing import Literal
@@ -162,7 +162,8 @@ def queue(project_id: str,
         "run": {"id": run.id, "algorithm": run.algorithm,
                 "catalog": source.institution, "year": version.year,
                 "period": version.period, "rights_active": rights_active,
-                "outdated_import": outdated, "row_limit": 100,
+                "outdated_import": outdated, "row_count": run.row_count,
+                "row_limit": 500 if run.algorithm == BULK_ALGORITHM else 100,
                 "catalog_position_limit": 500, "candidate_count": run.candidate_count},
         "page": page, "page_size": page_size, "total": total, "rows": rows,
         "summary": {
