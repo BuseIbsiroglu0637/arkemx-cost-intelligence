@@ -192,3 +192,44 @@ def test_synthetic_volume_and_complete_safe_review(client,monkeypatch,rows):
                    params={"status":"compatible","page_size":10}).json()["rows"][0]
     assert one["can_approve"] is True
     print(f"M43_VOLUME_METRIC rows={rows} candidates={rows*3} seconds={elapsed:.3f}")
+
+
+def test_pending_job_blocks_other_matching_routes(client,monkeypatch):
+    head,pid,catalog=fixture(client,monkeypatch,15,email="nointerleave43@example.com")
+    start=enqueue(client,head,pid,catalog)
+    assert start.status_code==202
+    assert client.post(f"/api/projects/{pid}/m41/run",headers=head).status_code==409
+    assert client.post(f"/api/projects/{pid}/m21/rematch",headers=head).status_code==409
+    assert client.post(f"/api/m3/projects/{pid}/run",headers=head,
+        json={"version_id":catalog["version_id"]}).status_code==409
+
+
+def test_500_metraj_x_500_catalog_positions(client,monkeypatch):
+    # A genuine licensed-gate-shaped, fictional fixture: no database mutation
+    # after approval and no official catalog data.
+    from time import perf_counter
+    head,pid,_old=fixture(client,monkeypatch,500,email="stress43@example.com")
+    synthetic=("Poz Kodu;Poz Tanımı;Birim\n"+
+        "".join(
+          f"P-{i:04d};Hazır beton döküm C25/30 nakliye dahildir özel {i:04d};m³\n"
+          for i in range(500)
+        )).encode("utf-8-sig")
+    staged=client.post("/api/m3/imports",headers=head,
+        data={"institution":"OTHER","year":"2026","period":"M43-STRESS500"},
+        files={"file":("stress500.csv",synthetic)})
+    assert staged.status_code==201,staged.text
+    catalog=staged.json()
+    grant(client,monkeypatch,catalog["id"])
+    started=perf_counter()
+    first=enqueue(client,head,pid,catalog)
+    assert first.status_code==202,first.text
+    job=first.json()
+    for _ in range(25):
+        assert step(client,job["id"])
+    elapsed=perf_counter()-started
+    done=status(client,head,pid,job["id"])
+    assert done["status"]=="completed"
+    assert done["processed_rows"]==500
+    assert done["candidate_count"]==1500
+    assert client.get(f"/api/projects/{pid}/m42/queue",headers=head).json()["total"]==1500
+    print(f"M43_STRESS rows=500 positions=500 seconds={elapsed:.3f}")

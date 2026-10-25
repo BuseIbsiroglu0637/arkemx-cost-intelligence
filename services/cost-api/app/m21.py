@@ -148,6 +148,8 @@ def correct_item(project_id: str, item_id: str, payload: RevisionRequest,
 def incremental_rematch(project_id: str, user: User = Depends(current_user),
                         db: Session = Depends(get_db)):
     project_or_404(db, project_id, user)
+    from .m43 import guard_no_active
+    guard_no_active(db, project_id)
     from .m2 import latest_run, DEMO_INSTITUTION, DEMO_SCOPE
     prior_run = latest_run(db, project_id)
     batch = latest_import(db, project_id)
