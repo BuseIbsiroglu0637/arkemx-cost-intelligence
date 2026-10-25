@@ -123,7 +123,7 @@ export default function Home() {
     "İş yok";
 
   return <>
-    <header><div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div><div className="flex"><span className="tag">M1 · Metraj Çekirdeği</span>{token&&<button onClick={logout}>Çıkış</button>}</div></header>
+    <header><div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div><div className="flex"><span className="tag">Cost Intelligence · Yerel Pilot</span>{token&&<button onClick={logout}>Çıkış</button>}</div></header>
     {!token ? <main className="page"><div className="auth card stack"><div><h1>Akıllı maliyetin temeli</h1><p>Metraj dosyanızı güvenli biçimde projeye alın, kaynağını ve kontrol gerektiren satırları görün.</p></div>
        <div className="flex"><button className={mode==="register"?"":"secondary"} onClick={()=>setMode("register")}>Hesap oluştur</button><button className={mode==="login"?"":"secondary"} onClick={()=>setMode("login")}>Giriş yap</button></div>
        <form className="stack" onSubmit={auth}>{mode==="register"&&<label>Firma / Ofis adı<input required minLength={2} value={org} onChange={e=>setOrg(e.target.value)} placeholder="Örn. Pilot Mühendislik"/></label>}

@@ -29,6 +29,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
  const [priceSource,setPriceSource]=useState("");
  const [search,setSearch]=useState("");
  const [page,setPage]=useState(1);
+ const [detailPage,setDetailPage]=useState(1);
  const [error,setError]=useState("");
  const [blocked,setBlocked]=useState("");
  const [notice,setNotice]=useState("");
@@ -75,6 +76,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
     lines:selected.map(id=>({candidate_id:id,unit_price:prices[id],price_source:priceSource.trim()}))
    });
    setHistory(await request<Estimate[]>("/api/projects/"+project+"/m5/estimates",token));
+   setDetailPage(1);
    setDetail(await request<Detail>("/api/projects/"+project+"/m5/estimates/"+e.id,token));
    setChosen({});
    setNotice("Taslak kaydedildi. Nihai teklif veya otomatik mühendis onayı oluşturulmadı.");
@@ -84,7 +86,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
  async function show(id:string){
   if(!token)return;
   setBusy(true);setError("");
-  try{setDetail(await request<Detail>("/api/projects/"+project+"/m5/estimates/"+id,token));}
+  try{setDetailPage(1);setDetail(await request<Detail>("/api/projects/"+project+"/m5/estimates/"+id,token));}
   catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  }
@@ -171,10 +173,16 @@ export default function CostPanel({token,project}:{token:string|null;project:str
     </div>
     <strong className="amount">{detail.total} TRY</strong>
     <div className="table-scroll"><table><thead><tr><th>Satır</th><th>Poz</th><th>Miktar</th><th>Birim fiyat</th><th>Tutar</th></tr></thead>
-     <tbody>{detail.lines.map((line,i)=><tr key={i}>
+     <tbody>{detail.lines.slice((detailPage-1)*20,detailPage*20).map((line,i)=><tr key={i}>
       <td>{line.source_row}</td><td>{line.position_code}<div className="hint">{line.description}</div></td>
       <td>{line.quantity} {line.unit}</td><td>{line.unit_price} ₺</td><td>{line.amount} ₺</td>
      </tr>)}</tbody></table></div>
+    {detail.lines.length>20&&<div className="flex between">
+      <button type="button" className="secondary" disabled={detailPage<=1} onClick={()=>setDetailPage(n=>n-1)}>Önceki</button>
+      <span className="hint">Taslak satırları · Sayfa {detailPage}/{Math.ceil(detail.lines.length/20)}</span>
+      <button type="button" className="secondary" disabled={detailPage>=Math.ceil(detail.lines.length/20)}
+        onClick={()=>setDetailPage(n=>n+1)}>Sonraki</button>
+    </div>}
     <p className="hint">Taslak SHA-256: <code>{detail.snapshot_sha256}</code></p>
    </div>}
   </div>
