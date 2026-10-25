@@ -104,3 +104,40 @@ class CatalogPosition(Base):
     unit: Mapped[str] = mapped_column(String(30), nullable=False)
     price: Mapped[float | None] = mapped_column(Numeric(18, 4))
     currency: Mapped[str] = mapped_column(String(3), default="TRY", nullable=False)
+
+
+class MatchRun(Base):
+    __tablename__ = "match_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
+    version_id: Mapped[str] = mapped_column(ForeignKey("catalog_versions.id"), nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    algorithm: Mapped[str] = mapped_column(String(80), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class MatchCandidate(Base):
+    __tablename__ = "match_candidates"
+    __table_args__ = (UniqueConstraint("run_id", "work_item_id", "rank", name="uq_match_rank"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    run_id: Mapped[str] = mapped_column(ForeignKey("match_runs.id"), index=True, nullable=False)
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True, nullable=False)
+    position_id: Mapped[str] = mapped_column(ForeignKey("catalog_positions.id"), nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    similarity: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
+    reasons_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    approvable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class MatchDecision(Base):
+    __tablename__ = "match_decisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    candidate_id: Mapped[str] = mapped_column(ForeignKey("match_candidates.id"), index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    decided_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)

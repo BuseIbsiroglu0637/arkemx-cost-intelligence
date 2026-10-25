@@ -1,6 +1,7 @@
 "use client";
 
 import {useCallback, useEffect, useState, type FormEvent} from "react";
+import MatchPanel from "./match-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
@@ -79,7 +80,7 @@ export default function Home() {
        <button disabled={busy}>{busy?"İşleniyor...":mode==="register"?"Pilot hesabı oluştur":"Giriş yap"}</button></form>
        <p className="notice">Bu sürüm yalnızca yerel pilot içindir. Gerçek müşteri dosyalarını internet üzerinden yüklemeyin; ticari dağıtım öncesinde oturum, depolama ve güvenlik kontrolleri tamamlanacaktır.</p>
        {error&&<div role="alert" className="error">{error}</div>}</div></main>:
-    <main className="page"><div className="hero"><div><h1>Proje ve metraj yönetimi</h1><p>İlk kilometre taşı: metrajı içeri al, incele, izlenebilir şekilde kaydet.</p></div><span className="tag">AI poz eşleştirme · Bir sonraki sprint</span></div>
+    <main className="page"><div className="hero"><div><h1>Proje ve metraj yönetimi</h1><p>İlk kilometre taşı: metrajı içeri al, incele, izlenebilir şekilde kaydet.</p></div><span className="tag">M2 · Poz eşleştirme pilotu</span></div>
       {message&&<div role="status" className="success">{message}</div>}{error&&<div role="alert" className="error">{error}</div>}
       <div className="grid"><aside className="stack"><section className="card"><h2>Projelerim</h2>{projects.length===0?<p>Henüz proje bulunmuyor.</p>:projects.map(p=><button key={p.id} className={`project ${project===p.id?"selected":""}`} onClick={()=>chooseProject(p.id)}>{p.name}</button>)}<form className="stack" onSubmit={createProject}><label>Yeni proje<input required minLength={2} value={projectName} onChange={e=>setProjectName(e.target.value)} placeholder="Proje adı"/></label><button disabled={busy}>Proje oluştur</button></form></section><section className="card"><h2>Veri güvenliği</h2><p className="hint">Dosyanın SHA-256 özeti, kaynak sayfası ve satır numarası kaydedilir. Poz katalogları lisans onayı bekler. Her proje firma sınırında izole edilir.</p></section></aside>
       <div className="stack">{!project?<section className="card empty">Soldan bir proje seçin veya yeni proje oluşturun.</section>:<>
@@ -90,7 +91,8 @@ export default function Home() {
         </section>
         {preview&&<section className="card stack"><h2>Dosya önizleme</h2><div className="flex"><div className="kpi"><b>{preview.row_count}</b><span>Toplam iş kalemi</span></div><div className="kpi"><b>{preview.review_count}</b><span>İnceleme gerektiren</span></div></div><Rows rows={preview.items}/><p className="hint">İlk 30 satır gösteriliyor. Tüm satırlar kaydetme sırasında yeniden doğrulanır.</p></section>}
         <section className="card stack"><div className="flex between"><h2>Kaydedilmiş metraj kalemleri</h2><span className="tag">{items.length} görüntülenen</span></div>{items.length?<Rows rows={items}/>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
-      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.1 · M1 Pilot · Kamu pozları veya resmî birim fiyatlar bu sürüme dahil değildir.</p></main>}
+        <MatchPanel token={token} project={project} refreshKey={items.length}/>
+      </>}</div></div><p className="hint" style={{marginTop:30}}>ARKEMX Cost Intelligence v0.2 · M2 Sentetik Poz Eşleştirme Pilotu · Resmî birim fiyatlar dahil değildir.</p></main>}
   </>;
 }
 

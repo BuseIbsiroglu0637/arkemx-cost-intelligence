@@ -270,3 +270,8 @@ def verify_source(source_id: str, payload: VerifySourceRequest,
     source.verified_at = datetime.now(timezone.utc)
     db.commit()
     return source_view(source)
+
+
+# M2 routes are separated to keep M1 Excel import unchanged.
+from .m2 import router as m2_router
+app.include_router(m2_router)
