@@ -213,3 +213,14 @@ class CatalogReviewEvent(Base):
     catalog_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class TechnicalComparison(Base):
+    """Immutable M4 candidate evidence generated at match-run creation."""
+    __tablename__ = "technical_comparisons"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    candidate_id: Mapped[str] = mapped_column(ForeignKey("match_candidates.id"), unique=True, index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    report_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)

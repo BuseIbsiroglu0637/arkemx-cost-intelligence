@@ -244,6 +244,14 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
     if candidate is None:
         raise HTTPException(404, "Candidate not found")
     item = db.get(WorkItem, candidate.work_item_id)
+    # M4 reports are immutable evidence. A new approval must pass its original
+    # technical gate; historical M2/M3 decisions are not rewritten.
+    if payload.action == "approve" and run.algorithm == "technical-rules-v0.1":
+        from .models import TechnicalComparison
+        report = db.scalar(select(TechnicalComparison).where(
+            TechnicalComparison.candidate_id == candidate.id))
+        if report is None or report.status != "compatible":
+            raise HTTPException(409, "Technical comparison blocks approval; inspect M4 report")
     version = db.get(CatalogVersion, run.version_id)
     source = db.get(CatalogSource, version.source_id)
     if payload.action == "approve" and source.institution != DEMO_INSTITUTION:

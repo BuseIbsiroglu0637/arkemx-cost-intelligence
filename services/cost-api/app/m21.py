@@ -153,6 +153,8 @@ def incremental_rematch(project_id: str, user: User = Depends(current_user),
     batch = latest_import(db, project_id)
     if prior_run is None or batch is None or prior_run.import_id != batch.id:
         raise HTTPException(409, "First run full M2 matching for the current import")
+    if prior_run.algorithm == "technical-rules-v0.1":
+        raise HTTPException(409, "After M4 analysis, rerun M4 for revised metraj; prior technical evidence cannot be copied")
     if batch.row_count > MAX_MATCH_ROWS:
         raise HTTPException(422, "M2 pilot limit exceeded")
     version = db.get(CatalogVersion, prior_run.version_id)
