@@ -216,7 +216,8 @@ def get_estimate(project_id: str, estimate_id: str, user: User = Depends(current
             not _verify_legacy_price_scales(canonical, estimate.snapshot_sha256)):
         raise HTTPException(409, "Maliyet taslagi hesap veya kanit butunlugu bozulmus")
     return {**_estimate_view(estimate), "lines": [
-        {"source_row": line.source_row, "description": line.description,
+        {"candidate_id": line.candidate_id, "work_item_id": line.work_item_id,
+         "source_row": line.source_row, "description": line.description,
          "position_code": line.position_code, "unit": line.unit,
          "quantity": str(line.quantity), "unit_price": str(line.unit_price),
          "amount": str(line.amount), "price_source": line.price_source,
