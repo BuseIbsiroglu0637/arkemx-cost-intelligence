@@ -304,3 +304,7 @@ app.include_router(m43_router)
 # M5 locally priced draft cost snapshots (not official tariffs or final offers)
 from .m5 import router as m5_router
 app.include_router(m5_router)
+
+# M5.1 read-only saved-draft comparisons and non-persistent revision simulations
+from .m51 import router as m51_router
+app.include_router(m51_router)
