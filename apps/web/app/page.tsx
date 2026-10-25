@@ -7,9 +7,10 @@ import CatalogPanel from "./catalog-panel";
 import TechnicalPanel from "./technical-panel";
 import EngineerReviewPanel from "./engineer-review-panel";
 import BulkPanel from "./bulk-panel";
+import CostPanel from "./cost-panel";
 
 type Project = {id: string; name: string; created_at: string};
-type Tab = "overview"|"metraj"|"catalog"|"bulk"|"review";
+type Tab = "overview"|"metraj"|"catalog"|"bulk"|"review"|"cost";
 type JobSummary = {status:string;total_rows:number;processed_rows:number;candidate_count:number};
 type QueueSummary = {run:null|{row_count:number;candidate_count:number};summary?:{decisions?:Record<string,number>}};
 const tabs: {id:Tab;title:string;subtitle:string}[] = [
@@ -18,6 +19,7 @@ const tabs: {id:Tab;title:string;subtitle:string}[] = [
  {id:"catalog",title:"Kataloglar",subtitle:"M3"},
  {id:"bulk",title:"Toplu Analiz",subtitle:"M4.3"},
  {id:"review",title:"Mühendis İnceleme",subtitle:"M4.2"},
+ {id:"cost",title:"Maliyet",subtitle:"M5.0"},
 ];
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
 type Inspection = {headers: string[]; mapping: Record<string, string|null>; sheets: string[]; selected_sheet: string; header_row: number};
@@ -218,7 +220,8 @@ export default function Home() {
        </div>:
        tab==="catalog"?<CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>:
        tab==="bulk"?<BulkPanel token={token} project={project} onCompleted={()=>setRevisionTick(v=>v+1)}/>:
-       <EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>}
+       tab==="review"?<EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>:
+       <CostPanel token={token} project={project}/>}
       </div>
       <p className="hint workspace-footer">ARKEMX Cost Intelligence v0.4.3 · Yerel pilot · 500 metraj satırı · İnsan onayı zorunludur.</p>
     </main>}

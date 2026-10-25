@@ -76,3 +76,18 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
  .workspace-status{gap:6px 12px}
 }
 @media(max-width:450px){.workspace-kpis{grid-template-columns:1fr 1fr}.workspace-status span{font-size:11px}.workspace-project-select{min-width:100%}}
+
+/* M5.0 draft-cost workspace */
+.cost-panel{display:grid;gap:16px}
+.cost-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.cost-toolbar label{flex:1;min-width:240px}
+.cost-note{padding:12px 14px;background:#fff9eb;color:#79591d;border-left:3px solid #db9b23;font-size:13px}
+.cost-selection{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.cost-table td:nth-child(2){min-width:240px}
+.cost-table input[type="checkbox"]{width:auto}
+.cost-price{width:135px;max-width:100%}
+.cost-drafts{display:grid;gap:10px}
+.cost-result{display:grid;gap:10px;padding:15px;background:#f7f9fd;border:1px solid var(--border);border-radius:12px}
+.cost-result strong.amount{font-size:26px;color:var(--blue)}
+.cost-drafts .flex{border-bottom:1px solid var(--border);padding:8px 0}
+@media(max-width:600px){.cost-toolbar label{min-width:100%}}
