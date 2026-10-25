@@ -7,12 +7,13 @@ type Candidate = {
 };
 type MatchedItem = {
   id: string; source_row: number; description: string; quantity: string|null; unit: string|null;
-  review_required: boolean; candidates: Candidate[];
+  review_required: boolean; stale?: boolean; candidates: Candidate[];
   decision: {action:string;candidate_id:string;reason?:string|null}|null
 };
 type Latest = {run: null|{
   id:string; row_count:number; candidate_count:number; algorithm:string;
-  catalog_period:string; source:string; synthetic:boolean; scores_are_probabilities:boolean
+  catalog_period:string; source:string; synthetic:boolean; scores_are_probabilities:boolean;
+  parent_run_id?:string|null;changed_item_count?:number;outdated_import?:boolean
 }; items: MatchedItem[]};
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -81,12 +82,14 @@ export default function MatchPanel({token,project,refreshKey}:{token:string|null
     {result?.run&&<div className="flex">
       <div className="kpi"><b>{result.run.row_count}</b><span>İncelenen kalem</span></div>
       <div className="kpi"><b>{result.run.candidate_count}</b><span>Poz adayı</span></div>
-      <div className="kpi"><b>{result.items.filter(item=>item.decision?.action==="approve").length}</b><span>Mühendis onaylı</span></div>
+      <div className="kpi"><b>{result.items.filter(item=>!item.stale&&item.decision?.action==="approve").length}</b><span>Mühendis onaylı</span></div>
       <p className="hint">Katalog: {result.run.catalog_period} · Motor: {result.run.algorithm}</p>
+      {result.run.parent_run_id&&<p className="hint">Yeni eşleştirmede {result.run.changed_item_count} kalem yeniden hesaplandı. Önceki onaylar otomatik taşınmadı.</p>}
     </div>}
     {result?.run&&result.items.map(item=><article key={item.id} className="match-row">
       <div className="flex between"><strong>#{item.source_row} · {item.description}</strong>
-        {item.review_required&&<span className="warning">Metraj kontrolü gerekli</span>}</div>
+        {item.review_required&&<span className="warning">Metraj kontrolü gerekli</span>}
+        {item.stale&&<span className="warning">Eski hesaplama: yeniden eşleştir</span>}</div>
       <p className="hint">Miktar: {item.quantity??"belirsiz"} · Birim: {item.unit??"belirsiz"}</p>
       {item.candidates.length===0&&<p className="warning">Uygun katalog adayı bulunamadı. Poz uydurulmadı.</p>}
       {item.candidates.map(candidate=><div className="match-candidate" key={candidate.id}>
@@ -95,10 +98,10 @@ export default function MatchPanel({token,project,refreshKey}:{token:string|null
         <p className="hint">{candidate.unit} · {candidate.reasons.join(" · ")}</p>
         {!!candidate.warnings.length&&<p className="warning">Kontrol: {candidate.warnings.join(", ")}</p>}
         <div className="flex">
-          <button disabled={busy||!candidate.approvable} onClick={()=>decide(candidate,"approve")}>Mühendis onayı</button>
+          <button disabled={busy||!candidate.approvable||!!item.stale} onClick={()=>decide(candidate,"approve")}>Mühendis onayı</button>
           <button disabled={busy} className="secondary" onClick={()=>decide(candidate,"reject")}>Reddet</button>
           {item.decision?.candidate_id===candidate.id&&<span className="tag">
-            Son karar: {item.decision.action==="approve"?"Onaylandı":"Reddedildi"}</span>}
+            {item.stale?"Tarihî karar (güncel değil): ":"Son karar: "}{item.decision.action==="approve"?"Onaylandı":"Reddedildi"}</span>}
         </div>
       </div>)}
     </article>)}

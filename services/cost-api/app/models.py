@@ -112,6 +112,8 @@ class MatchRun(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
     import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
     version_id: Mapped[str] = mapped_column(ForeignKey("catalog_versions.id"), nullable=False)
+    parent_run_id: Mapped[str | None] = mapped_column(ForeignKey("match_runs.id"), nullable=True)
+    changed_item_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     algorithm: Mapped[str] = mapped_column(String(80), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -141,3 +143,32 @@ class MatchDecision(Base):
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     decided_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class WorkItemRevision(Base):
+    """Append-only expert corrections; original uploaded WorkItem is immutable."""
+    __tablename__ = "work_item_revisions"
+    __table_args__ = (UniqueConstraint("work_item_id", "revision", name="uq_item_revision"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    corrected_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class MatchRunItemSnapshot(Base):
+    """Frozen effective item at match time; later corrections cannot rewrite history."""
+    __tablename__ = "match_run_item_snapshots"
+    __table_args__ = (UniqueConstraint("run_id", "work_item_id", name="uq_run_item_snapshot"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    run_id: Mapped[str] = mapped_column(ForeignKey("match_runs.id"), index=True, nullable=False)
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True, nullable=False)
+    revision_id: Mapped[str | None] = mapped_column(ForeignKey("work_item_revisions.id"), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    review_required: Mapped[bool] = mapped_column(Boolean, nullable=False)

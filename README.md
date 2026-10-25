@@ -2,6 +2,17 @@
 
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
+## M2.1 — Akıllı Metraj Düzeltme (yeni)
+
+- Ayrı geliştirme dalı: `feat/m2-1-metraj-revizyon`; bu dal M2'yi temel alır.
+- Orijinal Excel ve ilk metraj satırları değişmeden kalır; her düzeltme gerekçeli ve sürümlüdür.
+- Belirsiz miktarlar kendiliğinden düzeltilmez. Kullanıcı açık, geçerli miktar ve birimi girer.
+- **Değişen kalemleri yeniden eşleştir** yalnızca güncellenmiş satırları yeniden hesaplar, değişmeyen adayları kopyalar.
+- Önceki poz onayları eski run'da tutulur; **yeni run için yeniden mühendis onayı gerekir**.
+- Eski API/Web sunucularını durdurduktan sonra dalı indir, `python -m alembic upgrade head` yap ve yeniden başlat.
+- Test adımları: [M2.1 revizyon rehberi](docs/M21_REVISIONS.md).
+- **Mevcut SQLite veritabanını silme.** Bu geliştirici pilotu ticari kullanım için hazır değildir.
+
 ## M2 poz eşleştirme pilotu — yeni özellik
 
 M2, M1 metraj satırlarına **sadece sentetik DEMO- kodlarından** teknik filtreli aday önerileri, gerekçeler, zorunlu kontrol uyarıları ve insan onayı/red geçmişi ekler.
