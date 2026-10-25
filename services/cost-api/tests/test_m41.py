@@ -180,3 +180,15 @@ def test_m41_tenant_isolation_and_revocation(client, monkeypatch):
     blocked = client.post(f"/api/projects/{pid}/m2/decisions", headers=a,
         json={"run_id": run.json()["id"], "candidate_id": good["id"], "action": "approve"})
     assert blocked.status_code == 403
+
+
+def test_qualifier_for_adjacent_scope_item_is_not_attributed_to_first():
+    evidence = analyze(
+        "Hazır beton döküm C25/30 nakliye işçilik dahildir", "m³",
+        "Hazır beton döküm C25/30 nakliye işçilik dahildir", "m³")
+    scope_nakliye = next(c for c in evidence["checks"] if c["key"] == "scope_nakliye")
+    scope_iscilik = next(c for c in evidence["checks"] if c["key"] == "scope_iscilik")
+    assert scope_nakliye["status"] == "review"
+    assert scope_iscilik["status"] == "match"
+    assert "SCOPE_NAKLIYE_AMBIGUOUS" in evidence["review_flags"]
+    assert evidence["approval_allowed"] is False

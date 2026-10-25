@@ -54,7 +54,19 @@ def _scope(text: str, keyword: str):
     matches = list(re.finditer(r"\b" + keyword + r"\b", text))
     found = []
     for match in matches:
-        fragment = text[match.start():match.end() + 38]
+        # Stop at punctuation or another scope keyword: a qualifier for
+        # "işçilik" cannot silently become a claim about preceding "nakliye".
+        tail = text[match.end():]
+        separator = re.search(r"[,;.]", tail)
+        next_scope = re.search(
+            r"\b(?:nakliye|tasima|iscilik|malzeme|montaj|kurulum|yardimci imalat|yardimci isler)\b",
+            tail)
+        limit = min(
+            38,
+            separator.start() if separator else len(tail),
+            next_scope.start() if next_scope else len(tail),
+        )
+        fragment = text[match.start():match.end() + limit]
         negated = re.search(r"\bdahil degildir\b|\bharictir\b|\bharic\b|\bkapsamaz\b", fragment)
         positive = INCLUDE.search(fragment)
         if negated and (not positive or negated.start() <= positive.start()):
