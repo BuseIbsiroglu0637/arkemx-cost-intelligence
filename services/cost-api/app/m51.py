@@ -4,6 +4,7 @@ No catalog price ingestion; every source is an already verified M5 manual-price
 snapshot. Existing M1/M2.1 metraj and M4 engineer decisions are never mutated.
 """
 from decimal import Decimal
+from hashlib import sha256
 from collections import Counter
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -131,9 +132,10 @@ def _technical_scope(db: Session, line, estimate: CostEstimate):
             not item or item.import_id != estimate.import_id or
             not candidate or candidate.run_id != estimate.run_id or
             candidate.work_item_id != line.work_item_id or
-            candidate.position_id != line.position_id or
-            not evidence or evidence.evidence_sha256 != line.evidence_sha256):
+            candidate.position_id != line.position_id or not evidence):
         return None
+    if evidence.evidence_sha256 != line.evidence_sha256:
+        raise HTTPException(409, "Historical technical evidence SHA differs from cost snapshot")
     proof = _proof(evidence)  # Fails closed with HTTP409 on evidence corruption
     if not proof or proof.get("status") != "compatible" or not proof.get("approval_allowed"):
         return None
@@ -143,7 +145,16 @@ def _technical_scope(db: Session, line, estimate: CostEstimate):
             not isinstance(sources.get("metraj"), dict) or
             not isinstance(sources.get("catalog"), dict) or
             sources["metraj"].get("normalized_text") != normalized(line.description) or
+            sources["catalog"].get("normalized_text") != normalized(position.description) or
+            sources["catalog"].get("sha256") != sha256(position.description.encode("utf-8")).hexdigest() or
+            not isinstance(refs.get("metraj"), dict) or
+            refs["metraj"].get("import_id") != estimate.import_id or
+            refs["metraj"].get("import_sha256") != estimate.source_file_sha256 or
+            refs["metraj"].get("work_item_id") != line.work_item_id or
+            refs["metraj"].get("source_row") != line.source_row or
             not isinstance(refs.get("catalog"), dict) or
+            refs["catalog"].get("position_id") != line.position_id or
+            refs["catalog"].get("version_id") != estimate.version_id or
             refs["catalog"].get("position_code") != line.position_code or
             refs["catalog"].get("version_sha256") != estimate.catalog_sha256):
         return None
