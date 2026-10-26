@@ -108,7 +108,42 @@ def _cross_key(line):
             line.unit)
 
 
-def _technical_scope(db: Session, line, estimate: CostEstimate):
+def _load_many(db: Session, model, ids, key="id"):
+    """Batch read; SQLite builds with a 999-bind limit remain supported."""
+    ids = list(set(value for value in ids if value))
+    found = {}
+    column = getattr(model, key)
+    for start in range(0, len(ids), 400):
+        records = db.scalars(select(model).where(column.in_(ids[start:start + 400]))).all()
+        for record in records:
+            uid = getattr(record, key)
+            if uid in found:
+                raise HTTPException(409, "Duplicate historical source evidence detected")
+            found[uid] = record
+    return found
+
+
+def _preload_lineage(db: Session, old_estimate, new_estimate, pair_rows):
+    """Load 500-line history in bounded queries rather than one SELECT per line.
+
+    The cache lives only in this comparison call and is never persisted.
+    Every technical SHA and source reference is still checked independently.
+    """
+    lines = [line for a, b in pair_rows for line in (a, b)]
+    return {
+        "imports": _load_many(db, ImportBatch,
+                              (old_estimate.import_id, new_estimate.import_id)),
+        "versions": _load_many(db, CatalogVersion,
+                               (old_estimate.version_id, new_estimate.version_id)),
+        "positions": _load_many(db, CatalogPosition, (x.position_id for x in lines)),
+        "items": _load_many(db, WorkItem, (x.work_item_id for x in lines)),
+        "candidates": _load_many(db, MatchCandidate, (x.candidate_id for x in lines)),
+        "evidence": _load_many(db, TechnicalEvidence,
+                               (x.candidate_id for x in lines), "candidate_id")
+    }
+
+
+def _technical_scope(db: Session, line, estimate: CostEstimate, preload=None):
     """Verify both historical evidence objects, not merely their SHA labels.
 
     Imported Excel SHA, catalog identity and candidate lineage must agree.
@@ -117,13 +152,21 @@ def _technical_scope(db: Session, line, estimate: CostEstimate):
     """
     if not line.position_id or not line.candidate_id:
         return None
-    imported = db.get(ImportBatch, estimate.import_id)
-    version = db.get(CatalogVersion, estimate.version_id)
-    position = db.get(CatalogPosition, line.position_id)
-    item = db.get(WorkItem, line.work_item_id)
-    candidate = db.get(MatchCandidate, line.candidate_id)
-    evidence = db.scalar(select(TechnicalEvidence).where(
-        TechnicalEvidence.candidate_id == line.candidate_id))
+    if preload is None:
+        imported = db.get(ImportBatch, estimate.import_id)
+        version = db.get(CatalogVersion, estimate.version_id)
+        position = db.get(CatalogPosition, line.position_id)
+        item = db.get(WorkItem, line.work_item_id)
+        candidate = db.get(MatchCandidate, line.candidate_id)
+        evidence = db.scalar(select(TechnicalEvidence).where(
+            TechnicalEvidence.candidate_id == line.candidate_id))
+    else:
+        imported = preload["imports"].get(estimate.import_id)
+        version = preload["versions"].get(estimate.version_id)
+        position = preload["positions"].get(line.position_id)
+        item = preload["items"].get(line.work_item_id)
+        candidate = preload["candidates"].get(line.candidate_id)
+        evidence = preload["evidence"].get(line.candidate_id)
     if (not imported or imported.project_id != estimate.project_id or
             imported.sha256 != estimate.source_file_sha256 or
             not version or version.sha256 != estimate.catalog_sha256 or
@@ -198,13 +241,19 @@ def _cross_pairs(db: Session, baseline_estimate, target_estimate,
     for row in new_rows:
         if row.work_item_id not in old_map:
             new_candidates[_cross_key(row)] = row
+    possible = []
     for key in old_candidates.keys() & new_candidates.keys():
         a, b = old_candidates[key], new_candidates[key]
         if old_count[key] != 1 or new_count[key] != 1:
             warnings.add(key)
             continue
-        left = _technical_scope(db, a, baseline_estimate)
-        right = _technical_scope(db, b, target_estimate)
+        possible.append((key, a, b))
+    preload = (_preload_lineage(db, baseline_estimate, target_estimate,
+                               [(a, b) for _, a, b in possible])
+               if db is not None and possible else None)
+    for key, a, b in possible:
+        left = _technical_scope(db, a, baseline_estimate, preload)
+        right = _technical_scope(db, b, target_estimate, preload)
         if left is None or right is None or left != right:
             warnings.add(key)
             continue
