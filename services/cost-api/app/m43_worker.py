@@ -17,6 +17,7 @@ from .models import (
     BulkJob, MatchRun, WorkItem, MatchRunItemSnapshot, MatchCandidate,
     CatalogPosition, CatalogVersion, CatalogSource, CatalogImport,
     TechnicalComparison, TechnicalEvidence, ImportBatch, WorkItemRevision,
+    MetrajImportExclusion,
 )
 from .m2 import DEMO_INSTITUTION, DEMO_SCOPE
 from .m3 import eligible_version
@@ -65,6 +66,8 @@ def _inputs_unchanged(db: Session, job: BulkJob):
         ImportBatch.created_at.desc(), ImportBatch.id.desc()))
     if not current or current.id != job.import_id:
         raise JobBlocked("New metraj import superseded the batch")
+    if db.get(MetrajImportExclusion, current.id):
+        raise JobBlocked("Source import excluded by an operator; not eligible for M4.3")
     snapshots = {s.work_item_id: s for s in db.scalars(
         select(MatchRunItemSnapshot).where(MatchRunItemSnapshot.run_id == job.run_id)).all()}
     items = db.scalars(select(WorkItem).where(WorkItem.import_id == job.import_id)).all()

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .security import current_user
 from .models import (
-    User, ImportBatch, WorkItem, CostEstimate, CostEstimateLine, MetrajRevisionEvent
+    User, ImportBatch, WorkItem, CostEstimate, CostEstimateLine, MetrajRevisionEvent, MetrajImportExclusion
 )
 from .m2 import tenant_project
 from .m5 import get_estimate, _money, _sha
@@ -129,7 +129,7 @@ def _comparison(old_rows, new_rows, priced):
     }
 
 
-def _preview_data(db, user, project_id, content, parsed, estimate_id):
+def _preview_data(db, user, project_id, content, parsed, estimate_id, baseline_import_id=None):
     tenant_project(db, user, project_id)
     # The newest M1 import may have been accidentally saved with bad encoding
     # or wrong units. An explicitly selected, SHA-verified historical M5 draft
@@ -140,6 +140,13 @@ def _preview_data(db, user, project_id, content, parsed, estimate_id):
     verified = None
     estimate = None
     baseline = latest
+    if baseline_import_id:
+        chosen = db.scalar(select(ImportBatch).where(
+            ImportBatch.id == baseline_import_id,
+            ImportBatch.project_id == project_id))
+        if not chosen:
+            raise HTTPException(404, "Selected historical baseline import not found")
+        baseline = chosen
     if estimate_id:
         verified = get_estimate(project_id, estimate_id, user, db)
         estimate = db.get(CostEstimate, estimate_id)
@@ -148,9 +155,13 @@ def _preview_data(db, user, project_id, content, parsed, estimate_id):
         historical = db.get(ImportBatch, estimate.import_id)
         if not historical or historical.project_id != project_id:
             raise HTTPException(409, "M5 baseline import is missing")
+        if baseline_import_id and baseline_import_id != historical.id:
+            raise HTTPException(409, "Selected M5 estimate and baseline import differ")
         baseline = historical
     is_current = baseline.id == latest.id
     queued = active_job(db, project_id) is not None
+    baseline_excluded = db.get(MetrajImportExclusion, baseline.id) is not None
+    latest_excluded = db.get(MetrajImportExclusion, latest.id) is not None
     if baseline.row_count > ROW_LIMIT:
         raise HTTPException(422, "M5.2 pilot limit: at most 500 baseline rows")
     old_objects = db.scalars(select(WorkItem).where(WorkItem.import_id == baseline.id)
@@ -186,7 +197,9 @@ def _preview_data(db, user, project_id, content, parsed, estimate_id):
         "latest_import_id": latest.id,
         "baseline_is_current": is_current,
         "active_bulk_job": queued,
-        "apply_allowed": is_current and not queued,
+        "baseline_excluded": baseline_excluded,
+        "latest_excluded": latest_excluded,
+        "apply_allowed": is_current and not queued and not latest_excluded,
         "revision_sha256": revision_hash,
         "revision_sheet": parsed["sheet"],
         "row_count_old": len(old_rows),
@@ -212,12 +225,13 @@ async def preview_revision(project_id: str, file: UploadFile = File(...),
     sheet: str | None = Form(None), header_row: int = Form(1, ge=1, le=30),
     description_column: str | None = Form(None), quantity_column: str | None = Form(None),
     unit_column: str | None = Form(None), estimate_id: str | None = Form(None),
+    baseline_import_id: str | None = Form(None),
     user: User = Depends(current_user), db: Session = Depends(get_db)):
     # Authorize BEFORE touching the uploaded workbook.
     tenant_project(db, user, project_id)
     content, parsed = await _upload_and_parse(file, sheet, header_row,
                                               description_column, quantity_column, unit_column)
-    return _preview_data(db, user, project_id, content, parsed, estimate_id)
+    return _preview_data(db, user, project_id, content, parsed, estimate_id, baseline_import_id)
 
 
 @router.post("/apply", status_code=201)
@@ -228,18 +242,19 @@ async def apply_revision(project_id: str, file: UploadFile = File(...),
     sheet: str | None = Form(None), header_row: int = Form(1, ge=1, le=30),
     description_column: str | None = Form(None), quantity_column: str | None = Form(None),
     unit_column: str | None = Form(None), estimate_id: str | None = Form(None),
+    baseline_import_id: str | None = Form(None),
     user: User = Depends(current_user), db: Session = Depends(get_db)):
     tenant_project(db, user, project_id)
     guard_no_active(db, project_id)
     content, parsed = await _upload_and_parse(file, sheet, header_row,
                                               description_column, quantity_column, unit_column)
-    result = _preview_data(db, user, project_id, content, parsed, estimate_id)
+    result = _preview_data(db, user, project_id, content, parsed, estimate_id, baseline_import_id)
     # Never apply a revision to a historical preview. Keep the accidentally
     # imported latest file untouched until it is reviewed in a separate workflow.
     if not result["baseline_is_current"]:
         raise HTTPException(409, "Historical baseline comparison is read-only; current metraj is different")
     if not result["apply_allowed"]:
-        raise HTTPException(409, "An M4.3 batch job is active; do not apply a new revision")
+        raise HTTPException(409, "Active M4.3 job or excluded metraj source; no new revision allowed")
     if result["baseline_import_id"] != expected_baseline_id:
         raise HTTPException(409, "Metraj baseline changed since preview. Recheck the current version")
     if result["revision_sha256"] != expected_revision_sha256:
