@@ -21,6 +21,7 @@ from .m2 import tenant_project, latest_run, DEMO_INSTITUTION, DEMO_SCOPE
 from .revisions import effective_item, fingerprint, previously_frozen
 from .evidence_v41 import ALGORITHM, verify_evidence
 from .identity_guard import approval_identity_issue
+from .decision_reason import require_decision_reason
 from .m43_worker import ALGORITHM as BULK_ALGORITHM
 
 router = APIRouter(prefix="/api/projects/{project_id}/m42", tags=["M4.2 Engineer Review"])
@@ -263,8 +264,7 @@ def controlled_decision(project_id: str, payload: ControlledReviewRequest,
     its own rationale, evidence SHA and explicit acknowledgement. No select-all,
     no auto-approval, and no atomic misleading batch success.
     """
-    if len(payload.reason.strip()) < 10:
-        raise HTTPException(422, "Each reviewed decision requires at least 10 non-space characters")
+    clean_reason = require_decision_reason(payload.reason)
     context = _context(db, user, project_id)
     if context is None or context[0].id != payload.run_id:
         raise HTTPException(409, "Engineering run changed; re-open and review evidence")
@@ -294,6 +294,6 @@ def controlled_decision(project_id: str, payload: ControlledReviewRequest,
     from .m2 import DecisionRequest, decide
     answer = decide(project_id, DecisionRequest(
         run_id=payload.run_id, candidate_id=payload.candidate_id,
-        action="approve", reason=payload.reason.strip()), user, db)
+        action="approve", reason=clean_reason), user, db)
     return {**answer, "confirmed_evidence_sha256":payload.evidence_sha256,
             "confirmation_recorded":True}

@@ -20,6 +20,7 @@ from .models import (
 )
 from .matching import ALGORITHM, MAX_MATCH_ROWS, find_candidates
 from .revisions import effective_item, frozen_snapshot, previously_frozen, fingerprint
+from .decision_reason import require_decision_reason
 
 router = APIRouter(prefix="/api", tags=["M2 Matching"])
 DEMO_INSTITUTION = "ARKEMX-SYNTHETIC-DEMO"
@@ -305,8 +306,18 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
             raise HTTPException(409, "Position identity not verified: " + issue)
     if payload.action == "approve" and (not candidate.approvable or (snapshot.review_required if snapshot else item.review_required)):
         raise HTTPException(409, "Candidate has unresolved technical or metraj warnings")
+    # M4.2 technical-evidence decisions require meaningful rationale.
+    # Original M2/M3 synthetic pilot allowed an optional rationale; preserve its
+    # API contract and run legacy permission/staleness gates before text checks.
+    evidence_run = run.algorithm in (
+        "technical-rules-v0.1+evidence-v0.1",
+        "technical-rules-v0.1+evidence-v0.1+bulk-v0.1",
+    )
+    clean_reason = (require_decision_reason(payload.reason)
+                    if evidence_run and (payload.action == "approve" or payload.reason is not None)
+                    else payload.reason)
     db.add(MatchDecision(candidate_id=candidate.id, action=payload.action,
-                         decided_by_id=user.id, reason=payload.reason))
+                         decided_by_id=user.id, reason=clean_reason))
     db.commit()
     return {"candidate_id": candidate.id, "action": payload.action,
             "approved_automatically": False}

@@ -21,6 +21,18 @@ type Queue={run:null|{id:string;catalog:string;year:number;period:string;
 type ReviewedItem={candidate_id:string;work_item_id:string;run_id:string;code:string;
  metraj:string;reason:string;evidence_sha256:string};
 const REVIEW_CONFIRM="I_REVIEWED_THIS_CANDIDATE_EVIDENCE";
+const genericReasons=new Set(["kendi gerekçem","kendi gerekcem","test gerekçesi","test gerekcesi",
+ "deneme gerekçesi","deneme gerekcesi","kontrol edildi","uygun bulundu","onay veriyorum",
+ "gerekçe yazılacak","gerekce yazilacak","inceledim onaylıyorum","incelendi onaylandı",
+ "incelendi onaylandi"]);
+function reasonIsSpecific(value:string):boolean {
+ const text=value.trim().replace(/\s+/g," ");
+ const words=text.match(/\p{L}+/gu)??[];
+ const informative=new Set(words.filter(word=>word.length>=3).map(word=>word.toLocaleLowerCase("tr")));
+ return text.length>=10 && text.length<=500 &&
+   !genericReasons.has(text.toLocaleLowerCase("tr")) &&
+   words.join("").length>=12 && informative.size>=3;
+}
 const BASE=process.env.NEXT_PUBLIC_API_URL??"http://127.0.0.1:8000";
 async function api<T>(path:string,token:string,method:"GET"|"POST"="GET",body?:unknown):Promise<T>{
  const r=await fetch(BASE+path,{method,cache:"no-store",headers:{
@@ -100,7 +112,7 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
  }
  function stageReviewed(){
   if(!queue?.run||!detail||!detail.evidence||!detail.can_approve||
-     !controlled||!reviewChecked||reason.trim().length<10)return;
+     !controlled||!reviewChecked||!reasonIsSpecific(reason))return;
   const row=queue.rows.find(x=>x.candidate_id===detail.candidate_id);
   if(!row||!row.can_approve||row.last_decision||
      staged.some(x=>x.work_item_id===row.work_item_id)||
@@ -141,7 +153,7 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
   }
  }
  async function decide(action:"approve"|"reject"){
-  if(!token||!queue?.run||!detail||busy||reason.trim().length<10)return;
+  if(!token||!queue?.run||!detail||busy||!reasonIsSpecific(reason))return;
   if(action==="approve"&&!detail.can_approve)return;
   setBusy(true);setError("");setMessage("");
   try{
@@ -205,18 +217,18 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
       <span className="tag">Uyumlu + kararsız adaylar</span></div>
     <p className="hint">Bir adayın “Kanıt ve karar” ayrıntısını açın, kanıtını gözden geçirin,
      kişisel gerekçesini yazın ve inceleme listesine ekleyin. Toplu otomatik onay yoktur.</p>
-    {staged.length>0?<><div className="table-scroll"><table>
+    {staged.length>0?<><div className="table-scroll m421-list"><table>
      <thead><tr><th>Poz</th><th>İmalat / gerekçe</th><th>Kanıt</th><th>İşlem</th></tr></thead>
      <tbody>{staged.map(row=><tr key={row.candidate_id}>
       <td><strong>{row.code}</strong></td>
-      <td>{row.metraj}<p className="hint">{row.reason}</p></td>
+      <td><div>{row.metraj}</div><p className="m422-reason">{row.reason}</p></td>
       <td><code title={row.evidence_sha256}>{row.evidence_sha256.slice(0,12)}…</code></td>
       <td><button type="button" className="secondary" disabled={batchBusy}
        onClick={()=>{setStaged(all=>all.filter(x=>x.candidate_id!==row.candidate_id));setFinalChecked(false);}}>
        Listeden çıkar</button></td></tr>)}</tbody></table></div>
       <label className="m421-consent"><input type="checkbox" checked={finalChecked} disabled={batchBusy}
        onChange={e=>setFinalChecked(e.target.checked)}/>
-       Listedeki her adayın kanıtını ayrı ayrı inceledim; kendi gerekçelerimle kararları kaydetmeyi onaylıyorum.
+       <span>Listedeki her adayın kanıtını ayrı ayrı inceledim; kendi gerekçelerimle kararları kaydetmeyi onaylıyorum.</span>
       </label>
       <button type="button" onClick={saveReviewed} disabled={batchBusy||!finalChecked||staged.length===0}>
        {batchBusy?"Kararlar doğrulanarak kaydediliyor…":`${staged.length} bireysel kararı sırayla kaydet`}
@@ -237,8 +249,11 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
        <strong>{count}</strong><span>{title}</span>
       </button>)}
    </div>
-   <p className="hint">Son kararlar: {approvals.approved??0} onay · {approvals.rejected??0} ret · {approvals.undecided??0} kararsız.
-    Bu sayılar adayları gösterir, benzersiz metraj kalemi sayısını değil.</p>
+   <div className="m422-current-summary" aria-label="Güncel çalışma kararları">
+    <strong>Yalnızca güncel M4.3 çalışmasının kararları</strong>
+    <span>{approvals.approved??0} onay · {approvals.rejected??0} ret · {approvals.undecided??0} kararsız</span>
+    <p className="hint">Önceki çalışmalarda verilen kararlar bu sayaca eklenmez. 300 aday, 100 farklı metraj satırına aittir.</p>
+   </div>
    <form className="review-filters" onSubmit={submitSearch}>
     <label>Teknik durum<select value={status} disabled={controlled}
       onChange={e=>filterStatus(e.target.value as Status)}>
@@ -305,38 +320,59 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
     </>:<p className="warning">Doğrulanmış teknik kanıt bulunamadı; mühendis onayı kapalı.</p>}
     <div className="review-decision">
      <h4>Mühendis kararı</h4>
-     <label>Karar gerekçesi (en az 10 karakter)
+     <label>Karar gerekçesi (teknik bulgu ve değerlendirme)
       <textarea value={reason} maxLength={500} rows={3} onChange={e=>setReason(e.target.value)}
-       placeholder="İncelenen teknik kanıtı ve gerekçenizi belirtin"/></label>
+       aria-describedby="m422-reason-hint" aria-invalid={reason.length>0&&!reasonIsSpecific(reason)}
+       placeholder="Örn. Poz kimliği 004, C25/30 sınıfı ve nakliye dahil kapsamı doğrulandı; diğer kapsamlar belirtilmemiştir."/></label>
+     <p id="m422-reason-hint" className={reason.length>0&&!reasonIsSpecific(reason)?"warning":"hint"}>
+      Kontrol ettiğiniz teknik kanıtı açıklayın. Yalnızca nokta, “kendi gerekçem” veya genel ifadeler kabul edilmez.
+     </p>
      {controlled?<div className="m421-stage">
       <label className="m421-consent"><input type="checkbox" checked={reviewChecked}
        disabled={!detail.can_approve} onChange={e=>setReviewChecked(e.target.checked)}/>
-       Bu adaya ait teknik kanıtı, kimlik eşleşmesini ve SHA-256 bilgisini inceledim.
+       <span>Bu adaya ait teknik kanıtı, kimlik eşleşmesini ve SHA-256 bilgisini inceledim.</span>
       </label>
       <button type="button" onClick={stageReviewed}
-       disabled={!detail.can_approve||!reviewChecked||reason.trim().length<10||
+       disabled={!detail.can_approve||!reviewChecked||!reasonIsSpecific(reason)||
         staged.length>=10||staged.some(x=>x.candidate_id===detail.candidate_id)||
         !queue?.rows.some(x=>x.candidate_id===detail.candidate_id&&!x.last_decision)}>
        İncelediğim adayı listeye ekle</button>
       <p className="hint">Bu işlem henüz karar kaydetmez. Kararlar yukarıdaki ayrı onayla sırayla kaydedilir.</p>
      </div>:<div className="flex">
-      <button disabled={busy||reason.trim().length<10||!detail.can_approve} onClick={()=>decide("approve")}
+      <button disabled={busy||!reasonIsSpecific(reason)||!detail.can_approve} onClick={()=>decide("approve")}
        type="button" title={!detail.can_approve?"Teknik kanıt, metraj veya katalog onaya uygun değil":"Mühendis onayını kaydet"}>
        Mühendis olarak onayla</button>
-      <button disabled={busy||reason.trim().length<10} className="secondary" type="button" onClick={()=>decide("reject")}>
+      <button disabled={busy||!reasonIsSpecific(reason)} className="secondary" type="button" onClick={()=>decide("reject")}>
        Reddet</button>
      </div>}
      {!detail.can_approve&&<p className="warning">Onay yalnızca güncel, kullanım hakkı aktif ve teknik olarak uygun adaylarda mümkündür.</p>}
     </div>
     <h4>Karar geçmişi (aynı metraj kalemi ve poz)</h4>
-    {detail.history.length===0?<p className="hint">Henüz bir mühendis kararı yok.</p>:
-     <div className="table-scroll"><table><thead><tr><th>Karar</th><th>Mühendis</th><th>Tarih</th><th>Gerekçe</th><th>Kaynak çalışma</th></tr></thead><tbody>
-      {detail.history.map((h,i)=><tr key={h.run_id+"-"+i}>
-       <td>{label[h.action]??h.action}</td><td>{h.reviewer}</td>
-       <td>{new Date(h.at).toLocaleString("tr-TR")}</td><td>{h.reason??"—"}</td>
-       <td>{h.current_run?"Güncel çalışma":"Tarihî çalışma"}</td>
-      </tr>)}</tbody></table></div>}
-    {detail.history_limited&&<p className="hint">En son 50 karar gösteriliyor.</p>}
+    {detail.history.length===0?<p className="hint">Henüz bir mühendis kararı yok.</p>:<>
+     <div className="m422-history-summary">
+      <span className="m422-current-label">Güncel çalışma: {detail.history.filter(h=>h.current_run).length} karar</span>
+      <span className="m422-historical-label">Tarihî çalışma: {detail.history.filter(h=>!h.current_run).length} karar</span>
+     </div>
+     {detail.history.some(h=>h.current_run)&&<div className="m422-history-current">
+      <strong>Güncel çalışmaya ait kararlar</strong>
+      <div className="table-scroll"><table><thead><tr><th>Karar</th><th>Mühendis</th><th>Tarih</th><th>Gerekçe</th></tr></thead>
+       <tbody>{detail.history.filter(h=>h.current_run).map((h,i)=><tr key={h.run_id+"-"+i}>
+        <td>{label[h.action]??h.action}</td><td>{h.reviewer}</td>
+        <td>{new Date(h.at).toLocaleString("tr-TR")}</td><td>{h.reason??"—"}</td>
+       </tr>)}</tbody></table></div>
+     </div>}
+     {detail.history.some(h=>!h.current_run)&&<details className="m422-history-archive">
+      <summary>Tarihî kararları göster ({detail.history.filter(h=>!h.current_run).length})</summary>
+      <p className="hint">Önceki analizlerin denetim kayıtlarıdır; güncel çalışmaya onay aktarmaz.</p>
+      <div className="table-scroll"><table><thead><tr><th>Karar</th><th>Mühendis</th><th>Tarih</th><th>Gerekçe</th><th>Çalışma kimliği</th></tr></thead>
+       <tbody>{detail.history.filter(h=>!h.current_run).map((h,i)=><tr key={h.run_id+"-"+i}>
+        <td>{label[h.action]??h.action}</td><td>{h.reviewer}</td>
+        <td>{new Date(h.at).toLocaleString("tr-TR")}</td><td>{h.reason??"—"}</td>
+        <td><code>{h.run_id.slice(0,8)}…</code></td>
+       </tr>)}</tbody></table></div>
+     </details>}
+    </>}
+    {detail.history_limited&&<p className="hint">En son 50 karar gösteriliyor; sayılar bu listeyi temel alır.</p>}
    </>}
   </div>}
  </section>;

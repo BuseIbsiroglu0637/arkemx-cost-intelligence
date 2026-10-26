@@ -132,9 +132,15 @@ def test_m41_run_preserves_old_m4_and_protects_decisions(client, monkeypatch):
          json={"run_id": m41.json()["id"], "candidate_id": cands["DEMO-C30"]["id"],
                "action": "approve"})
     assert invalid.status_code == 409
-    allowed = client.post(f"/api/projects/{pid}/m2/decisions", headers=headers,
+    # New M4 evidence-based approvals require a real individual explanation.
+    no_reason = client.post(f"/api/projects/{pid}/m2/decisions", headers=headers,
          json={"run_id": m41.json()["id"], "candidate_id": cands["DEMO-C25"]["id"],
                "action": "approve"})
+    assert no_reason.status_code == 422
+    allowed = client.post(f"/api/projects/{pid}/m2/decisions", headers=headers,
+         json={"run_id": m41.json()["id"], "candidate_id": cands["DEMO-C25"]["id"],
+               "action": "approve",
+               "reason": "M41 pilotinde beton sınıfı ve nakliye kapsamı uyumluluğu doğrulandı"})
     assert allowed.status_code == 201, allowed.text
     old_runs = client.get(f"/api/projects/{pid}/m21/run-history", headers=headers)
     assert old_runs.status_code == 200
