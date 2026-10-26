@@ -140,7 +140,7 @@ def _mock(id, position="p1", code="C25", desc="Hazır beton C25/30 nakliye dahil
 
 def test_m511_ambiguous_duplicate_codes_do_not_auto_pair(monkeypatch):
     import app.m51 as module
-    monkeypatch.setattr(module,"_technical_scope",lambda db,line,estimate:("verified",))
+    monkeypatch.setattr(module,"_technical_scope",lambda db,line,estimate,preload=None:("verified",))
     e=SimpleNamespace(version_id="v1",catalog_sha256="same")
     a,b,c=_mock("old-a"),_mock("old-b"),_mock("new-c")
     old=[a,b];new=[c]
