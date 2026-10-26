@@ -3,6 +3,7 @@ import {useEffect,useState} from "react";
 
 type History = {id:string;title:string;total:string;currency:string;created_at:string};
 type ComparisonRow = {work_item_id:string;source_row:number;description:string;status:string;
+ matching_basis:string;baseline_work_item_id:string|null;target_work_item_id:string|null;
  baseline_position:string|null;target_position:string|null;baseline_quantity:string|null;
  target_quantity:string|null;baseline_unit_price:string|null;target_unit_price:string|null;
  baseline_amount:string;target_amount:string;difference:string;
@@ -11,7 +12,8 @@ type ComparisonRow = {work_item_id:string;source_row:number;description:string;s
  unattributed_effect:string};
 type Comparison = {status:string;baseline_total:string;target_total:string;difference:string;
  breakdown:{price_effect:string;quantity_effect:string;rounding_adjustment:string;unattributed_effect:string};
- counts:Record<string,number>;total_rows:number;page:number;page_size:number;rows:ComparisonRow[]};
+ counts:Record<string,number>;verified_cross_import_pairs:number;ambiguous_identity_groups:number;
+ total_rows:number;page:number;page_size:number;rows:ComparisonRow[]};
 type SnapshotLine = {candidate_id:string;source_row:number;position_code:string;description:string;
  quantity:string;unit_price:string;unit:string};
 type Snapshot = {id:string;title:string;total:string;lines:SnapshotLine[]};
@@ -20,6 +22,12 @@ type SimLine = {source_row:number;position_code:string;difference:string;quantit
 type Simulation = {status:string;persisted:boolean;baseline_total:string;
  simulated_total:string;difference:string;rows:SimLine[]};
 const BASE=process.env.NEXT_PUBLIC_API_URL??"http://127.0.0.1:8000";
+const linkLabels:Record<string,string>={
+ verified_cross_import:"Doğrulanmış revizyon bağlantısı",
+ original_work_item:"Aynı kayıt",
+ unmatched_requires_review:"Belirsiz — inceleme gerekli",
+ unmatched:"Bağlantı bulunamadı"
+};
 const labels:Record<string,string>={
  unchanged:"Değişmedi",price_only:"Fiyat değişti",quantity_only:"Miktar değişti",
  quantity_and_price:"Fiyat + miktar",scope_changed:"Poz / kapsam değişti",
@@ -148,15 +156,23 @@ export default function CostAnalysisPanel({token,project,history}:{
       <div className="m51-stat"><small>Fiyat etkisi</small><strong>{diff(compare.breakdown.price_effect)}</strong></div>
       <div className="m51-stat"><small>Eklenen / çıkarılan / kapsam</small><strong>{diff(compare.breakdown.unattributed_effect)}</strong></div>
      </div>
+     <p className="hint" role="status">
+       Revizyonlar arası doğrulanmış poz ilişkisi: <strong>{compare.verified_cross_import_pairs}</strong>.
+       {compare.ambiguous_identity_groups>0&&<>
+        {" "}Belirsiz kimlik grubu: <strong>{compare.ambiguous_identity_groups}</strong>.
+        Bu kalemlerde otomatik miktar/fiyat ayrıştırması yapılmadı; uzman incelemesi gerekir.
+       </>}
+     </p>
      <p className="hint">Yuvarlama düzeltmesi: {money(compare.breakdown.rounding_adjustment)}.
       Miktar etkisi eski fiyatla, fiyat etkisi yeni miktarla hesaplanır.</p>
      <div className="table-scroll"><table className="m51-table">
-      <thead><tr><th>Satır</th><th>İmalat / Poz</th><th>Durum</th><th>Önceki</th><th>Yeni</th><th>Fark</th></tr></thead>
+      <thead><tr><th>Satır</th><th>İmalat / Poz</th><th>Durum ve ilişki</th><th>Önceki</th><th>Yeni</th><th>Fark</th></tr></thead>
       <tbody>{compare.rows.map(row=><tr key={row.work_item_id}>
        <td>{row.source_row}</td>
        <td><strong>{row.description}</strong><div className="hint">
         {row.baseline_position??"—"} → {row.target_position??"—"}</div></td>
-       <td>{labels[row.status]??row.status}</td>
+       <td>{labels[row.status]??row.status}
+        <div className="hint">{linkLabels[row.matching_basis]??row.matching_basis}</div></td>
        <td>{money(row.baseline_amount)}<div className="hint">
         {row.baseline_quantity??"—"} × {row.baseline_unit_price??"—"}</div>
         <div className="hint">{row.baseline_price_source??""}</div></td>
