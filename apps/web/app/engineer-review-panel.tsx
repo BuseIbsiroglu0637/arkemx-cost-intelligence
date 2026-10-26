@@ -133,7 +133,8 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
    }
    setMessage(`${saved} ayrı mühendis kararı, mevcut M2 karar kapısından doğrulanarak kaydedildi.`);
   }catch(err){
-   setError(`Seri kayıt durduruldu. ${saved} karar kaydedildi; kalanlar kaydedilmedi. `+
+   setError(`Seri kayıt durduruldu. ${saved} karar için başarı yanıtı alındı. `+
+    "Diğer adayların durumunu karar geçmişinden doğrulayın; otomatik tekrar gönderim yapılmadı. "+
     (err instanceof Error?err.message:String(err)));
   }finally{
    setFinalChecked(false);setBatchBusy(false);setRevision(x=>x+1);
@@ -232,7 +233,7 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
      ] as const).map(([filter,title,count])=>
       <button type="button" key={filter}
        className={`review-stat ${status===filter?"active":""}`} onClick={()=>filterStatus(filter)}
-       aria-pressed={status===filter}>
+       disabled={controlled&&filter!=="compatible"} aria-pressed={status===filter}>
        <strong>{count}</strong><span>{title}</span>
       </button>)}
    </div>
