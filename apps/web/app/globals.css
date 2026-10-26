@@ -110,3 +110,22 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
 .m51-note{background:#f6f9ff;border:1px solid var(--border);border-radius:9px;padding:12px;font-size:12px;color:var(--muted)}
 .m51-summary .m51-stat:last-child{background:#e9f0fc}
 @media(max-width:700px){.m51-fields{grid-template-columns:1fr}.m51-summary{grid-template-columns:1fr 1fr}.m51-body{padding:0 12px 14px}}
+
+/* M5.2 controlled Excel revision review */
+.m52-panel{padding:0;overflow:hidden}
+.m52-panel>summary{cursor:pointer;list-style:none;padding:18px 20px;font-weight:700;font-size:17px}
+.m52-panel>summary::after{content:"  · Aç";color:var(--blue);font-size:13px}
+.m52-panel[open]>summary::after{content:"  · Kapat"}
+.m52-body{padding:0 20px 20px}
+.m52-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.m52-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.m52-summary>div{background:#f0f4fb;border:1px solid var(--border);border-radius:9px;padding:12px;display:grid;gap:4px}
+.m52-summary small{color:var(--muted)}
+.m52-summary strong{font-size:21px}
+.m52-apply{border-top:1px solid var(--border);padding-top:14px}
+.m52-check{display:flex;flex-direction:row;align-items:flex-start;gap:12px}
+.m52-check input{width:auto}
+.m52-history{border-top:1px solid var(--border);padding-top:12px}
+.m52-history>div{padding:10px;border:1px solid var(--border);border-radius:9px}
+.m52-history code,.m52-body code{overflow-wrap:anywhere}
+@media(max-width:700px){.m52-grid{grid-template-columns:1fr}.m52-summary{grid-template-columns:1fr 1fr}.m52-body{padding:0 12px 14px}}

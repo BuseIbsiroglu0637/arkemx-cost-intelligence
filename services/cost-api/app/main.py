@@ -308,3 +308,7 @@ app.include_router(m5_router)
 # M5.1 read-only saved-draft comparisons and non-persistent revision simulations
 from .m51 import router as m51_router
 app.include_router(m51_router)
+
+# M5.2 Excel-vs-Excel review and explicit append-only revised import
+from .m52 import router as m52_router
+app.include_router(m52_router)

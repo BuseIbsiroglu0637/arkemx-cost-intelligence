@@ -314,3 +314,21 @@ class CostEstimateLine(Base):
     amount: Mapped[float] = mapped_column(Numeric(22, 2), nullable=False)
     price_source: Mapped[str] = mapped_column(String(200), nullable=False)
     evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+class MetrajRevisionEvent(Base):
+    """Append-only lineage for explicit M5.2 revised Excel imports."""
+    __tablename__ = "metraj_revision_events"
+    __table_args__ = (UniqueConstraint("new_import_id", name="uq_m52_new_import"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    baseline_import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
+    new_import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
+    baseline_estimate_id: Mapped[str | None] = mapped_column(ForeignKey("cost_estimates.id"), nullable=True)
+    old_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    new_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
