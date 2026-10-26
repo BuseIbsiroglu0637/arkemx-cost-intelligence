@@ -332,3 +332,29 @@ class MetrajRevisionEvent(Base):
     reason: Mapped[str] = mapped_column(String(500), nullable=False)
     created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class MetrajImportExclusion(Base):
+    """Permanent soft-exclusion from NEW analysis. Source bytes remain immutable."""
+    __tablename__ = "metraj_import_exclusions"
+    import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    original_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    excluded_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    excluded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class M43QueueControlEvent(Base):
+    """Append-only operator cancellation audit; never deletes the queued run."""
+    __tablename__ = "m43_queue_control_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    job_id: Mapped[str] = mapped_column(ForeignKey("bulk_jobs.id"), unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    import_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
