@@ -1,13 +1,16 @@
 "use client";
 import {useEffect,useState} from "react";
+import SafetyControls from "./m521-safety-controls";
 
 type Estimate = {id:string;title:string;total:string;created_at:string};
+type Source = {id:string;filename:string;sha256:string;row_count:number;created_at:string;is_latest:boolean;excluded:boolean;exclusion_reason:string|null};
 type Inspection = {headers:string[];mapping:Record<string,string|null>;sheets:string[];selected_sheet:string;header_row:number};
 type Change = {source_row:number;status:string;old_description:string|null;new_description:string|null;
  old_quantity:string|null;new_quantity:string|null;old_unit:string|null;new_unit:string|null;
  indicative_delta:string|null;requires_engineer_review:boolean;issues:string[]};
 type Preview = {baseline_import_id:string;baseline_sha256:string;revision_sha256:string;
  baseline_filename:string;latest_import_id:string;baseline_is_current:boolean;active_bulk_job:boolean;apply_allowed:boolean;
+ baseline_excluded:boolean;latest_excluded:boolean;
  revision_sheet:string;row_count_old:number;row_count_new:number;
  review_count_new:number;baseline_estimate_id:string|null;baseline_estimate_total:string|null;
  changed_rows:number;known_quantity_effect:string;fully_attributable_quantity_effect:string|null;
@@ -40,6 +43,8 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
  const [columns,setColumns]=useState<Record<string,string>>({description:"",quantity:"",unit:""});
  const [estimates,setEstimates]=useState<Estimate[]>([]);
  const [estimateId,setEstimateId]=useState("");
+ const [sourceId,setSourceId]=useState("");
+ const [sources,setSources]=useState<Source[]>([]);
  const [preview,setPreview]=useState<Preview|null>(null);
  const [history,setHistory]=useState<History[]>([]);
  const [page,setPage]=useState(1);
@@ -51,16 +56,18 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
  const base="/api/projects/"+project+"/m52";
  useEffect(()=>{
   setFile(null);setInspection(null);setPreview(null);setError("");setNotice("");
-  setAccepted(false);setEstimateId("");setHistory([]);setEstimates([]);
+  setAccepted(false);setEstimateId("");setSourceId("");setSources([]);setHistory([]);setEstimates([]);
   if(!token||!project)return;
   let live=true;
   Promise.allSettled([
    api<Estimate[]>("/api/projects/"+project+"/m5/estimates",token),
-   api<History[]>(base+"/history",token)
+   api<History[]>(base+"/history",token),
+   api<Source[]>("/api/projects/"+project+"/m521/imports",token),
   ]).then(r=>{
    if(!live)return;
    if(r[0].status==="fulfilled")setEstimates(r[0].value);
    if(r[1].status==="fulfilled")setHistory(r[1].value);
+   if(r[2].status==="fulfilled")setSources(r[2].value);
   });
   return()=>{live=false;};
  },[token,project,base]);
@@ -73,6 +80,7 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
    if(columns[name])f.append(name+"_column",columns[name]);
   }
   if(estimateId)f.append("estimate_id",estimateId);
+  if(sourceId)f.append("baseline_import_id",sourceId);
   return f;
  };
  async function inspect(selectedSheet?:string,selectedRow?:number){
@@ -149,8 +157,19 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
       </select></label>)}
     </div>
     <div className="m52-grid">
+     <label>Karşılaştırma kaynağı (tarihî metraj seçilebilir)
+      <select value={sourceId} onChange={e=>{
+       setSourceId(e.target.value);setEstimateId("");setPreview(null);}}>
+       <option value="">Otomatik: projenin en son metrajı veya seçili maliyet taslağı</option>
+       {sources.map(x=><option key={x.id} value={x.id}>
+        {x.filename} · {new Date(x.created_at).toLocaleString("tr-TR")}
+        {x.is_latest?" · Son kayıt":""}{x.excluded?" · Kullanım dışı":""}
+       </option>)}
+      </select>
+     </label>
      <label>Eski maliyet taslağı (isteğe bağlı)
-      <select value={estimateId} onChange={e=>{setEstimateId(e.target.value);setPreview(null);}}>
+      <select value={estimateId} onChange={e=>{
+       setEstimateId(e.target.value);setSourceId("");setPreview(null);}}>
        <option value="">Fiyat olmadan yalnızca metraj değişimini göster</option>
        {estimates.map(x=><option key={x.id} value={x.id}>{x.title} · {new Date(x.created_at).toLocaleString("tr-TR")}</option>)}
       </select></label>
@@ -160,10 +179,14 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
    </>}
    {preview&&<section className="stack">
     {!preview.baseline_is_current&&<p className="warning" role="status">
-      Tarihî karşılaştırma: kaynak olarak seçilen eski maliyet taslağının
+      Tarihî karşılaştırma: kaynak olarak seçilen
       { " " }<strong>{preview.baseline_filename}</strong> Excel'i kullanıldı.
       Projede başka bir güncel metraj var. Bu önizleme salt okunurdur; yeni
       revizyon kaydı oluşturulamaz. Kaynak metrajlar ve onaylar değişmeyecek.
+    </p>}
+    {(preview.latest_excluded||preview.baseline_excluded)&&<p className="warning" role="status">
+      Kullanım dışı işaretlenmiş bir kaynak bulundu. Bu kaynak geçmişten silinmez;
+      karşılaştırma yalnızca önizleme amaçlıdır, yeni M4.3 veya revizyon başlatılamaz.
     </p>}
     {preview.active_bulk_job&&<p className="warning" role="status">
       Projede tamamlanmamış M4.3 işi bulunuyor. Worker'ı başlatmayın;
@@ -210,10 +233,18 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
      <button type="button" disabled={!preview.apply_allowed||!accepted||!file||busy||reason.trim().length<10||
        preview.changed_rows===0} onClick={apply}>Yeni revizyonu kaydet ve teknik onayları sıfırdan başlat</button>
      {!preview.apply_allowed&&<p className="hint" role="status">Bu karşılaştırmada kayıt kapalı:
-       {preview.baseline_is_current?"bekleyen M4.3 işi var":"seçilen maliyet taslağı tarihî metraja ait"}.
+       {!preview.baseline_is_current?"tarihî metraj seçildi":preview.latest_excluded?"son Excel kullanım dışı": "bekleyen M4.3 işi var"}.
        Önizleme ve tahmini maliyet etkisi incelenebilir.</p>}
     </div>
    </section>}
+   <SafetyControls token={token} project={project} onChanged={async()=>{
+     setPreview(null);setAccepted(false);
+     if(token){
+      const updated=await api<Source[]>("/api/projects/"+project+"/m521/imports",token);
+      setSources(updated);
+     }
+     await onApplied();
+   }}/>
    {history.length>0&&<div className="m52-history stack">
     <h3>Kaydedilen Excel revizyonları</h3>
     {history.slice(0,10).map(h=><div key={h.id}>
