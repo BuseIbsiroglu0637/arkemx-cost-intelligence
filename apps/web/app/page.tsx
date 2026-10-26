@@ -8,6 +8,7 @@ import TechnicalPanel from "./technical-panel";
 import EngineerReviewPanel from "./engineer-review-panel";
 import BulkPanel from "./bulk-panel";
 import CostPanel from "./cost-panel";
+import RevisedMetrajPanel from "./revised-metraj-panel";
 
 type Project = {id: string; name: string; created_at: string};
 type Tab = "overview"|"metraj"|"catalog"|"bulk"|"review"|"cost";
@@ -212,6 +213,8 @@ export default function Home() {
             {showAllItems?"İlk 20 satıra daralt":`Tüm ${items.length} kaydı göster`}
           </button>}</>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
 
+        <RevisedMetrajPanel token={token} project={project}
+          onApplied={async()=>{if(token){setItems(await request<Row[]>(`/api/projects/${project}/items`,token));}setRevisionTick(v=>v+1);setSummaryRefresh(v=>v+1);}}/>
         <section className="workspace-collapsible">
           <button type="button" className="secondary" aria-expanded={showRevisions} onClick={()=>setShowRevisions(v=>!v)}>
             {showRevisions?"M2.1 revizyonlarını kapat":"M2.1 · Metraj düzeltme ve revizyonları aç"}</button>
