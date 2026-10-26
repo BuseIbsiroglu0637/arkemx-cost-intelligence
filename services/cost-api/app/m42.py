@@ -6,6 +6,7 @@ Pagination is on CANDIDATES, not imported work items. Legacy M4.1 supports
 """
 import json
 from typing import Literal
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -240,3 +241,57 @@ def candidate_detail(project_id: str, candidate_id: str,
                     for d, prior_run_id, email in events],
         "history_limited": len(events) == 50,
     }
+
+
+# M4.2.1 does not create a bulk-authorize endpoint: each reviewed candidate
+# still has its own explicit decision event through the original M2 gate.
+class ControlledReviewRequest(BaseModel):
+    run_id: str = Field(min_length=36, max_length=36)
+    candidate_id: str = Field(min_length=36, max_length=36)
+    evidence_sha256: str = Field(min_length=64, max_length=64)
+    reason: str = Field(min_length=10, max_length=500)
+    confirmation: Literal["I_REVIEWED_THIS_CANDIDATE_EVIDENCE"]
+
+
+@router.post("/controlled-decisions", status_code=201)
+def controlled_decision(project_id: str, payload: ControlledReviewRequest,
+                        user: User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    """Confirm exactly one reviewed candidate and revalidate all existing gates.
+
+    The client may stage several individual decisions, but every request has
+    its own rationale, evidence SHA and explicit acknowledgement. No select-all,
+    no auto-approval, and no atomic misleading batch success.
+    """
+    context = _context(db, user, project_id)
+    if context is None or context[0].id != payload.run_id:
+        raise HTTPException(409, "Engineering run changed; re-open and review evidence")
+    detail = candidate_detail(project_id, payload.candidate_id, user, db)
+    if not detail["can_approve"]:
+        raise HTTPException(409, "Candidate is not eligible for an engineering decision")
+    proof = detail["evidence"]
+    if not proof or proof["evidence_sha256"] != payload.evidence_sha256:
+        raise HTTPException(409, "Evidence changed; re-open before approving")
+    candidate = db.get(MatchCandidate, payload.candidate_id)
+    # Serial reviewed decisions are only for undecided candidates. Reversals
+    # stay available in the original single-decision screen with full history.
+    latest = db.scalar(select(MatchDecision).where(
+        MatchDecision.candidate_id == candidate.id)
+        .order_by(MatchDecision.created_at.desc(), MatchDecision.id.desc()).limit(1))
+    if latest is not None:
+        raise HTTPException(409, "Candidate already decided; use individual review for reversal")
+    other_approved = db.scalar(
+        select(MatchCandidate.id)
+        .join(MatchDecision, MatchDecision.id == _latest_decision_id())
+        .where(MatchCandidate.run_id == context[0].id,
+               MatchCandidate.work_item_id == candidate.work_item_id,
+               MatchCandidate.id != candidate.id,
+               MatchDecision.action == "approve").limit(1))
+    if other_approved:
+        raise HTTPException(409, "Another candidate is already approved for this metraj line")
+    from .m2 import DecisionRequest, decide
+    answer = decide(project_id, DecisionRequest(
+        run_id=payload.run_id, candidate_id=payload.candidate_id,
+        action="approve", reason=payload.reason.strip()), user, db)
+    return {**answer, "confirmed_evidence_sha256":payload.evidence_sha256,
+            "confirmation_recorded":True}
