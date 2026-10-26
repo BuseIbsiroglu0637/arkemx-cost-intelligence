@@ -236,6 +236,11 @@ async def apply_revision(project_id: str, file: UploadFile = File(...),
     path = storage_root / key
     path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    # Bind both source file hashes and the human review reason to the immutable
+    # comparison snapshot. This is an integrity checksum, not a digital signature.
+    audit_digest = _sha({"summary": result, "reason": reason.strip(),
+        "old_sha256": result["baseline_sha256"],
+        "new_sha256": result["revision_sha256"]})
     try:
         with path.open("xb") as output:
             output.write(content)
@@ -255,7 +260,7 @@ async def apply_revision(project_id: str, file: UploadFile = File(...),
             baseline_import_id=result["baseline_import_id"], new_import_id=revision_id,
             baseline_estimate_id=estimate_id, old_sha256=result["baseline_sha256"],
             new_sha256=result["revision_sha256"], summary_json=snapshot,
-            result_sha256=_sha(result), reason=reason.strip(), created_by_id=user.id)
+            result_sha256=audit_digest, reason=reason.strip(), created_by_id=user.id)
         db.add(audit)
         db.commit()
     except Exception:
@@ -284,7 +289,9 @@ def revision_history(project_id: str, user: User = Depends(current_user),
             content = json.loads(row.summary_json)
         except (ValueError, TypeError):
             raise HTTPException(409, "Metraj revision audit data corrupted") from None
-        if _sha(content) != row.result_sha256:
+        expected = _sha({"summary": content, "reason": row.reason,
+            "old_sha256": row.old_sha256, "new_sha256": row.new_sha256})
+        if expected != row.result_sha256:
             raise HTTPException(409, "Metraj revision comparison audit SHA mismatch")
     return [{"id": r.id, "baseline_import_id": r.baseline_import_id,
              "new_import_id": r.new_import_id,

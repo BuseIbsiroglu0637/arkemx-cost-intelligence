@@ -150,3 +150,19 @@ def test_m52_revised_excel_formula_and_unit_require_review(client, monkeypatch):
     assert result["items"][0]["status"] == "needs_data_review"
     assert "FORMULA_NOT_EVALUATED" in result["items"][0]["issues"]
     assert result["unknown_cost_effect"]
+
+def test_m52_revision_audit_reason_tampering_fails_closed(client, monkeypatch):
+    head, pid, estimate_id = base(client, monkeypatch)
+    content = xlsx([(ORIGINAL, 13, "m3")])
+    reviewed = preview(client, head, pid, content, estimate_id).json()
+    result = apply(client, head, pid, content, reviewed)
+    assert result.status_code == 201, result.text
+    gen = client.app.dependency_overrides[get_db]()
+    db = next(gen)
+    event = db.scalar(select(MetrajRevisionEvent).where(
+        MetrajRevisionEvent.id == result.json()["id"]))
+    event.reason = "Unauthorized rewrite of the original review rationale"
+    db.commit()
+    gen.close()
+    assert client.get(f"/api/projects/{pid}/m52/history",
+                      headers=head).status_code == 409
