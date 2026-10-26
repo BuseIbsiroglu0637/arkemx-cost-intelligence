@@ -19,6 +19,7 @@ from .models import (
 from .m2 import tenant_project, latest_run, DEMO_INSTITUTION, DEMO_SCOPE
 from .revisions import effective_item, fingerprint, previously_frozen
 from .evidence_v41 import ALGORITHM, verify_evidence
+from .identity_guard import approval_identity_issue
 from .m43_worker import ALGORITHM as BULK_ALGORITHM
 
 router = APIRouter(prefix="/api/projects/{project_id}/m42", tags=["M4.2 Engineer Review"])
@@ -146,7 +147,10 @@ def queue(project_id: str,
         stale = (not rights_active or outdated or snapshot is None
                  or fingerprint(effective_item(db, item)) != previously_frozen(item, snapshot))
         status_value = proof["status"] if proof else "missing"
-        approvable = (not stale and status_value == "compatible" and
+        identity_issue = approval_identity_issue(
+            snapshot.description if snapshot else item.raw_description,
+            position.description, position.code, proof)
+        approvable = (identity_issue is None and not stale and status_value == "compatible" and
                       candidate.approvable and not (snapshot.review_required if snapshot else item.review_required))
         rows.append({
             "candidate_id": candidate.id, "work_item_id": item.id,
@@ -156,6 +160,7 @@ def queue(project_id: str,
             "code": position.code, "position": position.description,
             "rank": candidate.rank, "similarity": float(candidate.similarity),
             "status": status_value, "stale": stale, "can_approve": approvable,
+            "identity_issue": identity_issue,
             "last_decision": ({"action": last.action, "reason": last.reason,
                                "at": last.created_at, "by": last.decided_by_id}
                               if last else None),
@@ -199,6 +204,9 @@ def candidate_detail(project_id: str, candidate_id: str,
     evidence = db.scalar(select(TechnicalEvidence).where(
         TechnicalEvidence.candidate_id == candidate.id))
     proof = _proof(evidence)
+    identity_issue = approval_identity_issue(
+        snapshot.description if snapshot else item.raw_description,
+        position.description, position.code, proof)
     stale = (not rights_active or outdated or snapshot is None
              or fingerprint(effective_item(db, item)) != previously_frozen(item, snapshot))
 
@@ -221,7 +229,8 @@ def candidate_detail(project_id: str, candidate_id: str,
         "source_row": item.source_row,
         "rights_active": rights_active,
         "stale": stale,
-        "can_approve": bool(proof and proof["status"] == "compatible"
+        "identity_issue": identity_issue,
+        "can_approve": bool(identity_issue is None and proof and proof["status"] == "compatible"
                             and candidate.approvable and not stale
                             and not (snapshot.review_required if snapshot else item.review_required)),
         "evidence": proof,

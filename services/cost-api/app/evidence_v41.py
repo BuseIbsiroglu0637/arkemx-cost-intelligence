@@ -9,6 +9,7 @@ import json
 import re
 from .excel import normalized
 from .technical import compare as compare_m4
+from .identity_guard import fixture_identity
 
 VERSION = "evidence-v0.1"
 ALGORITHM = "technical-rules-v0.1+evidence-v0.1"
@@ -149,6 +150,14 @@ def analyze(metraj_description: str, metraj_unit: str | None,
             "catalog": {"value": r["value"], "quote": r["source"]},
             "status": status, "code": code,
         })
+    identity = fixture_identity(metraj_description, catalog_description,
+                                (source_refs or {}).get("catalog", {}).get("position_code", ""))
+    if identity is not None:
+        checks.append(identity)
+        if identity["status"] == "block":
+            blockers.append(identity["code"])
+        elif identity["status"] == "review":
+            reviews.append(identity["code"])
     # Both texts may be merely short titles, not licensed full-position scope.
     # Never claim full compliance from matching titles alone.
     if not scope_verified:

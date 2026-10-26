@@ -10,10 +10,10 @@ type Check={key:string;status:string;code:string|null;
 type Evidence={status:string;checks:Check[];blockers:string[];review_flags:string[];
  evidence_sha256:string;source_refs:{metraj?:{source_row:number};catalog?:{position_code:string}}};
 type Detail={candidate_id:string;code:string;position:string;metraj:string;rights_active:boolean;
- stale:boolean;can_approve:boolean;evidence:Evidence|null;history:History[];history_limited:boolean};
+ stale:boolean;can_approve:boolean;identity_issue:string|null;evidence:Evidence|null;history:History[];history_limited:boolean};
 type Candidate={candidate_id:string;work_item_id:string;source_row:number;metraj:string;
  code:string;position:string;rank:number;similarity:number;status:Status|"missing";
- stale:boolean;can_approve:boolean;last_decision:null|{action:string;at:string;reason:string|null}};
+ stale:boolean;can_approve:boolean;identity_issue:string|null;last_decision:null|{action:string;at:string;reason:string|null}};
 type Queue={run:null|{id:string;catalog:string;year:number;period:string;
  rights_active:boolean;outdated_import:boolean;row_count:number;row_limit:number;catalog_position_limit:number;
  candidate_count:number};total:number;page:number;page_size:number;rows:Candidate[];
@@ -162,7 +162,8 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
      <td className="number">{c.source_row}</td>
      <td><strong>{c.metraj}</strong><div className="hint">{c.code} · {c.position}</div></td>
      <td><span className={badge(c.status)}>{label[c.status]??c.status}</span>
-      {c.stale&&<div className="warning">Güncel değil</div>}</td>
+      {c.stale&&<div className="warning">Güncel değil</div>}
+      {c.identity_issue&&<div className="warning">Poz kimliği onaya kapalı: {c.identity_issue}</div>}</td>
      <td>{c.last_decision?label[c.last_decision.action]??c.last_decision.action:"Karar yok"}</td>
      <td><button type="button" className="secondary" aria-expanded={selected===c.candidate_id}
        aria-controls="engineer-detail" onClick={()=>inspect(c.candidate_id)}>
@@ -190,6 +191,9 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
    {detail&&<>
     <p><strong>{detail.code}</strong> · {detail.position}</p>
     {detail.stale&&<p className="warning">Kaynak veya metraj güncel değil; onay kapalı.</p>}
+    {detail.identity_issue&&<p role="alert" className="warning">
+     Poz kimliği denetimi: {detail.identity_issue}. Onay vermeden önce M4.3'ü yeniden çalıştırıp güncel kanıt oluşturun.
+    </p>}
     {detail.evidence?<><p><span className={badge(detail.evidence.status)}>
       {label[detail.evidence.status]??detail.evidence.status}</span></p>
      {!!detail.evidence.blockers.length&&<p className="warning">Engeller: {detail.evidence.blockers.join(", ")}</p>}

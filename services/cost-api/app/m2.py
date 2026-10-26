@@ -255,6 +255,7 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
     if candidate is None:
         raise HTTPException(404, "Candidate not found")
     item = db.get(WorkItem, candidate.work_item_id)
+    recorded_identity_proof = None
     # M4 reports are immutable evidence. A new approval must pass its original
     # technical gate; historical M2/M3 decisions are not rewritten.
     if payload.action == "approve" and run.algorithm in (
@@ -279,6 +280,7 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
                 raise HTTPException(409, "Invalid evidence payload") from None
             if not verify_evidence(evidence_payload) or evidence_payload.get("evidence_sha256") != evidence.evidence_sha256:
                 raise HTTPException(409, "Technical evidence integrity failed")
+            recorded_identity_proof = evidence_payload
     version = db.get(CatalogVersion, run.version_id)
     source = db.get(CatalogSource, version.source_id)
     if payload.action == "approve" and source.institution != DEMO_INSTITUTION:
@@ -294,6 +296,13 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
              or (fingerprint(effective_item(db, item)) != previously_frozen(item, snapshot)))
     if payload.action == "approve" and stale:
         raise HTTPException(409, "Metraj changed after this run; recompute before approval")
+    if payload.action == "approve":
+        from .identity_guard import approval_identity_issue
+        position = db.get(CatalogPosition, candidate.position_id)
+        issue = approval_identity_issue(snapshot.description if snapshot else item.raw_description,
+                                        position.description, position.code, recorded_identity_proof)
+        if issue:
+            raise HTTPException(409, "Position identity not verified: " + issue)
     if payload.action == "approve" and (not candidate.approvable or (snapshot.review_required if snapshot else item.review_required)):
         raise HTTPException(409, "Candidate has unresolved technical or metraj warnings")
     db.add(MatchDecision(candidate_id=candidate.id, action=payload.action,
