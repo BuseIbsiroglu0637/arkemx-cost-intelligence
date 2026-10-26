@@ -16,7 +16,7 @@ def _fixture_label(description: str):
     text = normalized(description)
     marks = list(FIXTURE_LABEL.finditer(text))
     values = {int(mark.group(1)) for mark in marks}
-    if not marks or not 1 <= len(values) <= 1:
+    if len(values) != 1:
         return None, None
     mark = marks[0]
     return next(iter(values)), {"excerpt": text[mark.start():mark.end()],

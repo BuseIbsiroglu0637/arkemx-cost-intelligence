@@ -144,7 +144,11 @@ def test_m431_published_old_evidence_cannot_be_approved(client,monkeypatch):
                        params={"page_size":20}).json()
     assert initial["summary"]["statuses"]["compatible"]==300
     assert all(not r["can_approve"] for r in initial["rows"])
-    assert all(r["identity_issue"]=="M512_IDENTITY_EVIDENCE_MISSING" for r in initial["rows"])
+    for row in initial["rows"]:
+        correct_code = f"DEMO-M512-{row['source_row'] - 1:03d}"
+        expected = ("M512_IDENTITY_EVIDENCE_MISSING"
+                    if row["code"] == correct_code else "M512_ITEM_ID_MISMATCH")
+        assert row["identity_issue"] == expected
     original=initial["rows"][0]
     denial=client.post(f"/api/projects/{pid}/m2/decisions",headers=head,json={
         "run_id":old["run_id"],"candidate_id":original["candidate_id"],

@@ -128,6 +128,11 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
    </div>
    {!queue.run.rights_active&&<p role="alert" className="warning">Katalog izni aktif değil; yeni mühendis onayı engelli.</p>}
    {queue.run.outdated_import&&<p role="alert" className="warning">Metraj değişmiş. Yeni çalıştırma yapılmadan onay verilemez.</p>}
+   {queue.rows.some(c=>c.identity_issue)&&<p role="alert" className="warning">
+    Bazı önerilerde poz kimliği uyuşmazlığı veya eski çalışmadan kalan kimlik kanıtı eksikliği bulunuyor.
+    Bu satırlara onay verilemez. Eski çalışmanın teknik durum sayaçları tarihî kanıta aittir;
+    güncel 100/200 durumunu görmek için M4.3'te yeniden analiz oluşturun.
+   </p>}
    <div className="review-stats" aria-label="Tüm çalışmanın karar sayıları">
     {([
       ["all","Tüm adaylar",queue.run.candidate_count],
@@ -161,7 +166,7 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
     <tbody>{queue.rows.map(c=><tr key={c.candidate_id}>
      <td className="number">{c.source_row}</td>
      <td><strong>{c.metraj}</strong><div className="hint">{c.code} · {c.position}</div></td>
-     <td><span className={badge(c.status)}>{label[c.status]??c.status}</span>
+     <td><span className={badge(c.identity_issue?"blocked":c.status)}>{c.identity_issue?"Kimlik onayı engelli":label[c.status]??c.status}</span>
       {c.stale&&<div className="warning">Güncel değil</div>}
       {c.identity_issue&&<div className="warning">Poz kimliği onaya kapalı: {c.identity_issue}</div>}</td>
      <td>{c.last_decision?label[c.last_decision.action]??c.last_decision.action:"Karar yok"}</td>
