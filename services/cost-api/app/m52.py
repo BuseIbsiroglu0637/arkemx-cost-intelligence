@@ -95,7 +95,9 @@ def _comparison(old_rows, new_rows, priced):
         # historical estimate permit a provisional quantity cost impact.
         if a and b and is_safe and a["unit"] is not None and a["quantity"] is not None:
             old_item = priced.get(number)
-            if old_item and old_item["unit"] == a["unit"] and old_item["description"] == a["description"]:
+            if (old_item and old_item["unit"] == a["unit"] and
+                    old_item["description"] == a["description"] and
+                    old_item["quantity"] == Decimal(a["quantity"])):
                 price = old_item["price"]
                 delta = _money((Decimal(b["quantity"]) - Decimal(a["quantity"])) * price)
                 estimated_delta += delta
@@ -160,7 +162,7 @@ def _preview_data(db, user, project_id, content, parsed, estimate_id):
                 raise HTTPException(409, "Pricing source row mismatch")
             priced[line.source_row] = {
                 "description": line.description, "unit": line.unit,
-                "price": Decimal(line.unit_price)
+                "quantity": Decimal(line.quantity), "price": Decimal(line.unit_price)
             }
     else:
         verified = None
@@ -225,6 +227,8 @@ async def apply_revision(project_id: str, file: UploadFile = File(...),
         raise HTTPException(409, "Revised file is identical to current Excel. No duplicate import")
     if result["changed_rows"] == 0:
         raise HTTPException(409, "No changed metraj rows found")
+    if len(reason.strip()) < 10:
+        raise HTTPException(422, "Revision reason requires at least 10 meaningful characters")
     filename = safe_name(file.filename or "revised.xlsx")
     revision_id = str(uuid4())
     key = f"{user.organization_id}/{project_id}/{revision_id}.xlsx"
@@ -275,6 +279,13 @@ def revision_history(project_id: str, user: User = Depends(current_user),
               MetrajRevisionEvent.organization_id == user.organization_id)
        .order_by(MetrajRevisionEvent.created_at.desc(), MetrajRevisionEvent.id.desc())
        .limit(50)).all()
+    for row in rows:
+        try:
+            content = json.loads(row.summary_json)
+        except (ValueError, TypeError):
+            raise HTTPException(409, "Metraj revision audit data corrupted") from None
+        if _sha(content) != row.result_sha256:
+            raise HTTPException(409, "Metraj revision comparison audit SHA mismatch")
     return [{"id": r.id, "baseline_import_id": r.baseline_import_id,
              "new_import_id": r.new_import_id,
              "baseline_sha256": r.old_sha256, "revision_sha256": r.new_sha256,
