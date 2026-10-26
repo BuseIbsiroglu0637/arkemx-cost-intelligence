@@ -23,7 +23,7 @@ from .models import (
 )
 from .m2 import tenant_project
 from .m5 import get_estimate, _money, _sha
-from .m43 import guard_no_active
+from .m43 import guard_no_active, active_job
 from .revisions import effective_item
 from .excel import read_metraj, normalized, ExcelValidationError, safe_name
 from .main import load_upload
@@ -131,9 +131,26 @@ def _comparison(old_rows, new_rows, priced):
 
 def _preview_data(db, user, project_id, content, parsed, estimate_id):
     tenant_project(db, user, project_id)
-    baseline = _current_import(db, project_id)
-    if not baseline:
+    # The newest M1 import may have been accidentally saved with bad encoding
+    # or wrong units. An explicitly selected, SHA-verified historical M5 draft
+    # anchors preview to its original import, without changing the current import.
+    latest = _current_import(db, project_id)
+    if not latest:
         raise HTTPException(409, "First import baseline metraj via M1")
+    verified = None
+    estimate = None
+    baseline = latest
+    if estimate_id:
+        verified = get_estimate(project_id, estimate_id, user, db)
+        estimate = db.get(CostEstimate, estimate_id)
+        if not estimate or estimate.organization_id != user.organization_id:
+            raise HTTPException(404, "M5 baseline estimate not found")
+        historical = db.get(ImportBatch, estimate.import_id)
+        if not historical or historical.project_id != project_id:
+            raise HTTPException(409, "M5 baseline import is missing")
+        baseline = historical
+    is_current = baseline.id == latest.id
+    queued = active_job(db, project_id) is not None
     if baseline.row_count > ROW_LIMIT:
         raise HTTPException(422, "M5.2 pilot limit: at most 500 baseline rows")
     old_objects = db.scalars(select(WorkItem).where(WorkItem.import_id == baseline.id)
@@ -150,10 +167,6 @@ def _preview_data(db, user, project_id, content, parsed, estimate_id):
         })
     priced = {}
     if estimate_id:
-        verified = get_estimate(project_id, estimate_id, user, db)
-        estimate = db.get(CostEstimate, estimate_id)
-        if not estimate or estimate.import_id != baseline.id:
-            raise HTTPException(409, "Selected M5 estimate must belong to current baseline metraj")
         estimate_lines = db.scalars(select(CostEstimateLine)
             .where(CostEstimateLine.estimate_id == estimate_id)).all()
         baseline_items = {r.id: r.source_row for r in old_objects}
@@ -164,14 +177,16 @@ def _preview_data(db, user, project_id, content, parsed, estimate_id):
                 "description": line.description, "unit": line.unit,
                 "quantity": Decimal(line.quantity), "price": Decimal(line.unit_price)
             }
-    else:
-        verified = None
     changes = _comparison(old_rows, parsed["items"], priced)
     revision_hash = hashlib.sha256(content).hexdigest()
     return {
         "baseline_import_id": baseline.id,
         "baseline_filename": baseline.original_filename,
         "baseline_sha256": baseline.sha256,
+        "latest_import_id": latest.id,
+        "baseline_is_current": is_current,
+        "active_bulk_job": queued,
+        "apply_allowed": is_current and not queued,
         "revision_sha256": revision_hash,
         "revision_sheet": parsed["sheet"],
         "row_count_old": len(old_rows),
@@ -219,6 +234,12 @@ async def apply_revision(project_id: str, file: UploadFile = File(...),
     content, parsed = await _upload_and_parse(file, sheet, header_row,
                                               description_column, quantity_column, unit_column)
     result = _preview_data(db, user, project_id, content, parsed, estimate_id)
+    # Never apply a revision to a historical preview. Keep the accidentally
+    # imported latest file untouched until it is reviewed in a separate workflow.
+    if not result["baseline_is_current"]:
+        raise HTTPException(409, "Historical baseline comparison is read-only; current metraj is different")
+    if not result["apply_allowed"]:
+        raise HTTPException(409, "An M4.3 batch job is active; do not apply a new revision")
     if result["baseline_import_id"] != expected_baseline_id:
         raise HTTPException(409, "Metraj baseline changed since preview. Recheck the current version")
     if result["revision_sha256"] != expected_revision_sha256:

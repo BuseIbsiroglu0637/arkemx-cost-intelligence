@@ -7,7 +7,8 @@ type Change = {source_row:number;status:string;old_description:string|null;new_d
  old_quantity:string|null;new_quantity:string|null;old_unit:string|null;new_unit:string|null;
  indicative_delta:string|null;requires_engineer_review:boolean;issues:string[]};
 type Preview = {baseline_import_id:string;baseline_sha256:string;revision_sha256:string;
- baseline_filename:string;revision_sheet:string;row_count_old:number;row_count_new:number;
+ baseline_filename:string;latest_import_id:string;baseline_is_current:boolean;active_bulk_job:boolean;apply_allowed:boolean;
+ revision_sheet:string;row_count_old:number;row_count_new:number;
  review_count_new:number;baseline_estimate_id:string|null;baseline_estimate_total:string|null;
  changed_rows:number;known_quantity_effect:string;fully_attributable_quantity_effect:string|null;
  unknown_cost_effect:boolean;approvals_transferred:boolean;counts:Record<string,number>;
@@ -158,6 +159,16 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
      2. Eski ve yeni Excel'i karşılaştır</button>
    </>}
    {preview&&<section className="stack">
+    {!preview.baseline_is_current&&<p className="warning" role="status">
+      Tarihî karşılaştırma: kaynak olarak seçilen eski maliyet taslağının
+      { " " }<strong>{preview.baseline_filename}</strong> Excel'i kullanıldı.
+      Projede başka bir güncel metraj var. Bu önizleme salt okunurdur; yeni
+      revizyon kaydı oluşturulamaz. Kaynak metrajlar ve onaylar değişmeyecek.
+    </p>}
+    {preview.active_bulk_job&&<p className="warning" role="status">
+      Projede tamamlanmamış M4.3 işi bulunuyor. Worker'ı başlatmayın;
+      bu iş değerlendirilmeden yeni revizyon kaydı oluşturulamaz.
+    </p>}
     <div className="m52-summary">
      <div><small>Önceki / yeni metraj</small><strong>{preview.row_count_old} / {preview.row_count_new}</strong></div>
      <div><small>Değişiklik</small><strong>{preview.changed_rows}</strong></div>
@@ -196,8 +207,11 @@ export default function RevisedMetrajPanel({token,project,onApplied}:{
      <label className="m52-check"><input type="checkbox" checked={accepted}
       onChange={e=>setAccepted(e.target.checked)}/>
       Kaynakları ve değişiklikleri inceledim; yeni metrajı projeye kaydetmek istiyorum.</label>
-     <button type="button" disabled={!accepted||!file||busy||reason.trim().length<10||
+     <button type="button" disabled={!preview.apply_allowed||!accepted||!file||busy||reason.trim().length<10||
        preview.changed_rows===0} onClick={apply}>Yeni revizyonu kaydet ve teknik onayları sıfırdan başlat</button>
+     {!preview.apply_allowed&&<p className="hint" role="status">Bu karşılaştırmada kayıt kapalı:
+       {preview.baseline_is_current?"bekleyen M4.3 işi var":"seçilen maliyet taslağı tarihî metraja ait"}.
+       Önizleme ve tahmini maliyet etkisi incelenebilir.</p>}
     </div>
    </section>}
    {history.length>0&&<div className="m52-history stack">

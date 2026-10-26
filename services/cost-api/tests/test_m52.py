@@ -166,3 +166,42 @@ def test_m52_revision_audit_reason_tampering_fails_closed(client, monkeypatch):
     gen.close()
     assert client.get(f"/api/projects/{pid}/m52/history",
                       headers=head).status_code == 409
+
+
+def test_m52_old_verified_estimate_selected_after_accidental_bad_import(client, monkeypatch):
+    """Real regression: newest M1 import was damaged by PowerShell encoding,
+    old 12.5m3 cost draft still exists and preview must use THAT 12.5m3 source."""
+    head, pid, estimate_id = base(client, monkeypatch)
+    # First create an accidental later M1 import with undecodable-looking text
+    # and missing unit, just like the Windows 2026-10-26 incident.
+    mistaken = xlsx([("Haz?r beton d?k?m C25/30 nakliye dahildir", 13, None)])
+    response = client.post(f"/api/projects/{pid}/imports", headers=head,
+                           files={"file": ("m5-test-01-revizyon-r02.xlsx", mistaken)})
+    assert response.status_code == 201, response.text
+    broken_import_id = response.json()["id"]
+    clean_revision = xlsx([(ORIGINAL, 13, "m3")])
+    preview_response = preview(client, head, pid, clean_revision, estimate_id)
+    assert preview_response.status_code == 200, preview_response.text
+    data = preview_response.json()
+    assert data["baseline_import_id"] != broken_import_id
+    assert data["latest_import_id"] == broken_import_id
+    assert data["baseline_is_current"] is False
+    assert data["apply_allowed"] is False
+    assert data["counts"] == {"quantity_changed": 1}
+    assert data["known_quantity_effect"] == "625.00"
+    assert data["row_count_old"] == 1
+    assert data["row_count_new"] == 1
+    # Compare old metraj without mutating current or previous records.
+    assert len(client.get(f"/api/projects/{pid}/imports", headers=head).json()) == 2
+    forbidden = apply(client, head, pid, clean_revision, data)
+    assert forbidden.status_code == 409, forbidden.text
+    assert len(client.get(f"/api/projects/{pid}/imports", headers=head).json()) == 2
+    old = client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}", headers=head)
+    assert old.status_code == 200
+    assert old.json()["total"] == "15625.00"
+    # Without an explicit historical draft, newest file is the baseline,
+    # so the apparent 'same 13' row is NOT trusted as unchanged.
+    current = preview(client, head, pid, clean_revision)
+    assert current.status_code == 200, current.text
+    assert current.json()["baseline_import_id"] == broken_import_id
+    assert current.json()["counts"]["needs_data_review"] == 1
