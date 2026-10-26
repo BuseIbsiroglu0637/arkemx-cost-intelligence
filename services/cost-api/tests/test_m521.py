@@ -129,3 +129,28 @@ def test_m521_explicit_historical_metraj_preview_is_readonly(client,monkeypatch)
         files={"file":("good-r02.xlsx",good)})
     assert wrong.status_code==409
     assert len(client.get(f"/api/projects/{pid}/imports",headers=head).json())==2
+
+
+def test_m521_excluded_latest_does_not_reactivate_historical_approvals(client,monkeypatch):
+    head,pid,estimate_id=base(client,monkeypatch)
+    source=client.get(f"/api/projects/{pid}/imports",headers=head).json()[0]
+    # A valid historical M4.3 + M4.2 approval is present.
+    before=client.get(f"/api/projects/{pid}/m5/eligible",headers=head)
+    assert before.status_code==200,before.text
+    action=operator(client,pid,head,f"imports/{source['id']}/exclude")
+    assert client.post(action,headers=head,json=reason("Source requires engineering review before further use")).status_code==200
+    # After explicit exclusion old approvals cannot be used to create fresh prices.
+    ineligible=client.get(f"/api/projects/{pid}/m5/eligible",headers=head)
+    assert ineligible.status_code==409,ineligible.text
+    # Recorded historic evidence is still readable.
+    old=client.get(f"/api/projects/{pid}/m5/estimates/{estimate_id}",headers=head)
+    assert old.status_code==200
+    assert old.json()["total"]=="15625.00"
+    # A properly selected historical M5 reference is previewable, but non-applicable.
+    revised=xlsx([(ORIGINAL,13,"m3")])
+    view=client.post(f"/api/projects/{pid}/m52/preview",headers=head,
+       data={"estimate_id":estimate_id},files={"file":("r02.xlsx",revised)})
+    assert view.status_code==200,view.text
+    assert view.json()["baseline_excluded"] is True
+    assert view.json()["apply_allowed"] is False
+    assert view.json()["known_quantity_effect"]=="625.00"
