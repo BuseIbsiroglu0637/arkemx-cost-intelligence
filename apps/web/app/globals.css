@@ -146,3 +146,42 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
 .m421-consent input{margin-top:5px;flex:none}
 .m421-stage{display:grid;gap:10px}
 @media(max-width:700px){.m421-toggle{display:grid}.m421-toggle button{width:100%}}
+
+
+/* M4.2.2: align confirmations, compact staged rows, distinguish historical audit */
+.review-panel .m421-consent{
+ display:flex;flex-direction:row;align-items:flex-start;gap:10px;
+ width:100%;min-width:0;max-width:100%;line-height:1.45;padding:4px 0;cursor:pointer;
+}
+.review-panel .m421-consent input[type="checkbox"]{
+ display:block;width:18px;min-width:18px;max-width:18px;height:18px;
+ flex:0 0 18px;margin:2px 0 0;padding:0;accent-color:var(--blue);
+}
+.review-panel .m421-consent span{
+ display:block;flex:1 1 auto;min-width:0;max-width:100%;
+ white-space:normal;overflow-wrap:anywhere;font-size:13px;
+}
+.m421-workspace{min-width:0;grid-template-columns:minmax(0,1fr)}
+.m421-list{min-width:0;max-width:100%}
+.m421-list td{padding:8px 10px;overflow-wrap:anywhere}
+.m421-list td:nth-child(2){min-width:200px;max-width:600px}
+.m422-reason{font-size:12px;background:#fff;border-left:3px solid #9fb6e9;padding:6px 8px;
+ border-radius:4px;color:#364966;white-space:normal;overflow-wrap:anywhere}
+.m422-current-summary{display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap;
+ border:1px solid var(--border);padding:9px 12px;border-radius:9px;background:#f7faff}
+.m422-current-summary strong{font-size:13px}
+.m422-current-summary span{font-size:13px;color:var(--blue);font-weight:700}
+.m422-current-summary p{flex-basis:100%;margin:0}
+.m422-history-summary{display:flex;gap:10px;flex-wrap:wrap}
+.m422-current-label,.m422-historical-label{padding:5px 10px;border-radius:8px;font-size:12px;font-weight:650}
+.m422-current-label{color:#087b57;background:#e6f6ef}
+.m422-historical-label{color:#536276;background:#edf1f6}
+.m422-history-current{display:grid;gap:8px;border:1px solid #bddacc;border-radius:9px;padding:10px}
+.m422-history-archive{border:1px solid var(--border);padding:12px;border-radius:9px}
+.m422-history-archive summary{cursor:pointer;color:#536276;font-weight:700}
+.m422-history-archive .table-scroll{margin-top:10px}
+@media(max-width:700px){
+ .m421-workspace{padding:10px}
+ .m421-list td:nth-child(2){min-width:170px}
+ .m422-current-summary{align-items:flex-start}
+}
