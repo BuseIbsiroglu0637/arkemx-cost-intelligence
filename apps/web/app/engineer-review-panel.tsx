@@ -372,7 +372,7 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
        </tr>)}</tbody></table></div>
      </details>}
     </>}
-    {detail.history_limited&&<p className="hint">En son 50 karar gösteriliyor; sayılar bu listeyi temel alır.</p>
+    {detail.history_limited&&<p className="hint">En son 50 karar gösteriliyor; sayılar bu listeyi temel alır.</p>}
    </>}
   </div>}
  </section>;
