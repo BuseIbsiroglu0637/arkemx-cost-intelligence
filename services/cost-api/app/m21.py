@@ -155,6 +155,8 @@ def incremental_rematch(project_id: str, user: User = Depends(current_user),
     batch = latest_import(db, project_id)
     if prior_run is None or batch is None or prior_run.import_id != batch.id:
         raise HTTPException(409, "First run full M2 matching for the current import")
+    from .import_policy import guard_source
+    guard_source(db, batch.id)
     if prior_run.algorithm in ("technical-rules-v0.1", "technical-rules-v0.1+evidence-v0.1",
                                 "technical-rules-v0.1+evidence-v0.1+bulk-v0.1"):
         raise HTTPException(409, "After M4 analysis, rerun M4 for revised metraj; prior technical evidence cannot be copied")
