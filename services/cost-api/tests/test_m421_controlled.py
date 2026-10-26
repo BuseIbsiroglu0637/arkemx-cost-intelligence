@@ -5,7 +5,6 @@ No server-side mass approval. One request writes at most one M2 decision.
 from test_m42 import ready, queue
 from test_m41 import auth
 from app.database import get_db
-from app.models import WorkItem
 from sqlalchemy import select
 
 
@@ -77,9 +76,6 @@ def test_controlled_review_rejects_stale_sources_without_new_approval(client,mon
     candidate=queue(client,pid,head,status="compatible").json()["rows"][0]
     cid=candidate["candidate_id"]
     digest=detail(client,pid,head,cid).json()["evidence"]["evidence_sha256"]
-    gen=client.app.dependency_overrides[get_db]()
-    db=next(gen)
-    gen.close()
     # New import is enough to make the M4 run stale without altering old rows.
     from io import BytesIO
     from openpyxl import Workbook

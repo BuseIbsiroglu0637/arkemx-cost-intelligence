@@ -263,6 +263,8 @@ def controlled_decision(project_id: str, payload: ControlledReviewRequest,
     its own rationale, evidence SHA and explicit acknowledgement. No select-all,
     no auto-approval, and no atomic misleading batch success.
     """
+    if len(payload.reason.strip()) < 10:
+        raise HTTPException(422, "Each reviewed decision requires at least 10 non-space characters")
     context = _context(db, user, project_id)
     if context is None or context[0].id != payload.run_id:
         raise HTTPException(409, "Engineering run changed; re-open and review evidence")
