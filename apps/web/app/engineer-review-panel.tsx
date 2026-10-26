@@ -18,6 +18,9 @@ type Queue={run:null|{id:string;catalog:string;year:number;period:string;
  rights_active:boolean;outdated_import:boolean;row_count:number;row_limit:number;catalog_position_limit:number;
  candidate_count:number};total:number;page:number;page_size:number;rows:Candidate[];
  summary:{statuses?:Record<string,number>;decisions?:Record<string,number>};message?:string};
+type ReviewedItem={candidate_id:string;work_item_id:string;run_id:string;code:string;
+ metraj:string;reason:string;evidence_sha256:string};
+const REVIEW_CONFIRM="I_REVIEWED_THIS_CANDIDATE_EVIDENCE";
 const BASE=process.env.NEXT_PUBLIC_API_URL??"http://127.0.0.1:8000";
 async function api<T>(path:string,token:string,method:"GET"|"POST"="GET",body?:unknown):Promise<T>{
  const r=await fetch(BASE+path,{method,cache:"no-store",headers:{
@@ -54,6 +57,12 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
  const [error,setError]=useState("");
  const [detailError,setDetailError]=useState("");
  const [message,setMessage]=useState("");
+ const [controlled,setControlled]=useState(false);
+ const [reviewChecked,setReviewChecked]=useState(false);
+ const [staged,setStaged]=useState<ReviewedItem[]>([]);
+ const [finalChecked,setFinalChecked]=useState(false);
+ const [batchBusy,setBatchBusy]=useState(false);
+
 
  const load=useCallback(async()=>{
   if(!token||!project){setQueue(null);return;}
@@ -70,15 +79,65 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
  },[load,refreshKey,revision]);
 
  useEffect(()=>{setPage(1);setStatus("all");setDecision("all");setSearch("");setDraftSearch("");
-  setSelected(null);setDetail(null);setReason("");},[project]);
+  setSelected(null);setDetail(null);setReason("");setControlled(false);
+  setReviewChecked(false);setStaged([]);setFinalChecked(false);},[project]);
 
  async function inspect(candidateId:string){
   if(selected===candidateId){setSelected(null);setDetail(null);return;}
   if(!token)return;
-  setSelected(candidateId);setDetail(null);setDetailError("");setReason("");setLoadingDetail(true);
+  setSelected(candidateId);setDetail(null);setDetailError("");setReason("");
+  setReviewChecked(false);setLoadingDetail(true);
   try{setDetail(await api<Detail>(`/api/projects/${project}/m42/candidates/${candidateId}`,token));}
   catch(err){setDetailError(err instanceof Error?err.message:String(err));}
   finally{setLoadingDetail(false);}
+ }
+ function toggleControlled(){
+  const next=!controlled;
+  setControlled(next);setStatus(next?"compatible":"all");setDecision(next?"undecided":"all");
+  setPage(1);setPageSize(next?10:20);setSearch("");setDraftSearch("");
+  setSelected(null);setDetail(null);setReviewChecked(false);setReason("");
+  setStaged([]);setFinalChecked(false);setMessage("");setError("");
+ }
+ function stageReviewed(){
+  if(!queue?.run||!detail||!detail.evidence||!detail.can_approve||
+     !controlled||!reviewChecked||reason.trim().length<10)return;
+  const row=queue.rows.find(x=>x.candidate_id===detail.candidate_id);
+  if(!row||!row.can_approve||row.last_decision||
+     staged.some(x=>x.work_item_id===row.work_item_id)||
+     staged.some(x=>x.candidate_id===row.candidate_id)||staged.length>=10){
+   setError("Bu aday inceleme listesine eklenemiyor: karar, tekrar veya seçim sınırını kontrol edin.");
+   return;
+  }
+  setStaged(rows=>[...rows,{candidate_id:row.candidate_id,work_item_id:row.work_item_id,
+   run_id:queue.run!.id,code:row.code,metraj:row.metraj,
+   reason:reason.trim(),evidence_sha256:detail.evidence!.evidence_sha256}]);
+  setFinalChecked(false);setReviewChecked(false);setReason("");
+  setSelected(null);setDetail(null);setMessage("Bir adayın kanıtı ve gerekçesi inceleme listesine eklendi.");
+ }
+ async function saveReviewed(){
+  if(!token||!project||!queue?.run||!finalChecked||batchBusy||staged.length===0)return;
+  const copy=[...staged];let saved=0;
+  setBatchBusy(true);setMessage("");setError("");
+  try{
+   for(const entry of copy){
+    if(entry.run_id!==queue.run.id)throw new Error("Çalışma değişti. Kaydedilmemiş seçimleri yeniden inceleyin.");
+    const current=await api<Detail>(`/api/projects/${project}/m42/candidates/${entry.candidate_id}`,token);
+    if(!current.can_approve||current.evidence?.evidence_sha256!==entry.evidence_sha256)
+     throw new Error(`${entry.code}: teknik kanıt veya onay uygunluğu değişti. Kaydedilmedi.`);
+    await api(`/api/projects/${project}/m42/controlled-decisions`,token,"POST",{
+     run_id:entry.run_id,candidate_id:entry.candidate_id,
+     evidence_sha256:entry.evidence_sha256,
+     reason:entry.reason,confirmation:REVIEW_CONFIRM});
+    saved+=1;
+    setStaged(rows=>rows.filter(x=>x.candidate_id!==entry.candidate_id));
+   }
+   setMessage(`${saved} ayrı mühendis kararı, mevcut M2 karar kapısından doğrulanarak kaydedildi.`);
+  }catch(err){
+   setError(`Seri kayıt durduruldu. ${saved} karar kaydedildi; kalanlar kaydedilmedi. `+
+    (err instanceof Error?err.message:String(err)));
+  }finally{
+   setFinalChecked(false);setBatchBusy(false);setRevision(x=>x+1);
+  }
  }
  async function decide(action:"approve"|"reject"){
   if(!token||!queue?.run||!detail||busy||reason.trim().length<10)return;
@@ -133,6 +192,36 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
     Bu satırlara onay verilemez. Eski çalışmanın teknik durum sayaçları tarihî kanıta aittir;
     güncel 100/200 durumunu görmek için M4.3'te yeniden analiz oluşturun.
    </p>}
+   <div className="m421-toggle">
+    <div><h3>M4.2.1 · Kontrollü seri inceleme</h3>
+     <p className="hint">Her adayın kanıtı tek tek açılır ve ayrı gerekçe yazılır.
+      Onay engelli adaylar seçilemez; en fazla 10 incelenmiş aday sırayla kaydedilir.</p></div>
+    <button type="button" className="secondary" onClick={toggleControlled}
+     disabled={batchBusy}>{controlled?"Seri incelemeyi kapat":"Seri incelemeyi aç"}</button>
+   </div>
+   {controlled&&<div className="m421-workspace" aria-label="İncelenmiş karar listesi">
+    <div className="flex between"><strong>İncelenen adaylar · {staged.length}/10</strong>
+      <span className="tag">Uyumlu + kararsız adaylar</span></div>
+    <p className="hint">Bir adayın “Kanıt ve karar” ayrıntısını açın, kanıtını gözden geçirin,
+     kişisel gerekçesini yazın ve inceleme listesine ekleyin. Toplu otomatik onay yoktur.</p>
+    {staged.length>0?<><div className="table-scroll"><table>
+     <thead><tr><th>Poz</th><th>İmalat / gerekçe</th><th>Kanıt</th><th>İşlem</th></tr></thead>
+     <tbody>{staged.map(row=><tr key={row.candidate_id}>
+      <td><strong>{row.code}</strong></td>
+      <td>{row.metraj}<p className="hint">{row.reason}</p></td>
+      <td><code title={row.evidence_sha256}>{row.evidence_sha256.slice(0,12)}…</code></td>
+      <td><button type="button" className="secondary" disabled={batchBusy}
+       onClick={()=>{setStaged(all=>all.filter(x=>x.candidate_id!==row.candidate_id));setFinalChecked(false);}}>
+       Listeden çıkar</button></td></tr>)}</tbody></table></div>
+      <label className="m421-consent"><input type="checkbox" checked={finalChecked} disabled={batchBusy}
+       onChange={e=>setFinalChecked(e.target.checked)}/>
+       Listedeki her adayın kanıtını ayrı ayrı inceledim; kendi gerekçelerimle kararları kaydetmeyi onaylıyorum.
+      </label>
+      <button type="button" onClick={saveReviewed} disabled={batchBusy||!finalChecked||staged.length===0}>
+       {batchBusy?"Kararlar doğrulanarak kaydediliyor…":`${staged.length} bireysel kararı sırayla kaydet`}
+      </button>
+     </>:<p className="hint">İnceleme listesi henüz boş.</p>}
+   </div>}
    <div className="review-stats" aria-label="Tüm çalışmanın karar sayıları">
     {([
       ["all","Tüm adaylar",queue.run.candidate_count],
@@ -150,11 +239,13 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
    <p className="hint">Son kararlar: {approvals.approved??0} onay · {approvals.rejected??0} ret · {approvals.undecided??0} kararsız.
     Bu sayılar adayları gösterir, benzersiz metraj kalemi sayısını değil.</p>
    <form className="review-filters" onSubmit={submitSearch}>
-    <label>Teknik durum<select value={status} onChange={e=>filterStatus(e.target.value as Status)}>
+    <label>Teknik durum<select value={status} disabled={controlled}
+      onChange={e=>filterStatus(e.target.value as Status)}>
      <option value="all">Tüm durumlar</option><option value="review">Uzman incelemesi</option>
      <option value="blocked">Engelli</option><option value="compatible">Uyumlu aday</option>
      <option value="missing">Kanıt eksik</option></select></label>
-    <label>Son mühendis kararı<select value={decision} onChange={e=>filterDecision(e.target.value as Decision)}>
+    <label>Son mühendis kararı<select value={decision} disabled={controlled}
+      onChange={e=>filterDecision(e.target.value as Decision)}>
      <option value="all">Tüm kararlar</option><option value="undecided">Karar verilmemiş</option>
      <option value="approved">Onaylanmış</option><option value="rejected">Reddedilmiş</option></select></label>
     <label>Ara<input value={draftSearch} maxLength={120} onChange={e=>setDraftSearch(e.target.value)}
@@ -216,13 +307,24 @@ export default function EngineerReviewPanel({token,project,refreshKey,onGoToBulk
      <label>Karar gerekçesi (en az 10 karakter)
       <textarea value={reason} maxLength={500} rows={3} onChange={e=>setReason(e.target.value)}
        placeholder="İncelenen teknik kanıtı ve gerekçenizi belirtin"/></label>
-     <div className="flex">
+     {controlled?<div className="m421-stage">
+      <label className="m421-consent"><input type="checkbox" checked={reviewChecked}
+       disabled={!detail.can_approve} onChange={e=>setReviewChecked(e.target.checked)}/>
+       Bu adaya ait teknik kanıtı, kimlik eşleşmesini ve SHA-256 bilgisini inceledim.
+      </label>
+      <button type="button" onClick={stageReviewed}
+       disabled={!detail.can_approve||!reviewChecked||reason.trim().length<10||
+        staged.length>=10||staged.some(x=>x.candidate_id===detail.candidate_id)||
+        !queue?.rows.some(x=>x.candidate_id===detail.candidate_id&&!x.last_decision)}>
+       İncelediğim adayı listeye ekle</button>
+      <p className="hint">Bu işlem henüz karar kaydetmez. Kararlar yukarıdaki ayrı onayla sırayla kaydedilir.</p>
+     </div>:<div className="flex">
       <button disabled={busy||reason.trim().length<10||!detail.can_approve} onClick={()=>decide("approve")}
        type="button" title={!detail.can_approve?"Teknik kanıt, metraj veya katalog onaya uygun değil":"Mühendis onayını kaydet"}>
        Mühendis olarak onayla</button>
       <button disabled={busy||reason.trim().length<10} className="secondary" type="button" onClick={()=>decide("reject")}>
        Reddet</button>
-     </div>
+     </div>}
      {!detail.can_approve&&<p className="warning">Onay yalnızca güncel, kullanım hakkı aktif ve teknik olarak uygun adaylarda mümkündür.</p>}
     </div>
     <h4>Karar geçmişi (aynı metraj kalemi ve poz)</h4>

@@ -135,3 +135,14 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
 .m521-controls>summary{cursor:pointer;font-weight:700;color:var(--blue)}
 .m521-controls>div{padding:14px 0 4px}
 .m521-source{background:#f2f5fb;padding:10px;border-radius:8px;overflow-wrap:anywhere}
+
+/* M4.2.1 controlled individual-review staging; no automatic approvals. */
+.m421-toggle{display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid var(--border);border-radius:12px;padding:14px;background:#f8faff}
+.m421-toggle h3{margin:0 0 4px}
+.m421-workspace{display:grid;gap:12px;border:1px solid #c1d3f4;background:#f6f9ff;border-radius:12px;padding:14px}
+.m421-workspace td{vertical-align:top}
+.m421-workspace td:nth-child(2){min-width:220px}
+.m421-consent{display:flex;align-items:flex-start;gap:9px;line-height:1.5}
+.m421-consent input{margin-top:5px;flex:none}
+.m421-stage{display:grid;gap:10px}
+@media(max-width:700px){.m421-toggle{display:grid}.m421-toggle button{width:100%}}
