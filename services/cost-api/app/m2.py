@@ -126,6 +126,8 @@ def generate_matches(project_id: str, payload: RunRequest, user: User = Depends(
                       .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
     if not batch:
         raise HTTPException(409, "Import a quantity takeoff before matching")
+    from .import_policy import guard_source
+    guard_source(db, batch.id)
     if batch.row_count > MAX_MATCH_ROWS:
         raise HTTPException(422, f"M2 pilot can match at most {MAX_MATCH_ROWS} items per run")
     items = db.scalars(select(WorkItem).where(WorkItem.import_id == batch.id)
@@ -217,7 +219,9 @@ def latest(project_id: str, user: User = Depends(current_user), db: Session = De
                       .order_by(WorkItem.source_row)).all()
     current_import = db.scalar(select(ImportBatch).where(ImportBatch.project_id == project_id)
                     .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
-    outdated_import = not current_import or current_import.id != run.import_id
+    from .import_policy import source_excluded
+    outdated_import = (not current_import or current_import.id != run.import_id
+                       or source_excluded(db, current_import.id if current_import else None))
     return {
         "run": {"id": run.id, "algorithm": run.algorithm, "row_count": run.row_count,
                 "candidate_count": run.candidate_count, "created_at": run.created_at,
@@ -284,7 +288,10 @@ def decide(project_id: str, payload: DecisionRequest, user: User = Depends(curre
                     .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
     snapshot = db.scalar(select(MatchRunItemSnapshot).where(
         MatchRunItemSnapshot.run_id == run.id, MatchRunItemSnapshot.work_item_id == item.id))
-    stale = not current_import or current_import.id != run.import_id or (fingerprint(effective_item(db, item)) != previously_frozen(item, snapshot))
+    from .import_policy import source_excluded
+    stale = (not current_import or current_import.id != run.import_id
+             or source_excluded(db, current_import.id if current_import else None)
+             or (fingerprint(effective_item(db, item)) != previously_frozen(item, snapshot)))
     if payload.action == "approve" and stale:
         raise HTTPException(409, "Metraj changed after this run; recompute before approval")
     if payload.action == "approve" and (not candidate.approvable or (snapshot.review_required if snapshot else item.review_required)):

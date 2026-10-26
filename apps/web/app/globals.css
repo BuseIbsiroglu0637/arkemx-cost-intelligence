@@ -129,3 +129,9 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
 .m52-history>div{padding:10px;border:1px solid var(--border);border-radius:9px}
 .m52-history code,.m52-body code{overflow-wrap:anywhere}
 @media(max-width:700px){.m52-grid{grid-template-columns:1fr}.m52-summary{grid-template-columns:1fr 1fr}.m52-body{padding:0 12px 14px}}
+
+/* M5.2.1 queue and source safety */
+.m521-controls{border:1px solid var(--border);border-radius:12px;padding:12px 15px}
+.m521-controls>summary{cursor:pointer;font-weight:700;color:var(--blue)}
+.m521-controls>div{padding:14px 0 4px}
+.m521-source{background:#f2f5fb;padding:10px;border-radius:8px;overflow-wrap:anywhere}

@@ -43,6 +43,8 @@ def _build_run(project_id: str, user: User, db: Session, *, with_evidence: bool)
                       .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
     if not batch or prior.import_id != batch.id:
         raise HTTPException(409, "Run M2/M3 matching for the latest metraj import first")
+    from .import_policy import guard_source
+    guard_source(db, batch.id)
     if batch.row_count > MAX_MATCH_ROWS:
         raise HTTPException(422, "Maximum 100 metraj items")
     positions = db.scalars(select(CatalogPosition).where(CatalogPosition.version_id == version.id)

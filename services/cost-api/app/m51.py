@@ -4,6 +4,8 @@ No catalog price ingestion; every source is an already verified M5 manual-price
 snapshot. Existing M1/M2.1 metraj and M4 engineer decisions are never mutated.
 """
 from decimal import Decimal
+from hashlib import sha256
+from collections import Counter
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -12,8 +14,12 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .security import current_user
-from .models import User, CostEstimateLine
+from .models import (User, CostEstimateLine, CostEstimate, ImportBatch,
+                     CatalogVersion, CatalogPosition, WorkItem, MatchCandidate,
+                     TechnicalEvidence)
 from .m5 import get_estimate, _money
+from .m42 import _proof
+from .excel import normalized
 
 router = APIRouter(prefix="/api/projects/{project_id}/m51", tags=["M5.1 Cost Analysis"])
 ZERO = Decimal("0.00")
@@ -94,6 +100,118 @@ def _kind(old, new):
     return "unchanged"
 
 
+
+
+def _cross_key(line):
+    """Never infer continuity from row number or code alone."""
+    return (line.position_id, line.position_code, normalized(line.description),
+            line.unit)
+
+
+def _technical_scope(db: Session, line, estimate: CostEstimate):
+    """Verify both historical evidence objects, not merely their SHA labels.
+
+    Imported Excel SHA, catalog identity and candidate lineage must agree.
+    M4.1/M4.3 evidence hashes legitimately differ across imports due to source
+    references; only equivalent verified technical facts may justify matching.
+    """
+    if not line.position_id or not line.candidate_id:
+        return None
+    imported = db.get(ImportBatch, estimate.import_id)
+    version = db.get(CatalogVersion, estimate.version_id)
+    position = db.get(CatalogPosition, line.position_id)
+    item = db.get(WorkItem, line.work_item_id)
+    candidate = db.get(MatchCandidate, line.candidate_id)
+    evidence = db.scalar(select(TechnicalEvidence).where(
+        TechnicalEvidence.candidate_id == line.candidate_id))
+    if (not imported or imported.project_id != estimate.project_id or
+            imported.sha256 != estimate.source_file_sha256 or
+            not version or version.sha256 != estimate.catalog_sha256 or
+            not position or position.version_id != estimate.version_id or
+            position.code != line.position_code or position.unit != line.unit or
+            not item or item.import_id != estimate.import_id or
+            not candidate or candidate.run_id != estimate.run_id or
+            candidate.work_item_id != line.work_item_id or
+            candidate.position_id != line.position_id or not evidence):
+        return None
+    if evidence.evidence_sha256 != line.evidence_sha256:
+        raise HTTPException(409, "Historical technical evidence SHA differs from cost snapshot")
+    proof = _proof(evidence)  # Fails closed with HTTP409 on evidence corruption
+    if not proof or proof.get("status") != "compatible" or not proof.get("approval_allowed"):
+        return None
+    sources = proof.get("sources")
+    refs = proof.get("source_refs")
+    if (not isinstance(sources, dict) or not isinstance(refs, dict) or
+            not isinstance(sources.get("metraj"), dict) or
+            not isinstance(sources.get("catalog"), dict) or
+            sources["metraj"].get("normalized_text") != normalized(line.description) or
+            sources["catalog"].get("normalized_text") != normalized(position.description) or
+            sources["catalog"].get("sha256") != sha256(position.description.encode("utf-8")).hexdigest() or
+            not isinstance(refs.get("metraj"), dict) or
+            refs["metraj"].get("import_id") != estimate.import_id or
+            refs["metraj"].get("import_sha256") != estimate.source_file_sha256 or
+            refs["metraj"].get("work_item_id") != line.work_item_id or
+            refs["metraj"].get("source_row") != line.source_row or
+            not isinstance(refs.get("catalog"), dict) or
+            refs["catalog"].get("position_id") != line.position_id or
+            refs["catalog"].get("version_id") != estimate.version_id or
+            refs["catalog"].get("position_code") != line.position_code or
+            refs["catalog"].get("version_sha256") != estimate.catalog_sha256):
+        return None
+    checks = proof.get("checks")
+    if not isinstance(checks, list) or not checks:
+        return None
+    claim = []
+    seen = set()
+    for c in checks:
+        if not isinstance(c, dict) or c.get("key") in seen:
+            return None
+        key = c.get("key")
+        seen.add(key)
+        if not isinstance(c.get("metraj"), dict) or not isinstance(c.get("catalog"), dict):
+            return None
+        claim.append((key, c.get("status"), c["metraj"].get("value"),
+                      c["catalog"].get("value")))
+    return (proof.get("schema"), proof.get("basic_rule_version"),
+            sources["catalog"].get("sha256"), tuple(sorted(claim)))
+
+
+def _cross_pairs(db: Session, baseline_estimate, target_estimate,
+                 old_rows, new_rows, old_map, new_map):
+    """Pair ONLY one-to-one unmatched lines with verified identical scope.
+
+    A duplicate in either *complete* draft makes this identity ambiguous even
+    if one duplicate is already paired via an unchanged work_item_id.
+    """
+    matched = {}
+    warnings = set()
+    if (baseline_estimate.version_id != target_estimate.version_id or
+            baseline_estimate.catalog_sha256 != target_estimate.catalog_sha256):
+        return matched, warnings
+    old_count = Counter(_cross_key(row) for row in old_rows)
+    new_count = Counter(_cross_key(row) for row in new_rows)
+    old_candidates = {}
+    new_candidates = {}
+    for row in old_rows:
+        if row.work_item_id not in new_map:
+            old_candidates[_cross_key(row)] = row
+    for row in new_rows:
+        if row.work_item_id not in old_map:
+            new_candidates[_cross_key(row)] = row
+    for key in old_candidates.keys() & new_candidates.keys():
+        a, b = old_candidates[key], new_candidates[key]
+        if old_count[key] != 1 or new_count[key] != 1:
+            warnings.add(key)
+            continue
+        left = _technical_scope(db, a, baseline_estimate)
+        right = _technical_scope(db, b, target_estimate)
+        if left is None or right is None or left != right:
+            warnings.add(key)
+            continue
+        matched[a.work_item_id] = b.work_item_id
+    return matched, warnings
+
+
 @router.get("/compare")
 def compare_estimates(
     project_id: str,
@@ -111,27 +229,57 @@ def compare_estimates(
     if baseline["currency"] != "TRY" or target["currency"] != "TRY":
         raise HTTPException(409, "Karsilastirma TRY taslaklari icindir")
 
-    # A project WorkItem is persistent across M2.1 revisions. Re-imported
-    # spreadsheets have new work_item_ids; do not guess a false pairing
-    # from identical titles or shared source row numbers.
+    # Stable work_item_id remains authoritative inside one import.
+    # Cross-import pairs are additionally accepted ONLY for unique, verified
+    # catalog-position / description / unit / equivalent technical proof.
     old_map = {row.work_item_id: row for row in old_rows}
     new_map = {row.work_item_id: row for row in new_rows}
     if len(old_map) != len(old_rows) or len(new_map) != len(new_rows):
         raise HTTPException(409, "Ayni taslakta yinelenen is kalemi")
-    keys = sorted(set(old_map) | set(new_map),
-                  key=lambda id: (
-                      (new_map.get(id) or old_map[id]).source_row,
-                      id))
-    if len(keys) > MAX_COMPARE_ROWS:
+    old_estimate = db.get(CostEstimate, baseline_id)
+    new_estimate = db.get(CostEstimate, target_id)
+    pairs, unresolved = _cross_pairs(db, old_estimate, new_estimate,
+                                     old_rows, new_rows, old_map, new_map)
+    joined = []
+    consumed = set()
+    for old in old_rows:
+        new = new_map.get(old.work_item_id)
+        cross_import = False
+        if new is None and old.work_item_id in pairs:
+            new = new_map[pairs[old.work_item_id]]
+            cross_import = True
+        if new:
+            consumed.add(new.work_item_id)
+        joined.append((old, new, cross_import))
+    for new in new_rows:
+        if new.work_item_id not in consumed:
+            joined.append((None, new, False))
+    joined.sort(key=lambda pair: (
+        (pair[1] or pair[0]).source_row,
+        (pair[1] or pair[0]).work_item_id))
+    if len(joined) > MAX_COMPARE_ROWS:
         raise HTTPException(409, "Pilot karsilastirma siniri asildi")
     totals = {"quantity_effect": ZERO, "price_effect": ZERO,
               "rounding_adjustment": ZERO, "unattributed_effect": ZERO}
     counter = {}
     results = []
-    for key in keys:
-        old = old_map.get(key)
-        new = new_map.get(key)
-        kind = _kind(old, new)
+    for old, new, cross_import in joined:
+        key = (new or old).work_item_id
+        if cross_import:
+            # Difference in full evidence SHA alone is not scope change:
+            # technical facts were independently verified as equivalent.
+            if old.quantity != new.quantity and old.unit_price != new.unit_price:
+                kind = "quantity_and_price"
+            elif old.quantity != new.quantity:
+                kind = "quantity_only"
+            elif old.unit_price != new.unit_price:
+                kind = "price_only"
+            elif old.price_source != new.price_source:
+                kind = "source_changed"
+            else:
+                kind = "unchanged"
+        else:
+            kind = _kind(old, new)
         counter[kind] = counter.get(kind, 0) + 1
         before = _amount(old) if old else ZERO
         after = _amount(new) if new else ZERO
@@ -147,6 +295,12 @@ def compare_estimates(
             totals[name] += amount
         results.append({
             "work_item_id": key, "status": kind,
+            "baseline_work_item_id": old.work_item_id if old else None,
+            "target_work_item_id": new.work_item_id if new else None,
+            "matching_basis": ("verified_cross_import" if cross_import else
+                               "original_work_item" if old and new else
+                               "unmatched_requires_review" if
+                               _cross_key(old or new) in unresolved else "unmatched"),
             "source_row": (new or old).source_row,
             "description": (new or old).description,
             "baseline_position": old.position_code if old else None,
@@ -180,9 +334,11 @@ def compare_estimates(
         "baseline_total": str(old_total), "target_total": str(new_total),
         "difference": str(change),
         "breakdown": _to_str(totals), "counts": counter,
+        "verified_cross_import_pairs": len(pairs),
+        "ambiguous_identity_groups": len(unresolved),
         "total_rows": len(results), "page": page, "page_size": page_size,
         "rows": results[start:start + page_size],
-        "note": "Miktar etkisi eski fiyatla; fiyat etkisi yeni miktarla hesaplanir. Kapsami degisen, eklenen ve cikarilan pozlar ayrica gosterilir. Ayrica yuvarlama farki olabilir. Yalnizca sentetik taslak karsilastirmasidir."
+        "note": "Yalniz benzersiz, ayni katalog poz kimligine, aciklama/birim ve dogrulanmis teknik kapsama sahip iki farkli Excel satiri birlikte ele alinir. Tekrar ve belirsizliklerde otomatik esleme yapilmaz. Miktar etkisi eski fiyatla, fiyat etkisi yeni miktarla hesaplanir. Degisen kapsam ve eslesmeyen kalemlerin etkisi ayrica gosterilir. Bu islem yalnizca sentetik taslak karsilastirmasidir."
     }
 
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .security import current_user
 from .models import (
-    User, BulkJob, MatchRun, ImportBatch, WorkItem, CatalogVersion,
+    User, BulkJob, MatchRun, ImportBatch, WorkItem, MetrajImportExclusion, CatalogVersion,
     CatalogSource, CatalogPosition, CatalogImport,
 )
 from .m2 import tenant_project, latest_run, DEMO_INSTITUTION, DEMO_SCOPE
@@ -106,6 +106,8 @@ def enqueue(project_id: str, payload: StartRequest,
         ImportBatch.created_at.desc(),ImportBatch.id.desc()))
     if not latest_import:
         raise HTTPException(409,"Import Excel metraj first")
+    if db.get(MetrajImportExclusion, latest_import.id):
+        raise HTTPException(409, "Latest metraj import was excluded; upload a clean new source before M4.3")
     if not 1 <= latest_import.row_count <= ROW_LIMIT:
         raise HTTPException(422,f"M4.3 requires 1 to {ROW_LIMIT} metraj rows")
     positions=db.scalars(select(CatalogPosition.id).where(

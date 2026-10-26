@@ -216,6 +216,8 @@ def run_real_catalog(project_id: str, payload: RunRequest,
                       .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()))
     if batch is None:
         raise HTTPException(409, "Import metraj before matching")
+    from .import_policy import guard_source
+    guard_source(db, batch.id)
     if batch.row_count > MAX_MATCH_ROWS:
         raise HTTPException(422, f"Pilot supports up to {MAX_MATCH_ROWS} metraj rows")
     positions = db.scalars(select(CatalogPosition).where(

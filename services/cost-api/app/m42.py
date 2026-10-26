@@ -46,7 +46,9 @@ def _context(db: Session, user: User, project_id: str):
     last_import = db.scalar(select(ImportBatch).where(
         ImportBatch.project_id == project_id).order_by(
         ImportBatch.created_at.desc(), ImportBatch.id.desc()))
-    outdated = last_import is None or last_import.id != run.import_id
+    from .import_policy import source_excluded
+    outdated = (last_import is None or last_import.id != run.import_id
+                or source_excluded(db, last_import.id if last_import else None))
     return run, version, source, rights_active, outdated
 
 
