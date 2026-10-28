@@ -316,3 +316,6 @@ app.include_router(m52_router)
 # M5.2.1 safety controls: cancel queued only, exclusion audit and source selection
 from .m521 import router as m521_router
 app.include_router(m521_router)
+
+from .m6_preview import router as m6_preview_router
+app.include_router(m6_preview_router)

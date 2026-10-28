@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
+import PdfCatalogPreview from "./pdf-catalog-preview";
 
 type Mapping = Record<"code"|"description"|"unit"|"price",string>;
 type Inspection={headers:string[];suggested_mapping:Record<keyof Mapping,string|null>;data_rows:number};
@@ -129,6 +130,7 @@ export default function CatalogPanel({token,project,onMatch}:{token:string|null;
    </tbody></table></div>
    <button disabled={busy||!period.trim()||year<2000||year>2100} onClick={persist}>3. Kataloğu beklemede kaydet</button>
   </>}
+  <PdfCatalogPreview key={project} token={token} />
   <h2>Yüklenen kataloglar</h2>
   {catalogs.length===0?<div className="empty">Henüz içe aktarılmış katalog yok.</div>:
    <div className="table-scroll"><table><thead><tr><th>Kurum</th><th>Dönem</th><th>Poz</th><th>Hak incelemesi</th><th>Eşleştirme</th></tr></thead>
