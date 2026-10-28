@@ -1,7 +1,8 @@
+"""A2.5 - Source-backed cement dosage comparison per layer.
 
-"""A2.4 - Source-backed cement dosage comparison per layer.
-
-Unassigned or conflicting dosage expressions require review.
+Supports legacy 'cimento dozlu' and selected real-analysis expressions.
+New addition expressions require an explicit one-cubic-metre sand basis.
+Missing, conflicting or unassigned information requires review.
 Never grants engineering approval.
 """
 
@@ -12,8 +13,30 @@ from decimal import Decimal
 from app.technical_analysis.layers import LayerMeasurement, fold
 
 DOSAGE = re.compile(
-    r"\b(?P<value>\d+(?:[.,]\d+)?)\s*kg\s+cimento\s+dozlu\b"
+    r"\b(?P<value>\d+(?:[.,]\d+)?)\s*kg\s+cimento\s+"
+    r"(?P<expression>dozlu|katilmasi|ilavesiyle)\b"
 )
+
+CEMENT_AMOUNT = re.compile(
+    r"\b\d+(?:[.,]\d+)?\s*kg\s+cimento\b"
+)
+
+SAND_BASIS = re.compile(
+    r"\b(?P<value>\d+(?:[.,]\d+)?)\s*m(?:³|3|\^3)\s+"
+    r"(?:disli\s+|mil\s+)?kum(?:a|una)\b"
+)
+
+
+def _has_unit_sand_basis(text: str) -> bool:
+    """Require exactly one explicit reference to one cubic metre of sand."""
+    matches = list(SAND_BASIS.finditer(text))
+
+    return (
+        len(matches) == 1
+        and Decimal(
+            matches[0].group("value").replace(",", ".")
+        ) == Decimal("1")
+    )
 
 
 def _collect_dosages(
@@ -25,13 +48,23 @@ def _collect_dosages(
     if len(normalized) != len(text):
         raise ValueError("Source offsets are not preserved")
 
+    matches = list(DOSAGE.finditer(normalized))
+    amounts = list(CEMENT_AMOUNT.finditer(normalized))
+
+    recognized_starts = {
+        match.start() for match in matches
+    }
+
+    # Unrecognized cement-amount expressions must not disappear silently.
+    unassigned = any(
+        amount.start() not in recognized_starts
+        for amount in amounts
+    )
+
+    found = bool(amounts)
     by_layer: list[list[dict]] = [[] for _ in layers]
-    unassigned = False
-    found = False
 
-    for match in DOSAGE.finditer(normalized):
-        found = True
-
+    for match in matches:
         owners = [
             index
             for index, layer in enumerate(layers)
@@ -45,18 +78,28 @@ def _collect_dosages(
             unassigned = True
             continue
 
-        evidence = {
-            "quote": text[match.start():match.end()],
-            "start": match.start(),
-            "end": match.end(),
-            "offset_basis": "original_text",
-        }
+        owner = owners[0]
+        layer = layers[owner]
 
-        by_layer[owners[0]].append({
+        # Preserve legacy "cimento dozlu" support.
+        # New addition expressions need a clear local sand-volume basis.
+        if match.group("expression") != "dozlu":
+            prefix = normalized[layer.start:match.start()]
+
+            if not _has_unit_sand_basis(prefix):
+                unassigned = True
+                continue
+
+        by_layer[owner].append({
             "value": Decimal(
                 match.group("value").replace(",", ".")
             ),
-            "evidence": evidence,
+            "evidence": {
+                "quote": text[match.start():match.end()],
+                "start": match.start(),
+                "end": match.end(),
+                "offset_basis": "original_text",
+            },
         })
 
     return by_layer, unassigned, found
@@ -68,7 +111,7 @@ def compare_layer_dosages(
     metraj_layers: Sequence[LayerMeasurement],
     catalog_layers: Sequence[LayerMeasurement],
 ) -> tuple[list[dict], list[str], list[str]]:
-    """Compare dosage only where source-to-layer ownership is clear."""
+    """Compare recognized dosage only where layer ownership is clear."""
 
     left, left_unassigned, left_found = _collect_dosages(
         metraj_description,
