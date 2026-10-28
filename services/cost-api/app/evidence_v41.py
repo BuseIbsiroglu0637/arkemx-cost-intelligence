@@ -7,9 +7,10 @@ full technical specification interpreter or professional engineering approval.
 import hashlib
 import json
 import re
+
 from .excel import normalized
-from .technical import compare as compare_m4
 from .identity_guard import fixture_identity
+from .technical import compare as compare_m4
 
 VERSION = "evidence-v0.1"
 ALGORITHM = "technical-rules-v0.1+evidence-v0.1"
@@ -162,6 +163,31 @@ def analyze(metraj_description: str, metraj_unit: str | None,
     # Never claim full compliance from matching titles alone.
     if not scope_verified:
         reviews.append("SCOPE_NOT_VERIFIABLE_FROM_TITLES")
+    
+    # A0: Temporary fail-closed protection.
+    #
+    # The existing technical extractor reads only the first
+    # thickness. Multiple dimensions in a plaster description
+    # therefore require review until the layer-aware engine
+    # can associate each measurement with its own material.
+
+    for text in (
+        left["normalized_text"],
+        right["normalized_text"],
+    ):
+        has_plaster = re.search(r"\bsiva\b", text) is not None
+
+        thicknesses = re.findall(
+            r"\b\d+(?:[.,]\d+)?\s*(?:mm|cm)\b",
+            text,
+        )
+
+        if has_plaster and len(thicknesses) >= 2:
+            reviews.append(
+                "PLASTER_MULTIPLE_THICKNESSES_UNVERIFIED"
+            )
+            break
+
     if "concrete_class" not in [c["key"] for c in checks]:
         raise AssertionError("Concrete class check missing")
     blockers = sorted(set(blockers))
