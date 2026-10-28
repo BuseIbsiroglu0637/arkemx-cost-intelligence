@@ -1,36 +1,25 @@
+
+"""ARKEMX M6.0-A.27 - PDF catalog parser.
+
+Pilot implementation for four-column 10.100.xxxx rayic tables.
+No database writes or automatic catalog approval.
+"""
+
 import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from collections import defaultdict
-from collections import defaultdict
+
 
 POSITION_CODE = re.compile(
     r"^[A-Za-z0-9]+(?:[./_-][A-Za-z0-9]+)*$"
 )
 
 TR_PRICE = re.compile(
-    r"^\d{1,3}(?:\.\d{3})*,\d{2}$"
+    r"^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$"
 )
 
-def parse_turkish_price(value: str) -> Decimal:
-    """TÃ¼rkÃ§e para biÃ§imini gÃ¼venli ÅŸekilde Decimal deÄŸerine dÃ¶nÃ¼ÅŸtÃ¼rÃ¼r."""
-    if not isinstance(value, str):
-        raise ValueError("Fiyat metin olmalÄ±dÄ±r")
-
-    raw = value.strip()
-
-    if not TR_PRICE.fullmatch(raw):
-        raise ValueError(f"GeÃ§ersiz fiyat biÃ§imi: {value}")
-
-    try:
-        result = Decimal(raw.replace(".", "").replace(",", "."))
-    except InvalidOperation as exc:
-        raise ValueError("Fiyat ayrÄ±ÅŸtÄ±rÄ±lamadÄ±") from exc
-
-    if not result.is_finite() or result <= 0:
-        raise ValueError("Fiyat pozitif olmalÄ±dÄ±r")
-
-    return result
+RAYIC_CODE = re.compile(r"10\.100\.\d{4}")
 
 
 @dataclass(frozen=True)
@@ -44,32 +33,6 @@ class CatalogRecord:
     source_sha256: str
 
 
-def validate_record(record: CatalogRecord) -> None:
-    """Validate catalog fields without importing any data."""
-    if not POSITION_CODE.fullmatch(record.code):
-        raise ValueError("Geçersiz poz kodu")
-
-    if len(record.description.strip()) < 3:
-        raise ValueError("Eksik poz açıklaması")
-
-    if not record.unit.strip():
-        raise ValueError("Ölçü birimi eksik")
-
-    if not record.price.is_finite() or record.price <= 0:
-        raise ValueError("Geçersiz fiyat")
-
-    if record.source_page < 1:
-        raise ValueError("Geçersiz kaynak sayfası")
-
-    if record.record_type not in {"rayic", "imalat"}:
-        raise ValueError("Geçersiz kayıt türü")
-
-    if not re.fullmatch(
-        r"[a-fA-F0-9]{64}", record.source_sha256
-    ):
-        raise ValueError("Geçersiz kaynak SHA-256")
-
-
 @dataclass(frozen=True)
 class ParsedRow:
     code: str
@@ -79,8 +42,64 @@ class ParsedRow:
     source_page: int
 
 
+def parse_turkish_price(value: str) -> Decimal:
+    """Convert Turkish price strings into exact Decimal values."""
+    if not isinstance(value, str):
+        raise ValueError("Fiyat metin olmalidir")
+
+    raw = value.strip()
+
+    if not TR_PRICE.fullmatch(raw):
+        raise ValueError(f"Gecersiz fiyat bicimi: {value}")
+
+    try:
+        price = Decimal(
+            raw.replace(".", "").replace(",", ".")
+        )
+    except InvalidOperation as exc:
+        raise ValueError("Fiyat ayrıştırılamadı") from exc
+
+    if not price.is_finite() or price <= 0:
+        raise ValueError("Fiyat pozitif ve sonlu olmalidir")
+
+    return price
+
+
+def validate_record(record: CatalogRecord) -> None:
+    """Validate a candidate catalog record."""
+    if not POSITION_CODE.fullmatch(record.code):
+        raise ValueError("Gecersiz poz kodu")
+
+    if len(record.description.strip()) < 3:
+        raise ValueError("Eksik poz aciklamasi")
+
+    if not record.unit.strip():
+        raise ValueError("Eksik olcu birimi")
+
+    if (
+        not isinstance(record.price, Decimal)
+        or not record.price.is_finite()
+        or record.price <= 0
+    ):
+        raise ValueError("Gecersiz fiyat")
+
+    if record.source_page < 1:
+        raise ValueError("Gecersiz kaynak sayfasi")
+
+    if record.record_type not in {"rayic", "imalat"}:
+        raise ValueError("Gecersiz kayit turu")
+
+    if not re.fullmatch(
+        r"[a-fA-F0-9]{64}", record.source_sha256
+    ):
+        raise ValueError("Gecersiz SHA-256")
+
+
 def parse_position_words(words, source_page: int):
-    """Test edilen dÃ¶rt sÃ¼tunlu PDF dÃ¼zeninden adaylarÄ± ayrÄ±ÅŸtÄ±r."""
+    """Legacy coordinate-based pilot parser.
+
+    Kept for M6.0 and M6.15 regression tests.
+    """
     grouped = defaultdict(list)
 
     for word in words:
@@ -96,27 +115,44 @@ def parse_position_words(words, source_page: int):
     for y, items in sorted(grouped.items()):
         items.sort(key=lambda item: item[0])
 
-        code = " ".join(t for x, t in items if 43 <= x < 105)
-        description = " ".join(t for x, t in items if 105 <= x < 475)
-        unit = " ".join(t for x, t in items if 475 <= x < 515)
-        raw_price = " ".join(t for x, t in items if 515 <= x <= 565)
+        code = " ".join(
+            t for x, t in items if 43 <= x < 105
+        )
+        description = " ".join(
+            t for x, t in items if 105 <= x < 475
+        )
+        unit = " ".join(
+            t for x, t in items if 475 <= x < 515
+        )
+        raw_price = " ".join(
+            t for x, t in items if 515 <= x <= 565
+        )
 
         if not code:
             continue
 
         try:
             if not POSITION_CODE.fullmatch(code):
-                raise ValueError("GeÃ§ersiz poz kodu")
+                raise ValueError("Gecersiz poz kodu")
+
             if len(description.strip()) < 3:
-                raise ValueError("Eksik aÃ§Ä±klama")
-            if not unit:
+                raise ValueError("Eksik aciklama")
+
+            if not unit.strip():
                 raise ValueError("Eksik birim")
 
             price = parse_turkish_price(raw_price)
 
-            records.append(ParsedRow(
-                code, description, unit, price, source_page
-            ))
+            records.append(
+                ParsedRow(
+                    code=code,
+                    description=description,
+                    unit=unit,
+                    price=price,
+                    source_page=source_page,
+                )
+            )
+
         except ValueError as exc:
             rejected.append({
                 "row_y": y,
@@ -126,17 +162,17 @@ def parse_position_words(words, source_page: int):
 
     return records, rejected
 
-def parse_position_table(page, table, source_page: int):
-    """M6.0-A.18: Satır ve hücre geometrisine dayalı pilot ayrıştırıcı.
 
-    Yalnızca doğrulanmış dört sütunlu rayiç tablo düzeni.
-    Veritabanına yazmaz. Belirsiz durumlarda hata verir.
+def parse_position_table(page, table, source_page: int):
+    """Parse a four-column table with description continuation rows.
+
+    Uses physical PDF cells for word association.
+    Rejects malformed records instead of guessing missing values.
     """
     if table.col_count != 4:
-        raise ValueError("Beklenmeyen tablo sütun sayısı")
+        raise ValueError("Beklenmeyen tablo sutun sayisi")
 
     words = page.get_text("words", sort=True)
-    code_pattern = re.compile(r"10\.100\.\d{4}")
 
     def cell_text(cell):
         if cell is None:
@@ -145,96 +181,188 @@ def parse_position_table(page, table, source_page: int):
         x0, y0, x1, y1 = cell
         selected = []
 
-        for w in words:
-            cx = (w[0] + w[2]) / 2
-            cy = (w[1] + w[3]) / 2
+        for word in words:
+            cx = (word[0] + word[2]) / 2
+            cy = (word[1] + word[3]) / 2
 
             if x0 <= cx < x1 and y0 <= cy < y1:
-                selected.append(w)
+                selected.append(word)
 
-        selected.sort(key=lambda w: (round(w[1], 1), w[0]))
+        selected.sort(
+            key=lambda w: (round(w[1], 1), w[0])
+        )
+
         return " ".join(w[4] for w in selected).strip()
 
     records = []
     rejected = []
     seen = set()
+    pending = None
 
-    for row_number, row in enumerate(table.rows, 1):
-        cells = row.cells
+    def reject(row, code, reason):
+        rejected.append({
+            "row": row,
+            "code": code,
+            "reason": reason,
+        })
 
-        if len(cells) != 4:
-            rejected.append({
-                "row": row_number,
-                "reason": "Beklenmeyen hücre sayısı"
-            })
-            continue
+    def flush_pending():
+        nonlocal pending
 
-        values = [cell_text(c) for c in cells]
-        code, description, unit, raw_price = values
+        if pending is None:
+            return
 
-        # Başlık ve bölüm ayırıcılarını veri sayma.
-        if not code_pattern.fullmatch(code):
-            # Pilot düzeninde 10.100 ile başlayan
-            # bozuk bir kodu sessizce geçme.
-            if "10.100" in code:
-                rejected.append({
-                    "row": row_number,
-                    "code": code,
-                    "reason": "Bozuk poz kimliği"
-                })
-            continue
+        item = pending
+        pending = None
+
+        code = item["code"]
 
         try:
+            description = " ".join(
+                part.strip()
+                for part in item["parts"]
+                if part.strip()
+            )
+
             if code in seen:
                 raise ValueError("Tekrarlanan poz kodu")
 
             if len(description) < 3:
-                raise ValueError("Eksik açıklama")
+                raise ValueError("Eksik aciklama")
 
-            if not unit:
-                raise ValueError("Eksik ölçü birimi")
+            if not item["unit"].strip():
+                raise ValueError("Eksik olcu birimi")
 
-            price = parse_turkish_price(raw_price)
+            price = parse_turkish_price(item["price"])
 
             seen.add(code)
 
-            records.append(ParsedRow(
-                code=code,
-                description=description,
-                unit=unit,
-                price=price,
-                source_page=source_page
-            ))
+            records.append(
+                ParsedRow(
+                    code=code,
+                    description=description,
+                    unit=item["unit"],
+                    price=price,
+                    source_page=source_page,
+                )
+            )
 
         except ValueError as exc:
-            rejected.append({
+            reject(item["row"], code, str(exc))
+
+    for row_number, row in enumerate(table.rows, 1):
+        if len(row.cells) != 4:
+            flush_pending()
+            reject(
+                row_number, None,
+                "Beklenmeyen hucre sayisi"
+            )
+            continue
+
+        code, description, unit, raw_price = [
+            cell_text(cell) for cell in row.cells
+        ]
+
+        # A new valid position starts a logical record.
+        if RAYIC_CODE.fullmatch(code):
+            flush_pending()
+
+            pending = {
                 "row": row_number,
                 "code": code,
-                "reason": str(exc)
-            })
+                "parts": [description],
+                "unit": unit,
+                "price": raw_price,
+            }
+            continue
 
-    # Geometriden bağımsız poz kodu kapsam kontrolü.
+        # Skip known table headers.
+        if (
+            row_number == 1
+            and "poz" in code.casefold()
+        ):
+            flush_pending()
+            continue
+
+        # Reject malformed or combined position identities.
+        if code and (
+            "10.100" in code
+            or RAYIC_CODE.search(code)
+            or any(ch.isdigit() for ch in code)
+        ):
+            flush_pending()
+            reject(
+                row_number, code,
+                "Bozuk veya belirsiz poz kimligi"
+            )
+            continue
+
+        # Other code-column text is not a continuation.
+        if code:
+            flush_pending()
+
+            if unit or raw_price:
+                reject(
+                    row_number, code,
+                    "Belirsiz satir kimligi"
+                )
+            # Otherwise treat as a section heading.
+            continue
+
+        # A continuation must contain description only.
+        if description and not unit and not raw_price:
+            if pending is not None:
+                pending["parts"].append(description)
+            continue
+
+        # Code-free rows containing units or prices
+        # cannot be safely associated with another row.
+        if unit or raw_price:
+            flush_pending()
+            reject(
+                row_number, None,
+                "Belirsiz devam satiri"
+            )
+            continue
+
+        # Empty row ends the logical record.
+        if not any(
+            (code, description, unit, raw_price)
+        ):
+            flush_pending()
+
+    flush_pending()
+
+    # Independent source-code coverage check.
     source_codes = [
-        w[4] for w in words
-        if code_pattern.fullmatch(w[4])
+        word[4]
+        for word in words
+        if RAYIC_CODE.fullmatch(word[4])
     ]
 
-    from collections import Counter
+    source_counts = Counter(source_codes)
+    parsed_counts = Counter(
+        record.code for record in records
+    )
 
-    counts = Counter(source_codes)
-    parsed_codes = {r.code for r in records}
-
-    for code, count in counts.items():
+    for code, count in source_counts.items():
         if count != 1:
-            rejected.append({
-                "code": code,
-                "reason": "Kaynakta mükerrer poz kodu"
-            })
-        if code not in parsed_codes:
-            rejected.append({
-                "code": code,
-                "reason": "Kaynak poz ayrıştırılamadı"
-            })
+            reject(
+                None, code,
+                "Kaynakta mukerrer poz kodu"
+            )
+
+        if parsed_counts[code] != 1:
+            reject(
+                None, code,
+                "Kaynak poz ayrıştırılamadı"
+            )
+
+    for code in parsed_counts:
+        if code not in source_counts:
+            reject(
+                None, code,
+                "Kaynakta olmayan poz"
+            )
 
     return records, rejected
-
