@@ -336,3 +336,99 @@ def material_evidence_image(
             422,
             "Malzeme kaynak goruntusu dogrulanamadi",
         ) from exc
+
+@router.get("/pilot/catalog-analysis")
+def catalog_analysis_report(
+    request: Request,
+    user: Annotated[User, Depends(current_user)],
+):
+    """Read the completed local M6 catalog report."""
+
+    import json
+
+    source = _material_pilot_source(request)
+
+    report_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "m6_catalog_report_d4.json"
+    )
+
+    if not report_path.is_file():
+        raise HTTPException(
+            404,
+            "Katalog analiz raporu bulunamadi",
+        )
+
+    if report_path.stat().st_size > 32_000_000:
+        raise HTTPException(
+            413,
+            "Rapor boyutu beklenenden buyuk",
+        )
+
+    try:
+        report = json.loads(
+            report_path.read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise HTTPException(
+            422,
+            "Katalog raporu okunamadi",
+        ) from exc
+
+    if not isinstance(report, dict):
+        raise HTTPException(422, "Gecersiz rapor")
+
+    source_info = report.get("source")
+    summary = report.get("summary")
+    pages = report.get("pages")
+
+    if (
+        report.get("schema_version") != "m6-d4-v2"
+        or report.get("status") != "complete"
+        or not isinstance(source_info, dict)
+        or not isinstance(summary, dict)
+        or not isinstance(pages, list)
+    ):
+        raise HTTPException(
+            422,
+            "Rapor eksik veya uyumsuz",
+        )
+
+    stat = source.stat()
+
+    if (
+        source_info.get("path") != str(source.resolve())
+        or source_info.get("size_bytes") != stat.st_size
+        or source_info.get("mtime_ns") != stat.st_mtime_ns
+        or source_info.get("page_count") != len(pages)
+    ):
+        raise HTTPException(
+            409,
+            "PDF ile analiz raporu uyusmuyor",
+        )
+
+    # Return only the fields needed by the dashboard.
+    # Do not expose the local filesystem path.
+    result = {
+        "status": "complete",
+        "schema_version": "m6-c4-v2",
+        "source": {
+            "filename": source_info.get("filename"),
+            "sha256": source_info.get("sha256"),
+            "page_count": source_info.get("page_count"),
+        },
+        "summary": summary,
+    }
+
+    return Response(
+        content=json.dumps(
+            result,
+            ensure_ascii=False,
+        ),
+        media_type="application/json",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

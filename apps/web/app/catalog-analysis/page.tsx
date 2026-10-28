@@ -1,357 +1,486 @@
 
-const stats = [
-  { label: "PDF sayfası", value: "741" },
-  { label: "Tespit edilen tablo", value: "706" },
-  { label: "Tablosuz sayfa", value: "37" },
-  { label: "Tarama hatası", value: "0" },
-];
+"use client";
 
-const tableTypes = [
-  { label: "4 sütun", count: 533, color: "#2563eb" },
-  { label: "5 sütun", count: 156, color: "#0d9488" },
-  { label: "3 sütun", count: 11, color: "#8b5cf6" },
-  { label: "8 sütun", count: 3, color: "#f59e0b" },
-  { label: "2 sütun", count: 2, color: "#64748b" },
-  { label: "6 sütun", count: 1, color: "#ef4444" },
-];
+import { useEffect, useState, type CSSProperties } from "react";
 
-const samples = [
-  { page: 8, structure: "4 sütun", kind: "Rayiç adayı", codes: "46" },
-  { page: 20, structure: "5 sütun", kind: "Rayiç adayı", codes: "23" },
-  { page: 100, structure: "5 sütun", kind: "Rayiç adayı", codes: "16" },
-  { page: 183, structure: "4 sütun", kind: "Rayiç adayı", codes: "30" },
-  {
-    page: 149,
-    structure: "5 + 8 sütun",
-    kind: "Çakışma incelemesi",
-    codes: "37 + 9",
-  },
-  { page: 249, structure: "2 × 2 sütun", kind: "Teknik tablo", codes: "0" },
-  { page: 483, structure: "6 sütun", kind: "Teknik tablo", codes: "0" },
-  { page: 485, structure: "3 sütun", kind: "Teknik tablo", codes: "0" },
-];
-
-const panel = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 22,
-  boxShadow: "0 2px 10px rgba(15,23,42,0.035)",
+type Summary = {
+  scanned_pages: number;
+  tables_total: number;
+  pages_without_tables: number;
+  scan_error_pages: number;
+  tables_by_columns: Record<string, number>;
+  tables_by_family: Record<string, number>;
+  candidate_code_occurrences: number;
+  unique_candidate_codes: number;
+  repeated_candidate_codes: number;
+  repeated_code_examples: Record<string, number>;
+  pages_with_table_overlaps: number;
+  overlapping_table_pairs: number;
 };
 
+type CatalogReport = {
+  status: "complete";
+  schema_version: string;
+  source: {
+    filename: string;
+    sha256: string;
+    page_count: number;
+  };
+  summary: Summary;
+};
+
+const API = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+const panel: CSSProperties = {
+  padding: 22,
+  borderRadius: 14,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+};
+
+
+const familyLabels: Record<string, string> = {
+  RAYIC_3_SUTUN_ADAYI: "3 sütunlu rayiç adayı",
+  RAYIC_4_SUTUN_ADAYI: "4 sütunlu rayiç adayı",
+  RAYIC_5_SUTUN_ADAYI: "5 sütunlu rayiç adayı",
+  MONTAJ_4_SUTUN_ADAYI: "Montaj fiyat tablosu adayı",
+  BELIRSIZ_INCELE: "Belirsiz / inceleme gerekli",
+  KARMASIK_POZ_TABLOSU_INCELE: "Karmaşık poz tablosu",
+  TEKNIK_VEYA_POZSUZ_TABLO: "Teknik / pozsuz tablo",
+};
+
+const colors = [
+  "#2563eb",
+  "#0d9488",
+  "#8b5cf6",
+  "#d97706",
+  "#64748b",
+  "#dc2626",
+];
+
+function format(value: number) {
+  return value.toLocaleString("tr-TR");
+}
+
 export default function CatalogAnalysisPage() {
+  const [report, setReport] = useState<CatalogReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    const token = sessionStorage.getItem("arkemx_dev_token");
+
+    if (!token) {
+      setReport(null);
+      setError(
+        "Oturum bulunamadı. ARKEMX çalışma alanında giriş yapın."
+      );
+      setLoading(false);
+      return;
+    }
+
+    async function loadReport() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const response = await fetch(
+          `${API}/api/m6/pilot/catalog-analysis`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+
+          const message =
+            typeof body.detail === "string"
+              ? body.detail
+              : `API hatası: HTTP ${response.status}`;
+
+          throw new Error(message);
+        }
+
+        const data: CatalogReport = await response.json();
+
+        if (
+          data.status !== "complete" ||
+          !data.summary ||
+          !data.source ||
+          !Number.isInteger(data.summary.scanned_pages) ||
+          !Number.isInteger(data.summary.tables_total) ||
+          !data.summary.tables_by_columns ||
+          !data.summary.tables_by_family ||
+          data.source.page_count !== data.summary.scanned_pages
+        ) {
+          throw new Error("Geçersiz katalog raporu");
+        }
+
+        if (active) setReport(data);
+      } catch (err) {
+        if (active && !controller.signal.aborted) {
+          setReport(null);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Katalog raporu yüklenemedi"
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadReport();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [refresh]);
+
+  const summary = report?.summary;
+
+  const stats = summary
+    ? [
+        ["PDF sayfası", summary.scanned_pages],
+        ["Tespit edilen tablo", summary.tables_total],
+        ["Benzersiz poz adayı", summary.unique_candidate_codes],
+        ["Tarama hatası", summary.scan_error_pages],
+      ] as const
+    : [];
+
+  const columns = summary
+    ? Object.entries(summary.tables_by_columns).sort(
+        (a, b) => Number(a[0]) - Number(b[0])
+      )
+    : [];
+
+  const maxCount = Math.max(
+    1,
+    ...columns.map(([, count]) => count)
+  );
+
+  const repeated = summary
+    ? Object.entries(summary.repeated_code_examples)
+    : [];
+
   return (
     <main
       style={{
         minHeight: "100vh",
         background: "#f5f7fb",
-        color: "#1e293b",
         padding: "28px 18px 60px",
         fontFamily: "Arial, sans-serif",
+        color: "#1e293b",
       }}
     >
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         <a
           href="/"
-          style={{
-            color: "#2563eb",
-            fontSize: 14,
-            textDecoration: "none",
-          }}
+          style={{ color: "#2563eb", textDecoration: "none" }}
         >
           ← Çalışma alanına dön
         </a>
 
-        <header style={{ margin: "25px 0" }}>
-          <p
-            style={{
-              color: "#2563eb",
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: 1,
-            }}
-          >
-            ARKEMX COST INTELLIGENCE · M6.0-C
+        <header style={{ margin: "24px 0" }}>
+          <p style={{ color: "#2563eb", fontSize: 12 }}>
+            ARKEMX COST INTELLIGENCE · M6.0-C.6
           </p>
 
-          <h1
-            style={{
-              fontSize: 30,
-              margin: "10px 0",
-              fontWeight: 750,
-            }}
-          >
+          <h1 style={{ fontSize: 28 }}>
             PDF Katalog Analizi
           </h1>
 
-          <p style={{ color: "#64748b", fontSize: 14 }}>
-            2026 rayiç kataloğunun tablo yapısı, poz adayları
-            ve inceleme gerektiren kayıtları.
+          <p style={{ color: "#64748b" }}>
+            Gerçek PDF analiz raporuna bağlı, salt okunur panel.
           </p>
 
-          <p
+        <button
+            type="button"
+            disabled={loading}
+            onClick={() => setRefresh((value) => value + 1)}
             style={{
-              display: "inline-block",
-              marginTop: 12,
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              padding: "8px 12px",
-              borderRadius: 8,
-              fontSize: 12,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: 145,
+                minHeight: 40,
+                padding: "10px 16px",
+                backgroundColor: "#ffffff",
+                color: "#142b50",
+                fontSize: 14,
+                fontWeight: 700,
+                lineHeight: "20px",
+                opacity: 1,
+                border: "1px solid #cbd5e1",
+                borderRadius: 8,
+                cursor: loading ? "wait" : "pointer",
             }}
-          >
-            Salt okunur · Kaydedilmiş tarama sonuçları
-          </p>
+        >
+            <span style={{ color: "#142b50", fontSize: 14 }}>
+                {loading ? "Yükleniyor..." : "Raporu yenile"}
+            </span>
+        </button>
+
         </header>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 14,
-            marginBottom: 22,
-          }}
-        >
-          {stats.map((stat) => (
-            <div key={stat.label} style={panel}>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#64748b",
-                  marginBottom: 10,
-                }}
-              >
-                {stat.label}
-              </div>
-              <strong style={{ fontSize: 30 }}>
-                {stat.value}
-              </strong>
-            </div>
-          ))}
-        </div>
+        {loading && (
+          <div style={panel} role="status">
+            Katalog analiz raporu okunuyor...
+          </div>
+        )}
 
-        <section style={{ ...panel, marginBottom: 22 }}>
-          <h2 style={{ fontSize: 19, margin: "0 0 6px" }}>
-            Tablo yapılarının dağılımı
-          </h2>
-
-          <p
-            style={{
-              color: "#64748b",
-              fontSize: 13,
-              marginBottom: 24,
-            }}
-          >
-            741 sayfanın tamamında tespit edilen 706 tablo.
-          </p>
-
-          {tableTypes.map((type) => (
-            <div
-              key={type.label}
-              style={{ marginBottom: 20 }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 13,
-                  marginBottom: 8,
-                }}
-              >
-                <span>{type.label}</span>
-                <strong>{type.count}</strong>
-              </div>
-
-              <div
-                style={{
-                  height: 10,
-                  background: "#e8edf5",
-                  borderRadius: 10,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${(type.count / 706) * 100}%`,
-                    background: type.color,
-                    borderRadius: 10,
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-
-          <p style={{ fontSize: 13, color: "#475569" }}>
-            4 ve 5 sütunlu tablolar toplamın yaklaşık
-            <strong> %97,6</strong>'sını oluşturuyor.
-            Bu oran doğrulanmış poz oranı değildir.
-          </p>
-        </section>
-
-        <section style={{ ...panel, marginBottom: 22 }}>
-          <h2 style={{ fontSize: 19, margin: "0 0 8px" }}>
-            Tablo ailesi sınıflandırması
-          </h2>
-
-          <p style={{ fontSize: 13, color: "#64748b" }}>
-            Sekiz örnek sayfa üzerinde doğrulanan on tablo.
-          </p>
-
+        {error && (
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(170px, 1fr))",
-              gap: 12,
-              marginTop: 18,
+              ...panel,
+              borderColor: "#fca5a5",
+              color: "#991b1b",
+              marginBottom: 20,
             }}
+            role="alert"
           >
-            {[
-              {
-                title: "Rayiç adayları",
-                value: 5,
-                color: "#0d9488",
-              },
-              {
-                title: "Teknik / pozsuz",
-                value: 4,
-                color: "#64748b",
-              },
-              {
-                title: "Karmaşık tablo",
-                value: 1,
-                color: "#d97706",
-              },
-            ].map((item) => (
-              <div
-                key={item.title}
-                style={{
-                  background: "#f8fafc",
-                  padding: 18,
-                  borderRadius: 10,
-                }}
-              >
-                <strong
-                  style={{
-                    fontSize: 28,
-                    color: item.color,
-                  }}
-                >
-                  {item.value}
-                </strong>
-
-                <p style={{ fontSize: 13 }}>
-                  {item.title}
-                </p>
-              </div>
-            ))}
+            {error}
+            <p>
+              API bağlantısını, pilot ayarlarını ve oturumu
+              kontrol edin.
+            </p>
           </div>
-        </section>
+        )}
 
-        <section style={{ ...panel, marginBottom: 22 }}>
-          <h2 style={{ fontSize: 19, margin: "0 0 18px" }}>
-            İncelenen örnek sayfalar
-          </h2>
-
-          <div style={{ overflowX: "auto" }}>
-            <table
+        {report && summary && (
+          <>
+            <div
               style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 13,
-                textAlign: "left",
+                ...panel,
+                marginBottom: 18,
+                background: "#eff6ff",
               }}
             >
-              <thead>
-                <tr style={{ background: "#f1f5f9" }}>
-                  {[
-                    "PDF sayfası",
-                    "Tablo yapısı",
-                    "Sınıflandırma",
-                    "Poz adayı",
-                  ].map((heading) => (
-                    <th
-                      key={heading}
-                      style={{ padding: 13 }}
-                    >
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+              <strong>Canlı API raporu yüklendi</strong>
+              <p style={{ fontSize: 13 }}>
+                Kaynak: {report.source.filename}
+              </p>
+              <p
+                style={{
+                  fontSize: 12,
+                  overflowWrap: "anywhere",
+                }}
+              >
+                SHA-256: {report.source.sha256}
+              </p>
+            </div>
 
-              <tbody>
-                {samples.map((sample) => (
-                  <tr
-                    key={sample.page}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 14,
+                marginBottom: 20,
+              }}
+            >
+              {stats.map(([label, value]) => (
+                <div key={label} style={panel}>
+                  <p style={{ fontSize: 13, color: "#64748b" }}>
+                    {label}
+                  </p>
+                  <strong style={{ fontSize: 29 }}>
+                    {format(value)}
+                  </strong>
+                </div>
+              ))}
+            </div>
+
+            <section style={{ ...panel, marginBottom: 20 }}>
+              <h2>Tablo yapılarının dağılımı</h2>
+
+              {columns.map(([column, count], index) => (
+                <div key={column} style={{ marginBottom: 18 }}>
+                  <div
                     style={{
-                      borderBottom:
-                        "1px solid #e2e8f0",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 13,
+                      marginBottom: 8,
                     }}
                   >
-                    <td style={{ padding: 13 }}>
-                      {sample.page}
-                    </td>
-                    <td style={{ padding: 13 }}>
-                      {sample.structure}
-                    </td>
-                    <td style={{ padding: 13 }}>
-                      {sample.kind}
-                    </td>
-                    <td style={{ padding: 13 }}>
-                      {sample.codes}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                    <span>{column} sütun</span>
+                    <strong>{format(count)}</strong>
+                  </div>
 
-        <section
-          style={{
-            ...panel,
-            background: "#fffbeb",
-            border: "1px solid #fde68a",
-          }}
-        >
-          <h2
-            style={{
-              fontSize: 17,
-              color: "#92400e",
-              marginTop: 0,
-            }}
-          >
-            ⚠ Mükerrer poz incelemesi
-          </h2>
+                  <div
+                    style={{
+                      height: 10,
+                      background: "#e2e8f0",
+                      borderRadius: 8,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${(count / maxCount) * 100}%`,
+                        background: colors[index % colors.length],
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </section>
 
-          <p
-            style={{
-              fontSize: 14,
-              lineHeight: 1.7,
-              color: "#78350f",
-            }}
-          >
-            PDF'nin 149. sayfasındaki iki tabloda
-            ortak olan 9 poz tespit edildi.
-            Bunlar otomatik birleştirilmeyecek veya
-            silinmeyecek. Kaynak koordinatları ve
-            içerikleri ayrıca karşılaştırılacak.
-          </p>
-        </section>
+            <section style={{ ...panel, marginBottom: 20 }}>
+              <h2>Tablo aileleri</h2>
 
-        <footer
-          style={{
-            marginTop: 22,
-            color: "#94a3b8",
-            fontSize: 12,
-          }}
-        >
-          ARKEMX · M6.0-C katalog kapsam analizi ·
-          Gerçek tarama sonuçlarının statik görünümü
-        </footer>
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 14,
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th style={{ padding: 12, textAlign: "left" }}>
+                        Sınıflandırma
+                      </th>
+                      <th style={{ padding: 12, textAlign: "right" }}>
+                        Tablo sayısı
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {Object.entries(summary.tables_by_family).map(
+                      ([family, count]) => (
+                        <tr
+                          key={family}
+                          style={{
+                            borderTop: "1px solid #e2e8f0",
+                          }}
+                        >
+                          <td style={{ padding: 12 }}>
+                            {familyLabels[family] ?? family}
+                          </td>
+                          <td
+                            style={{
+                              padding: 12,
+                              textAlign: "right",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {format(count)}
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section style={{ ...panel, marginBottom: 20 }}>
+              <h2>Poz kimliği kontrolü</h2>
+
+              <p>
+                Poz kodu görülme sayısı:{" "}
+                <strong>
+                  {format(summary.candidate_code_occurrences)}
+                </strong>
+              </p>
+              <p>
+                Benzersiz poz kodu adayı:{" "}
+                <strong>
+                  {format(summary.unique_candidate_codes)}
+                </strong>
+              </p>
+              <p>
+                Tekrarlanan kod:{" "}
+                <strong>
+                  {format(summary.repeated_candidate_codes)}
+                </strong>
+              </p>
+              <p>
+                Ortak poz içeren sayfa:{" "}
+                <strong>
+                  {format(summary.pages_with_table_overlaps)}
+                </strong>
+              </p>
+            </section>
+
+            {repeated.length > 0 && (
+              <section
+                style={{
+                  ...panel,
+                  background: "#fffbeb",
+                  borderColor: "#fde68a",
+                }}
+              >
+                <h2 style={{ color: "#92400e" }}>
+                  ⚠ Mükerrer poz incelemesi
+                </h2>
+
+                <p>
+                  Aşağıdaki poz kodları birden fazla tabloda
+                  veya satırda görülmüş. Otomatik birleştirme
+                  yapılmaz.
+                </p>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(150px, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  {repeated.map(([code, count]) => (
+                    <div
+                      key={code}
+                      style={{
+                        background: "#ffffff",
+                        padding: 12,
+                        borderRadius: 8,
+                        fontSize: 13,
+                      }}
+                    >
+                      <strong>{code}</strong>
+                      <div>{count} kez görüldü</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <footer
+              style={{
+                marginTop: 22,
+                fontSize: 12,
+                color: "#1e293b",
+                fontWeight: 600,
+              }}
+            >
+              20.315 benzeri kod sayıları poz adayıdır;
+              mühendis tarafından onaylanmış fiyat kaydı
+              değildir. Bu ekran veritabanına yazmaz.
+            </footer>
+          </>
+        )}
       </div>
     </main>
   );
