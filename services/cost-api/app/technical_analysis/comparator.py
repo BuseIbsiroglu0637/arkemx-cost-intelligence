@@ -1,16 +1,23 @@
 
-"""A2.2 - Evidence-backed technical layer comparison.
+"""A2.4 - Evidence-backed technical layer comparison.
 
-Compares layer structure, thickness, materials and critical
-technical attributes.
+Compares:
+- Layer structure and order
+- Thickness and materials
+- Cement dosage per layer
+- Internal/external environment
+- Material inclusion/exclusion
 
-This is a partial technical comparison, not an approval engine.
+This is a partial comparison, not an engineering approval engine.
 """
 
 from decimal import Decimal
 
 from app.technical_analysis.critical_attributes import (
     compare_critical_attributes,
+)
+from app.technical_analysis.layer_dosage import (
+    compare_layer_dosages,
 )
 from app.technical_analysis.layers import (
     LayerMeasurement,
@@ -36,7 +43,7 @@ def _layer_record(
     text: str,
     layer: LayerMeasurement,
 ) -> dict:
-    """Serialize a layer while verifying its source evidence."""
+    """Serialize a layer and verify its source evidence."""
 
     if not (
         0 <= layer.start < layer.end <= len(text)
@@ -64,25 +71,12 @@ def compare_layers(
 ) -> dict:
     """Compare technical layers and critical attributes.
 
-    Layer checks:
-        - Work type
-        - Thickness
-        - Materials
-        - Layer count and order
+    An unresolved property requires review.
 
-    Additional checks:
-        - Cement mortar dosage
-        - Internal/external environment
-        - Material inclusion/exclusion
-
-    Unknown or incomplete extraction requires review.
-
-    A layer match never grants engineering approval.
+    A technical match does not grant engineering approval.
     """
 
-    # --------------------------------------------------
-    # 1. Extract technical layers
-    # --------------------------------------------------
+    # 1. Extract source-backed layers.
 
     left_layers = extract_layer_measurements(
         metraj_description
@@ -92,9 +86,7 @@ def compare_layers(
         catalog_description
     )
 
-    # --------------------------------------------------
-    # 2. Validate source evidence
-    # --------------------------------------------------
+    # 2. Validate and serialize evidence.
 
     left_records = [
         _layer_record(metraj_description, item)
@@ -110,9 +102,7 @@ def compare_layers(
     reviews: list[str] = []
     checks: list[dict] = []
 
-    # --------------------------------------------------
-    # 3. Check layer availability and count
-    # --------------------------------------------------
+    # 3. Validate layer availability and count.
 
     if not left_layers or not right_layers:
         reviews.append("LAYERS_NOT_EXTRACTED")
@@ -120,9 +110,7 @@ def compare_layers(
     if len(left_layers) != len(right_layers):
         reviews.append("LAYER_COUNT_UNVERIFIED")
 
-    # --------------------------------------------------
-    # 4. Compare layers in their original order
-    # --------------------------------------------------
+    # 4. Compare corresponding layers in source order.
 
     for index, (left, right) in enumerate(
         zip(left_layers, right_layers),
@@ -172,51 +160,71 @@ def compare_layers(
                 ),
             })
 
-    # --------------------------------------------------
-    # 5. Compare critical technical attributes (A2.2)
-    # --------------------------------------------------
+    # 5. A2.4 - Compare cement dosage within each layer.
+    #
+    # Do not compare all dosage numbers as a global set.
+    # Each dosage must belong to a specific source layer.
+
+    dosage_checks, dosage_blockers, dosage_reviews = (
+        compare_layer_dosages(
+            metraj_description,
+            catalog_description,
+            left_layers,
+            right_layers,
+        )
+    )
+
+    blockers.extend(dosage_blockers)
+    reviews.extend(dosage_reviews)
+
+    # 6. A2.2 - Compare other critical attributes.
+    #
+    # Cement dosage is excluded here because A2.4 handles it
+    # at the layer level. This avoids false ambiguity flags.
 
     technical_checks, extra_blockers, extra_reviews = (
         compare_critical_attributes(
             metraj_description,
             catalog_description,
+            skip_fields=frozenset({
+                "cement_dosage_kg",
+            }),
         )
     )
 
     blockers.extend(extra_blockers)
     reviews.extend(extra_reviews)
 
-    # --------------------------------------------------
-    # 6. Normalize decision reasons
-    # --------------------------------------------------
+    # Include layer-specific dosage evidence in the output.
+
+    technical_checks.extend(dosage_checks)
+
+    # 7. Normalize decision reasons.
 
     blockers = sorted(set(blockers))
     reviews = sorted(set(reviews))
 
-    # --------------------------------------------------
-    # 7. Determine partial comparison status
-    # --------------------------------------------------
+    # 8. Determine the partial technical status.
 
-    status = (
-        "blocked"
-        if blockers
-        else "review"
-        if reviews
-        else "layer_match"
-    )
+    if blockers:
+        status = "blocked"
+    elif reviews:
+        status = "review"
+    else:
+        status = "layer_match"
 
-    # --------------------------------------------------
-    # 8. Return source-backed comparison
-    # --------------------------------------------------
+    # 9. Return a source-backed comparison.
 
     return {
         "schema": "arkemx.layer_comparison.v1",
         "status": status,
 
-        # A2 cannot authorize engineering approval.
+        # Never authorize engineering approval here.
         "approval_allowed": False,
 
-        "analysis_scope": "layers_and_critical_attributes",
+        "analysis_scope": (
+            "layers_and_critical_attributes"
+        ),
 
         "blockers": blockers,
         "review_flags": reviews,

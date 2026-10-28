@@ -73,6 +73,8 @@ def _extract(text: str, field: str, pattern: re.Pattern) -> dict:
 def compare_critical_attributes(
     metraj_description: str,
     catalog_description: str,
+    *,
+    skip_fields: frozenset[str] = frozenset(),
 ) -> tuple[list[dict], list[str], list[str]]:
     """Compare explicitly recognized critical properties.
 
@@ -85,6 +87,8 @@ def compare_critical_attributes(
     reviews = []
 
     for field, pattern in RULES.items():
+        if field in skip_fields:
+            continue
         left = _extract(metraj_description, field, pattern)
         right = _extract(catalog_description, field, pattern)
 
