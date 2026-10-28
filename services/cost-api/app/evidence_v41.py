@@ -163,7 +163,7 @@ def analyze(metraj_description: str, metraj_unit: str | None,
     # Never claim full compliance from matching titles alone.
     if not scope_verified:
         reviews.append("SCOPE_NOT_VERIFIABLE_FROM_TITLES")
-    
+
     # A0: Temporary fail-closed protection.
     #
     # The existing technical extractor reads only the first
