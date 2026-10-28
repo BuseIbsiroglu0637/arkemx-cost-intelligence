@@ -6,13 +6,11 @@ from decimal import Decimal
 
 import pymupdf
 import pytest
+from test_m6b_material_safety import synthetic_table
 
 import app.pdf_material_evidence as material_evidence
 from app.pdf_catalog_evidence import sha256_file
 from app.pdf_material_evidence import link_material_evidence
-from app.pdf_material_parser import parse_material_table
-from test_m6b_material_safety import synthetic_table
-
 
 ROWS = [
     (

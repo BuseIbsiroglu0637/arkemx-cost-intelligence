@@ -21,7 +21,6 @@ from typing import TypedDict
 
 from app.pdf_catalog_parser import parse_turkish_price
 
-
 MATERIAL_CODE = re.compile(r"10\.310\.\d{4}")
 SOURCE_CODE = re.compile(r"10\.\d{3}\.\d{4}")
 

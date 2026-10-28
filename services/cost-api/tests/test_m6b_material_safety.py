@@ -14,7 +14,6 @@ from pymupdf.table import Table
 
 from app.pdf_material_parser import parse_material_table
 
-
 MaterialCells = tuple[str, str, str, str, str]
 
 TABLE_HEADER: MaterialCells = (
