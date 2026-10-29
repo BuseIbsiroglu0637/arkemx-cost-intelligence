@@ -331,3 +331,7 @@ app.include_router(a3_cost_scenario_router)
 # A3.9.2 selected metraj rows, read-only technical preview
 from .a3_batch_review import router as a3_batch_review_router
 app.include_router(a3_batch_review_router)
+
+# Explicit saved previews; separate from engineering decisions and costing.
+from .a3_review_records import router as a3_review_records_router
+app.include_router(a3_review_records_router)

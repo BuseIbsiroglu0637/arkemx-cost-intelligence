@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { reviewFingerprint } from "../review-fingerprint";
 import { clearWorkspace, readWorkspace, rememberImport, rememberProject } from "../workspace-context";
 import WorkflowNav from "../workflow-nav";
 import workflow from "../workflow-nav.module.css";
@@ -23,6 +24,14 @@ type Row = {
   source_price: { value: string; currency: string; unit: string; source: { filename: string; sha256: string; pdf_page: number; printed_page: number; price_date: string } } | null;
 };
 type Report = { schema: string; read_only: boolean; approval_allowed: boolean; row_count: number; rows: Row[]; import_source: Source };
+type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
+type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
+const freshnessLabels: Record<string, string> = {
+  METRAJ_CHANGED: "Metraj veya satır revizyonu değişti.", PDF_CHANGED: "PDF kaynak dosyası değişti.",
+  PDF_UNVERIFIED: "Güncel PDF kaynağı doğrulanamadı.", ENGINE_CHANGED: "Karşılaştırma kuralları değişti.",
+  ENGINE_UNVERIFIED: "Motor sürümü doğrulanamadı.", IMPORT_CHANGED: "Excel kaynak kimliği değişti.",
+  IMPORT_EXCLUDED: "Bu Excel yeni analizlere kapatılmış.", IMPORT_NOT_AVAILABLE: "Excel kaynağı bulunamadı.", ROW_NOT_AVAILABLE: "Kaydedilen satırlardan biri artık bulunamıyor.",
+};
 type View = "attention" | "all" | "checked_features_match" | "incompatible" | "review_required" | "out_of_scope";
 const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 const LABELS: Record<string, string> = {
@@ -114,8 +123,15 @@ export default function BatchTechnicalReviewPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const requestRef = useRef<AbortController | null>(null);
+  const saveGeneration = useRef(0);
+  const saveAttempt = useRef<{ basis: string; key: string } | null>(null);
+  const [recordTitle, setRecordTitle] = useState("");
+  const [savedList, setSavedList] = useState<SavedList | null>(null);
+  const [archive, setArchive] = useState<SavedReview | null>(null);
+  const [archiveRow, setArchiveRow] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState("");
 
-  function clearResult() { setReport(null); setDetailId(null); }
+  function clearResult() { saveGeneration.current += 1; setReport(null); setDetailId(null); setSaveNotice(""); }
   function invalidate() {
     requestRef.current?.abort(); requestRef.current = null;
     setBusy(""); setError(""); clearResult();
@@ -132,7 +148,7 @@ export default function BatchTechnicalReviewPage() {
       if (controller.signal.aborted || requestRef.current !== controller || sessionStorage.getItem("arkemx_dev_token") !== token) return;
       if (response.status === 401) {
         sessionStorage.removeItem("arkemx_dev_token"); clearWorkspace(); setAuthenticated(false);
-        setSelection(null); setProjects([]); setImports([]); setSelected([]); clearResult();
+        setSelection(null); setProjects([]); setImports([]); setSelected([]); setArchive(null); setSavedList(null); clearResult();
         throw new Error("Oturum süresi doldu. Ana çalışma alanından yeniden giriş yap.");
       }
       if (!response.ok) {
@@ -143,7 +159,7 @@ export default function BatchTechnicalReviewPage() {
         }
         const messages: Record<number, string> = {
           403: "Bu işlem için erişim izni bulunmuyor.", 404: "Proje, aktarım veya seçilen satır bulunamadı.",
-          409: "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
+          409: task === "save" ? "Önizleme veya kaynak değişmiş olabilir. Güncel teknik incelemeyi yeniden çalıştırıp kaydet." : task === "archive" ? "Kayıt bütünlüğü doğrulanamadı; eski sonuç gösterilmedi." : "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
           422: "Seçimi kontrol et. Bir incelemede 1–20 farklı satır ve geçerli aday kodları kullanılmalı.",
           503: "Kaynak hizmeti şu anda kullanılamıyor.",
         };
@@ -175,6 +191,7 @@ export default function BatchTechnicalReviewPage() {
   }, []);
 
   function chooseProject(id: string, rememberedImport: string | null = null) {
+    setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setOffset(0);
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -186,6 +203,7 @@ export default function BatchTechnicalReviewPage() {
     }, "imports");
   }
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
+    setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setOffset(pageOffset);
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (token) rememberImport(token, sourceProject, null);
@@ -254,6 +272,53 @@ export default function BatchTechnicalReviewPage() {
       setReport(data);
     }, "compare", { method: "POST", body: JSON.stringify({ rows }) });
   }
+  function listSaved(offset = 0) {
+    if (!projectId || !importId) return;
+    void request<SavedList>(`/api/projects/${encodeURIComponent(projectId)}/a3/imports/${encodeURIComponent(importId)}/reviews?offset=${offset}`, data => {
+      if (data.read_only !== true || data.approval_allowed !== false || data.records.length > 20) throw new Error("Kayıt listesi doğrulanamadı.");
+      setSavedList(previous => offset && previous ? { ...data, records: [...previous.records, ...data.records] } : data);
+    }, "history");
+  }
+  function acceptArchive(data: SavedReview) {
+    if (data.read_only !== true || data.approval_allowed !== false || data.currentness.engineering_approval !== false ||
+        data.report.approval_allowed !== false || data.report.import_source.project_id !== projectId || data.report.import_source.import_id !== importId ||
+        data.report.rows.some(row => row.approval_allowed !== false)) throw new Error("Kayıtlı inceleme doğrulanamadı.");
+    setArchive(data); setArchiveRow(data.report.rows[0]?.identity.work_item_id ?? null);
+  }
+  async function saveReview() {
+    if (!report || busy || recordTitle.trim().length < 3) return;
+    const source = report;
+    const generation = saveGeneration.current;
+    const token = sessionStorage.getItem("arkemx_dev_token");
+    setBusy("preparing-save"); setError(""); setSaveNotice("");
+    try {
+      const hash = await reviewFingerprint(source);
+      if (saveGeneration.current !== generation || sessionStorage.getItem("arkemx_dev_token") !== token) return;
+      const title = recordTitle.trim();
+      const basis = `${hash}:${title}`;
+      if (saveAttempt.current?.basis !== basis) saveAttempt.current = { basis, key: crypto.randomUUID() };
+      const rows = source.rows.map(row => ({ work_item_id: row.identity.work_item_id, candidate_code: row.candidate_code, expected_revision_id: row.identity.revision_id }));
+      void request<SavedReview>(`/api/projects/${encodeURIComponent(projectId)}/a3/imports/${encodeURIComponent(importId)}/reviews`, data => {
+        acceptArchive(data);
+        setSaveNotice("İnceleme sunucuya kaydedildi. Bu kayıt mühendis onayı değildir.");
+      }, "save", { method: "POST", body: JSON.stringify({ title, rows, expected_report_sha256: hash, request_key: saveAttempt.current!.key }) });
+    } catch (err) {
+      if (saveGeneration.current === generation) { setBusy(""); setError(err instanceof Error ? err.message : "Kayıt hazırlanamadı."); }
+    }
+  }
+  function prepareResume() {
+    if (!archive?.resume_allowed || busy || archive.resume_rows.length !== archive.record.row_count) return;
+    const saved = archive;
+    const ids = new Set(saved.report.rows.map(row => row.identity.work_item_id));
+    if (saved.resume_rows.some(row => !ids.has(row.work_item_id)) || ids.size !== saved.resume_rows.length) return;
+    invalidate();
+    setSelection({ schema: "arkemx.batch_review_selection.v1", read_only: true, approval_allowed: false, import_source: saved.report.import_source, rows: saved.resume_rows, next_offset: null });
+    setSelected(saved.resume_rows.map(row => row.work_item_id));
+    setCandidates(Object.fromEntries(saved.report.rows.map(row => [row.identity.work_item_id, row.candidate_code ?? ""])));
+    setOffset(0); setArchive(null); setArchiveRow(null);
+    setSaveNotice("Kayıtlı adaylar ve satırların güncel revizyonları yüklendi. Yeni sonucu görmek için ‘Seçilen satırları incele’ düğmesine bas. Eski sonuç aktif sonuca aktarılmadı.");
+  }
+  const archivedDetail = archive?.report.rows.find(row => row.identity.work_item_id === archiveRow);
   const selectedProject = projects.find(project => project.id === projectId);
   const detail = report?.rows.find(row => row.identity.work_item_id === detailId);
   const filtered = report?.rows.filter(row => view === "all" || (view === "attention" ? row.technical_status !== "checked_features_match" : row.technical_status === view)) ?? [];
@@ -263,7 +328,7 @@ export default function BatchTechnicalReviewPage() {
     <div className={styles.journey} aria-label="Proje çalışma adımları"><Link href="/#metraj">1. Metrajı hazırla</Link><strong aria-current="step">2. Pozları incele</strong><span>3. Mühendis kararı</span><span>4. Maliyet taslağı</span></div>
     <Link href="/#technical">← Teknik inceleme seçenekleri</Link>
     <div><span className={styles.eyebrow}>ARKEMX · TEKNİK İNCELEME</span><h1>Excel teknik incelemesi</h1><p>Proje ve aktarımı seç, en fazla 20 satırı açıkça belirlediğin aday pozlarla karşılaştır.</p></div>
-    <div className={styles.notice}>Bu ekran salt okunurdur. Kaynak fiyat doğrulaması mühendis onayı değildir; metraj toplamı veya alternatif maliyet hesaplanmaz.</div>
+    <div className={styles.notice}>Karşılaştırma mühendis onayı vermez. Yalnızca “İncelemeyi kaydet” işlemi ayrı bir inceleme kaydı oluşturur. Kaynak fiyat doğrulaması mühendis onayı değildir; metraj toplamı veya alternatif maliyet hesaplanmaz.</div>
     {!ready ? <p role="status">Oturum kontrol ediliyor…</p> : !authenticated ? <section className={styles.card}><h2>ARKEMX oturumu gerekli</h2><p>Tarayıcıdaki ana çalışma alanından giriş yapıp buraya dön. PowerShell oturumu tarayıcıya aktarılmaz.</p><Link href="/">Giriş ekranına git</Link></section> : <>
       <section className={styles.card} aria-labelledby="source-heading"><h2 id="source-heading">1. Kaynağı seç</h2><div className={styles.fields}>
         <label>Proje<select value={projectId} onChange={e => chooseProject(e.target.value)}><option value="">Proje seç</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
@@ -275,8 +340,25 @@ export default function BatchTechnicalReviewPage() {
       {selection && <div className={workflow.context} aria-label="İncelenen kaynak"><span><strong>Proje:</strong> {selectedProject?.name}</span><span><strong>Excel:</strong> {selection.import_source.filename}</span><span><strong>Sayfa:</strong> {selection.import_source.sheet_name}</span></div>}
       <p className="hint">Proje ve doğrulanan Excel seçimi bu tarayıcı sekmesinde hatırlanır. Proje, aktarım veya sayfa değiştiğinde ve satırlar yeniden yüklendiğinde aday girişleri sıfırlanır. Adayları düzenledikten sonra doğrudan inceleme düğmesini kullan.</p>
       {selection && <details><summary>Excel kaynak kimliği</summary><dl><dt>Dosya / sayfa</dt><dd>{selection.import_source.filename} / {selection.import_source.sheet_name}</dd><dt>Aktarım kimliği</dt><dd><code>{selection.import_source.import_id}</code></dd><dt>SHA-256</dt><dd><code>{selection.import_source.sha256}</code></dd></dl></details>}</section>
-      {busy && <p role="status">{busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : "Kaynak kayıtları yükleniyor…"}</p>}
+      {busy && <p role="status">{busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : busy === "save" || busy === "preparing-save" ? "İnceleme doğrulanıp kaydediliyor…" : "Kaynak kayıtları yükleniyor…"}</p>}
       {error && <div role="alert" className="error">{error}</div>}
+      {saveNotice && <p className="success" role="status">{saveNotice}</p>}
+      {importId && <section className={styles.card} aria-labelledby="history-heading"><h2 id="history-heading">Kayıtlı incelemeler</h2><p>Sunucuya açıkça kaydettiğin çalışmalar. Kaydedilmiş olması teknik onay anlamına gelmez.</p>
+        <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved()}>Kayıtlı incelemeleri getir</button>
+        {savedList && (savedList.records.length ? <ul className={styles.resultList}>{savedList.records.map(record => <li key={record.id}><strong>{record.title}</strong> · {record.row_count} satır · {new Date(record.created_at).toLocaleString("tr-TR")} <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => { setArchive(null); void request<SavedReview>(`/api/projects/${encodeURIComponent(projectId)}/a3/reviews/${encodeURIComponent(record.id)}`, acceptArchive, "archive"); }}>Kaydı aç</button></li>)}</ul> : <p>Bu Excel için kayıtlı inceleme yok.</p>)}
+        {savedList?.next_offset !== null && savedList?.next_offset !== undefined && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved(savedList.next_offset!)}>Daha fazla kayıt getir</button>}
+      </section>}
+      {archive && <section className={styles.card} aria-labelledby="archive-heading"><div className={styles.toolbar}><h2 id="archive-heading">Kaydedildiği andaki inceleme · {archive.record.title}</h2><button type="button" className="secondary" onClick={() => setArchive(null)}>Kayıt görünümünü kapat</button></div>
+        <p><strong>{archive.currentness.status === "unchanged" ? "Kaydedilen girdilerde değişiklik saptanmadı." : archive.currentness.status === "changed" ? "Kaynak veya kurallar değişmiş. Bu sonuç eski çalışmaya aittir." : "Kaydın güncelliği tamamen doğrulanamadı."}</strong></p>
+        <p>Bu bölüm tarihî kaydı gösterir; güncel teknik sonuç veya mühendis onayı değildir.</p>
+        {archive.currentness.flags.length > 0 && <ul>{archive.currentness.flags.map(flag => <li key={flag}>{freshnessLabels[flag] ?? flag}</li>)}</ul>}
+        <p>Kayıt tarihi: {new Date(archive.record.created_at).toLocaleString("tr-TR")} · {archive.record.row_count} satır</p>
+        <details><summary>Kayıt kimliği ve bütünlük kanıtı</summary><code>{archive.record.id}</code><br /><code>{archive.record.snapshot_sha256}</code></details>
+        <button type="button" disabled={Boolean(busy) || !archive.resume_allowed} onClick={prepareResume}>Adayları güncel satırlarla yeniden incelemeye hazırla</button>
+        <p className="hint">Mevcut kaydedilmemiş aday girişleri bu kayıttaki adaylarla değiştirilir. Sonuç yeniden hesaplanmadan güncel sayılmaz.</p>
+        <label>Kaydedilmiş satır<select value={archiveRow ?? ""} onChange={e => setArchiveRow(e.target.value)}>{archive.report.rows.map(row => <option key={row.identity.work_item_id} value={row.identity.work_item_id}>Excel satırı {row.identity.source_row} · {row.candidate_code ?? "Aday yok"} · {label(row.technical_status)}</option>)}</select></label>
+        {archivedDetail && <RowDetail key={`archive-${archive.record.id}-${archiveRow}`} row={archivedDetail} />}
+      </section>}
       {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>
         <p>Teknik destek kapsamı: <strong>15.275.1111</strong>. Diğer kodlar kapsam dışı olarak raporlanır. Aday poz, karşılaştırmak istediğin poz kodudur; onay anlamına gelmez. Boş bırakılırsa aday seçilmemiş olur.</p>
         <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
@@ -335,7 +417,8 @@ export default function BatchTechnicalReviewPage() {
         </tr>)}</tbody></table></div><datalist id="supported-positions"><option value="15.275.1111" /></datalist>
         <div className={styles.toolbar}><div className={styles.tags}><button type="button" className="secondary" disabled={Boolean(busy) || offset === 0} onClick={() => loadItems(importId, Math.max(0, offset - 20))}>Önceki 20</button><button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null} onClick={() => loadItems(importId, selection.next_offset ?? 0)}>Sonraki 20</button></div><span>Sayfa değiştiğinde seçimler sıfırlanır.</span><button type="button" disabled={Boolean(busy) || selected.length === 0} onClick={compare}>Seçilen {selected.length} satırı incele</button></div>
       </section>}
-      {report && <div className={styles.workbench}><section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. İnceleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
+      {report && <div className={styles.workbench}><section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. Güncel önizleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
+        <div className={styles.bulkPanel}><label>İnceleme adı<input maxLength={120} value={recordTitle} disabled={Boolean(busy)} onChange={e => setRecordTitle(e.target.value)} placeholder="Örn. Sıva katmanları ilk inceleme" /></label><button type="button" disabled={Boolean(busy) || recordTitle.trim().length < 3} onClick={() => void saveReview()}>İncelemeyi kaydet</button><p className="hint">Sunucu sonucu yeniden doğrular ve yeni, değiştirilemez bir kayıt oluşturur. Mühendis kararı veya maliyet taslağı oluşturmaz.</p></div>
         <div className={styles.filters} role="group" aria-label="Teknik sonuç filtreleri">{views.map(option => {
           const count = report.rows.filter(row => option.key === "all" || (option.key === "attention" ? row.technical_status !== "checked_features_match" : row.technical_status === option.key)).length;
           return <button type="button" key={option.key} aria-pressed={view === option.key} onClick={() => setView(option.key)}>{option.title} <strong>{count}</strong></button>;
@@ -347,7 +430,7 @@ export default function BatchTechnicalReviewPage() {
         </li>)}</ul> : <p>Bu filtrede satır bulunmuyor. Diğer sonuçları görmek için “Tümü” filtresini seç.</p>}
       </section>
       <aside id="batch-detail" tabIndex={-1} aria-label="Seçili satırın teknik kanıtları" className={styles.evidencePane}>
-        {detail ? <><div className={styles.nextAction}><strong>Excel satırı {detail.identity.source_row} · Sonraki işlem</strong><p>{detail.flags.includes("CANDIDATE_NOT_SELECTED") ? "Bu satır için aday poz kodu belirle ve yeniden incele." : detail.technical_status === "incompatible" ? "Uyuşmazlığı incele; tarifi veya aday pozu değiştirmek gerekiyorsa kaynak kaydı düzelt." : detail.technical_status === "out_of_scope" ? "Bu aday pilot kapsamının dışında. Bağımsız mühendis incelemesi gerekir." : detail.technical_status === "review_required" ? "Eksik veya belirsiz bilgileri aşağıdaki gerekçelerden kontrol et." : "Kontrol edilen özellikler eşleşti. Bu önizleme henüz mühendis kararına veya maliyet taslağına aktarılamaz."}</p><p className="hint">Bu adımda sonuç ve aday girişleri kalıcı kaydedilmez. Mühendis kararı bağlantısı sonraki geliştirmedir.</p></div><RowDetail key={detail.identity.work_item_id} row={detail} /></> : <div className={styles.card}><h2>Satırın kanıtları</h2><p>Soldaki listeden “Kanıtları aç” seç. Teknik farklar ve özgün ifadeler burada görünecek.</p></div>}
+        {detail ? <><div className={styles.nextAction}><strong>Excel satırı {detail.identity.source_row} · Sonraki işlem</strong><p>{detail.flags.includes("CANDIDATE_NOT_SELECTED") ? "Bu satır için aday poz kodu belirle ve yeniden incele." : detail.technical_status === "incompatible" ? "Uyuşmazlığı incele; tarifi veya aday pozu değiştirmek gerekiyorsa kaynak kaydı düzelt." : detail.technical_status === "out_of_scope" ? "Bu aday pilot kapsamının dışında. Bağımsız mühendis incelemesi gerekir." : detail.technical_status === "review_required" ? "Eksik veya belirsiz bilgileri aşağıdaki gerekçelerden kontrol et." : "Kontrol edilen özellikler eşleşti. Bu önizleme henüz mühendis kararına veya maliyet taslağına aktarılamaz."}</p><p className="hint">Sayfadan ayrılmadan önce “İncelemeyi kaydet” ile çalışmanı saklayabilirsin. Mühendis kararı bağlantısı henüz yoktur.</p></div><RowDetail key={detail.identity.work_item_id} row={detail} /></> : <div className={styles.card}><h2>Satırın kanıtları</h2><p>Soldaki listeden “Kanıtları aç” seç. Teknik farklar ve özgün ifadeler burada görünecek.</p></div>}
       </aside></div>}
     </>}
   </main>;
