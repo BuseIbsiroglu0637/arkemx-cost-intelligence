@@ -319,3 +319,7 @@ app.include_router(m521_router)
 
 from .m6_preview import router as m6_preview_router
 app.include_router(m6_preview_router)
+
+# A3.1 technical comparison preview
+from .a3_technical_review import router as a3_technical_review_router
+app.include_router(a3_technical_review_router)
