@@ -1,4 +1,3 @@
-
 """A2.4 - Evidence-backed technical layer comparison.
 
 Compares:
@@ -12,6 +11,7 @@ This is a partial comparison, not an engineering approval engine.
 """
 
 from decimal import Decimal
+from itertools import zip_longest
 
 from app.technical_analysis.critical_attributes import (
     compare_critical_attributes,
@@ -110,15 +110,16 @@ def compare_layers(
     if len(left_layers) != len(right_layers):
         reviews.append("LAYER_COUNT_UNVERIFIED")
 
-    # 4. Compare corresponding layers in source order.
+    # 4. Compare extracted layers in source order, including unmatched ones.
+    # A missing extraction has no inferred value or fabricated evidence.
 
     for index, (left, right) in enumerate(
-        zip(left_layers, right_layers),
+        zip_longest(left_layers, right_layers),
         start=1,
     ):
         for field in FIELDS:
-            a = getattr(left, field)
-            b = getattr(right, field)
+            a = getattr(left, field) if left is not None else None
+            b = getattr(right, field) if right is not None else None
 
             if (
                 a is None
@@ -154,9 +155,11 @@ def compare_layers(
                 "catalog_value": _serialize_value(b),
                 "metraj_evidence": (
                     left_records[index - 1]["evidence"]
+                    if left is not None else None
                 ),
                 "catalog_evidence": (
                     right_records[index - 1]["evidence"]
+                    if right is not None else None
                 ),
             })
 
