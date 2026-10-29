@@ -1,4 +1,3 @@
-
 """A2.2 - Evidence-backed critical technical attribute checks.
 
 Pilot rules only. No approval or pricing authorization.
@@ -7,7 +6,7 @@ Pilot rules only. No approval or pricing authorization.
 import re
 from decimal import Decimal
 
-from app.technical_analysis.layers import fold
+from app.technical_analysis.layers import extract_work_scopes, fold
 
 RULES = {
     "cement_dosage_kg": re.compile(
@@ -70,6 +69,48 @@ def _extract(text: str, field: str, pattern: re.Pattern) -> dict:
     }
 
 
+def _compare_work_scopes(left_text: str, right_text: str, skip_fields):
+    left = extract_work_scopes(left_text)
+    right = extract_work_scopes(right_text)
+    checks, blockers, reviews = [], [], []
+    for work_type in sorted(set(left) | set(right)):
+        field = f"work_scope_{work_type}"
+        if field in skip_fields:
+            continue
+        a_items = left.get(work_type, [])
+        b_items = right.get(work_type, [])
+        all_items = a_items + b_items
+        # Preserve existing positive-only comparison behavior.
+        if not any(item["value"] != "included" for item in all_items):
+            continue
+        a_values = {item["value"] for item in a_items}
+        b_values = {item["value"] for item in b_items}
+        a = next(iter(a_values)) if len(a_values) == 1 else None
+        b = next(iter(b_values)) if len(b_values) == 1 else None
+        if len(a_values) > 1 or len(b_values) > 1 or "unknown" in a_values | b_values:
+            status, code = "review", f"{field.upper()}_AMBIGUOUS"
+        elif a is None or b is None:
+            status, code = "review", f"{field.upper()}_UNVERIFIED"
+        elif a != b:
+            status, code = "block", f"{field.upper()}_MISMATCH"
+        else:
+            status, code = "match", None
+        if status == "block":
+            blockers.append(code)
+        elif status == "review":
+            reviews.append(code)
+        checks.append({
+            "field": field,
+            "status": status,
+            "code": code,
+            "metraj_value": a if a != "unknown" else None,
+            "catalog_value": b if b != "unknown" else None,
+            "metraj_evidence": [item["evidence"] for item in a_items],
+            "catalog_evidence": [item["evidence"] for item in b_items],
+        })
+    return checks, blockers, reviews
+
+
 def compare_critical_attributes(
     metraj_description: str,
     catalog_description: str,
@@ -130,5 +171,12 @@ def compare_critical_attributes(
             "metraj_evidence": left["evidence"],
             "catalog_evidence": right["evidence"],
         })
+
+    scope_checks, scope_blockers, scope_reviews = _compare_work_scopes(
+        metraj_description, catalog_description, skip_fields
+    )
+    checks.extend(scope_checks)
+    blockers.extend(scope_blockers)
+    reviews.extend(scope_reviews)
 
     return checks, blockers, reviews

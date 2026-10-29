@@ -71,9 +71,15 @@ const FIELD_LABELS: Record<string, string> = {
   materials: "Malzeme",
   cement_dosage_kg: "Çimento miktarı (kg; tarifteki kum dayanağıyla)",
   environment: "Uygulama yeri",
+  work_scope_ince_siva: "İnce sıva kapsamı",
+  work_scope_kaba_siva: "Kaba sıva kapsamı",
+  work_scope_siva: "Sıva kapsamı",
+  work_scope_gazbeton_duvar: "Gazbeton duvar kapsamı",
 };
 
 const VALUE_LABELS: Record<string, string> = {
+  included: "Kapsamda",
+  excluded: "Kapsam dışı",
   kaba_siva: "Kaba sıva",
   ince_siva: "İnce sıva",
   siva: "Sıva",
@@ -257,6 +263,12 @@ export default function TechnicalReviewPage() {
       ? "Eksik veya belirsiz bilgi var"
       : "Kontrol edilen özellikler eşleşiyor";
 
+  const priceApplicability = comparison?.status === "blocked"
+    ? "Bu fiyat girilen tarife uygulanamaz."
+    : comparison?.status === "review"
+      ? "Bu fiyatın girilen tarife uygulanabilirliği henüz doğrulanmadı."
+      : "Kontrol edilen özellikler eşleşiyor; fiyatın projede kullanımı için kapsam ve mühendis incelemesi gereklidir.";
+
   return (
     <>
       <header>
@@ -436,14 +448,36 @@ export default function TechnicalReviewPage() {
                 {" · "}PDF sayfası: {analysis.source.pdf_page}
                 {" · "}Basılı sayfa: {analysis.source.printed_page}
               </p>
-              <strong>
-                Analiz kaynak fiyatı: {analysis.totals.total}
-                {" "}{analysis.totals.currency}/{analysis.unit}
-              </strong>
-              <p className="hint">
-                Belgedeki fiyat gösterilir; güncel piyasa fiyatı veya
-                onaylı proje maliyeti olarak kullanılmamıştır.
+              <div className="stack" aria-label="PDF'de yayımlanan fiyat">
+                <strong>
+                  PDF’de yayımlanan poz fiyatı: {analysis.totals.total}
+                  {" "}{analysis.totals.currency}/{analysis.unit}
+                </strong>
+                <p className="hint">
+                  Bu tutar kaynak PDF’deki pozun tarifine aittir.
+                  Metraj metnini değiştirmeniz belgedeki fiyatı değiştirmez.
+                </p>
+              </div>
+
+              <p
+                role="status"
+                className={comparison.status === "blocked" ? "error" : "notice"}
+              >
+                {priceApplicability}
               </p>
+
+              <div
+                className="stack"
+                aria-label="Girilen tarife göre maliyet"
+                style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}
+              >
+                <strong>Girilen tarife göre maliyet: Henüz hesaplanmadı</strong>
+                <p className="hint">
+                  Uyarlanmış maliyet için değişen imalatın malzeme miktarları,
+                  yardımcı analizleri ve işçilik girdileri ayrıca değerlendirilmelidir.
+                  Yukarıdaki kaynak fiyatı, bu tarifin hesaplanmış maliyeti değildir.
+                </p>
+              </div>
 
               <details>
                 <summary>Analiz girdileri ve belge kimliği</summary>

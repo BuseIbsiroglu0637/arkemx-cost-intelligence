@@ -64,6 +64,85 @@ def fold(text: str) -> str:
     return text.translate(TRANSLATION).lower()
 
 
+WORK_MENTION = re.compile(
+    "|".join(f"(?P<{name}>{pattern})" for name, pattern in WORK_TYPES)
+)
+
+NEGATED_APPLICATION = re.compile(
+    r"^\s*(?:(?:yapilmasi|uygulanmasi)\s+)?"
+    r"(?:haric(?:tir)?|dahil\s+degil(?:dir)?|kapsam\s+disi(?:dir)?|"
+    r"yapilmayacak(?:tir)?|uygulanmayacak(?:tir)?|"
+    r"yapilmamasi|uygulanmamasi|yok(?:tur)?)\b"
+)
+
+NEGATION_WORD = re.compile(
+    r"\b(?:haric(?:tir)?|degil(?:dir)?|yapilmayacak(?:tir)?|"
+    r"uygulanmayacak(?:tir)?|yapilmamasi|uygulanmamasi|yok(?:tur)?|"
+    r"kapsam\s+disi(?:dir)?)\b"
+)
+
+
+def _clause_work_scopes(clause: str) -> list[tuple[str, str]]:
+    """Classify a narrow application grammar; unresolved scope stays unknown."""
+    mentions = list(WORK_MENTION.finditer(clause))
+    result = []
+    for index, mention in enumerate(mentions):
+        end = mentions[index + 1].start() if index + 1 < len(mentions) else len(clause)
+        suffix = clause[mention.end():end]
+        negative = NEGATED_APPLICATION.match(suffix)
+        if negative:
+            remainder = suffix[negative.end():]
+            # Do not turn a double negation or conflicting instruction into fact.
+            conflict = re.search(
+                r"\b(?:degil(?:dir)?|yapilacak(?:tir)?|uygulanacak(?:tir)?)\b",
+                remainder,
+            )
+            state = "unknown" if conflict else "excluded"
+        elif NEGATION_WORD.search(suffix):
+            # An intervening object can own the exclusion, e.g. boya haric.
+            unrelated = re.search(
+                r"\b(?:boya|malzeme)\s+(?:haric(?:tir)?|dahil\s+degil(?:dir)?)\b",
+                suffix,
+            )
+            state = "included" if unrelated and len(mentions) == 1 else "unknown"
+        elif len(mentions) > 1 and NEGATION_WORD.search(clause):
+            state = "unknown"
+        else:
+            state = "included"
+        result.append((mention.lastgroup, state))
+    return result
+
+
+def extract_work_scopes(description: str) -> dict[str, list[dict]]:
+    """Keep application scope with original-text evidence, including exclusions."""
+    normalized = fold(description)
+    if len(normalized) != len(description):
+        raise ValueError("Normalization changed source offsets")
+    result: dict[str, list[dict]] = {}
+    start = 0
+    spans = []
+    for separator in CLAUSE_BOUNDARY.finditer(normalized):
+        spans.append((start, separator.start()))
+        start = separator.end()
+    spans.append((start, len(description)))
+    for start, end in spans:
+        while start < end and description[start].isspace():
+            start += 1
+        while end > start and description[end - 1].isspace():
+            end -= 1
+        for work_type, state in _clause_work_scopes(normalized[start:end]):
+            result.setdefault(work_type, []).append({
+                "value": state,
+                "evidence": {
+                    "quote": description[start:end],
+                    "start": start,
+                    "end": end,
+                    "offset_basis": "original_text",
+                },
+            })
+    return result
+
+
 def extract_layer_measurements(
     description: str,
 ) -> tuple[LayerMeasurement, ...]:
@@ -99,6 +178,11 @@ def extract_layer_measurements(
     for clause_start, clause_end in spans:
         clause = normalized[clause_start:clause_end]
         matches = list(THICKNESS.finditer(clause))
+        scopes = _clause_work_scopes(clause)
+        # Excluded or unresolved applications never become positive layers,
+        # even when their clause contains a thickness measurement.
+        if any(state != "included" for _, state in scopes):
+            continue
 
         # A named application can exist even when its thickness is absent.
         # Keep its original clause so dosage ownership remains source-backed.
@@ -107,12 +191,7 @@ def extract_layer_measurements(
                 f"(?:{pattern})" for _, pattern in WORK_TYPES
             )
             mentions = list(re.finditer(work_pattern, clause))
-            excluded = re.search(
-                r"\b(?:haric|yok|yapilmayacak|uygulanmayacak|"
-                r"yapilmamasi|uygulanmamasi|degil)\b",
-                clause,
-            )
-            if not mentions or excluded:
+            if not mentions:
                 continue
 
             work_type = None
