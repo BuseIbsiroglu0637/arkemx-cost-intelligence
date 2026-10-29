@@ -66,6 +66,22 @@ type ScenarioPreview = {
     approval_allowed: boolean;
     technical_compatibility: string;
     alternative_price_verification: string;
+    alternative_price_source: {
+      position_code: string;
+      description: string;
+      unit: string;
+      unit_price_tl: string;
+      source: {
+        filename: string;
+        sha256: string;
+        pdf_page: number;
+        price_date: string;
+      };
+      evidence: {
+        quote: string;
+        pdf_page: number;
+      };
+    };
     source: {
       position_code: string;
       sha256: string;
@@ -347,6 +363,12 @@ export default function TechnicalReviewPage() {
         scenario?.approval_allowed !== false ||
         scenario.technical_compatibility !== "not_evaluated" ||
         scenario.alternative_price_verification !== "verified_source_document" ||
+        scenario.alternative_price_source?.position_code !== "19.100.2506" ||
+        scenario.alternative_price_source?.unit !== "m³" ||
+        scenario.alternative_price_source?.unit_price_tl !== scenario.replacement.unit_price_tl ||
+        scenario.alternative_price_source?.source?.pdf_page !== 697 ||
+        scenario.alternative_price_source?.source?.sha256 !== "ca7453f9e8d583e28bb16130b19487edc8308831017d8d7e4daa0367c8038431" ||
+        scenario.alternative_price_source?.evidence?.quote?.includes("1.926,15") !== true ||
         scenario.source.sha256 !== original.source.sha256 ||
         scenario.source.position_code !== original.position_code ||
         scenario.source.pdf_page !== original.source.pdf_page ||
@@ -653,11 +675,33 @@ export default function TechnicalReviewPage() {
                             {" · "}Kaynak SHA-256: {scenarioResult.scenario.source.sha256}
                           </p>
                         </details>
+                        <details>
+                          <summary>İki PDF kaynağı ve fiyat kanıtı</summary>
+                          <p>
+                            Ana poz: {analysis.position_code}
+                            {" · "}PDF sayfası {analysis.source.pdf_page}
+                            {" · "}{analysis.totals.total} TL/{analysis.unit}
+                          </p>
+                          <p style={{ overflowWrap: "anywhere" }}>
+                            Ana kaynak SHA-256: {analysis.source.sha256}
+                          </p>
+                          <p>
+                            Alternatif poz: {scenarioResult.scenario.alternative_price_source.position_code}
+                            {" · "}PDF sayfası {scenarioResult.scenario.alternative_price_source.source.pdf_page}
+                            {" · "}{scenarioResult.scenario.alternative_price_source.unit_price_tl}
+                            {" TL/"}{scenarioResult.scenario.alternative_price_source.unit}
+                          </p>
+                          <p style={{ overflowWrap: "anywhere" }}>
+                            Alternatif kaynak SHA-256: {scenarioResult.scenario.alternative_price_source.source.sha256}
+                          </p>
+                          <blockquote style={{ whiteSpace: "pre-wrap" }}>
+                            {scenarioResult.scenario.alternative_price_source.evidence.quote}
+                          </blockquote>
+                        </details>
                         <p className="warning" role="status">
-                          Bu bir maliyet senaryosudur, teknik uygunluk veya mühendis onayı değildir.
-                          300 kg harç, kaynak PDF'deki 350 kg tarifiyle uyuşmaz.
-                          Alternatif harcın 1.926,15 TL/m³ birim fiyatının yardımcı analiz
-                          belgesiyle bağımsız doğrulaması beklenmektedir.
+                          Alternatif harcın PDF birim fiyatı doğrulandı.
+                          Ancak 300 kg ve 350 kg dozajları farklıdır.
+                          Fiyat doğrulaması teknik uygunluk veya mühendis onayı değildir.
                         </p>
                       </>
                     )}
