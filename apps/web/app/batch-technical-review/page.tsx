@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import WorkflowNav from "../workflow-nav";
+import workflow from "../workflow-nav.module.css";
 import { useEffect, useRef, useState } from "react";
 import styles from "./review.module.css";
 
@@ -234,8 +236,9 @@ export default function BatchTechnicalReviewPage() {
   const filtered = report?.rows.filter(row => view === "all" || (view === "attention" ? row.technical_status !== "checked_features_match" : row.technical_status === view)) ?? [];
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
   return <main className={`page ${styles.page}`}>
-    <nav className={styles.nav} aria-label="Çalışma alanı bağlantıları"><Link href="/">Ana çalışma alanı</Link><Link href="/technical-review">Tek tarif karşılaştırması</Link></nav>
-    <div><span className={styles.eyebrow}>ARKEMX · TEKNİK İNCELEME</span><h1>Excel satırlarını kanıtlarıyla incele</h1><p>Proje ve aktarımı seç, en fazla 20 satırı açıkça belirlediğin aday pozlarla karşılaştır.</p></div>
+    <WorkflowNav active="technical" />
+    <Link href="/#technical">← Teknik inceleme seçenekleri</Link>
+    <div><span className={styles.eyebrow}>ARKEMX · TEKNİK İNCELEME</span><h1>Excel teknik incelemesi</h1><p>Proje ve aktarımı seç, en fazla 20 satırı açıkça belirlediğin aday pozlarla karşılaştır.</p></div>
     <div className={styles.notice}>Bu ekran salt okunurdur. Kaynak fiyat doğrulaması mühendis onayı değildir; metraj toplamı veya alternatif maliyet hesaplanmaz.</div>
     {!ready ? <p role="status">Oturum kontrol ediliyor…</p> : !authenticated ? <section className={styles.card}><h2>ARKEMX oturumu gerekli</h2><p>Tarayıcıdaki ana çalışma alanından giriş yapıp buraya dön. PowerShell oturumu tarayıcıya aktarılmaz.</p><Link href="/">Giriş ekranına git</Link></section> : <>
       <section className={styles.card} aria-labelledby="source-heading"><h2 id="source-heading">1. Kaynağı seç</h2><div className={styles.fields}>
@@ -244,12 +247,14 @@ export default function BatchTechnicalReviewPage() {
         <button type="button" className="secondary" disabled={Boolean(busy) || !importId} onClick={() => loadItems(importId, offset)}>Satırları yeniden yükle</button>
       </div>{projectId && !busy && imports.length === 0 && <p>Bu projede Excel aktarımı bulunmuyor.</p>}
       {!busy && projects.length === 0 && <p>Hesabında proje yok. Ana çalışma alanından proje ve Excel aktarımı oluşturabilirsin.</p>}
-      {selectedProject?.name.toLocaleLowerCase("tr-TR").includes("sentetik") && <p className={styles.testNote}>Sentetik test projesi seçili. Sonuçlar gerçek proje doğruluğunu ölçmez.</p>}
+      {selectedProject?.name.toLowerCase().includes("sentetik") && <p className={styles.testNote}>Sentetik test projesi seçili. Sonuçlar gerçek proje doğruluğunu ölçmez.</p>}
+      {selection && <div className={workflow.context} aria-label="İncelenen kaynak"><span><strong>Proje:</strong> {selectedProject?.name}</span><span><strong>Excel:</strong> {selection.import_source.filename}</span><span><strong>Sayfa:</strong> {selection.import_source.sheet_name}</span></div>}
+      <p className="hint">Proje, aktarım veya sayfa değiştiğinde ve satırlar yeniden yüklendiğinde aday girişleri sıfırlanır. Adayları düzenledikten sonra doğrudan inceleme düğmesini kullan.</p>
       {selection && <details><summary>Excel kaynak kimliği</summary><dl><dt>Dosya / sayfa</dt><dd>{selection.import_source.filename} / {selection.import_source.sheet_name}</dd><dt>Aktarım kimliği</dt><dd><code>{selection.import_source.import_id}</code></dd><dt>SHA-256</dt><dd><code>{selection.import_source.sha256}</code></dd></dl></details>}</section>
       {busy && <p role="status">{busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : "Kaynak kayıtları yükleniyor…"}</p>}
       {error && <div role="alert" className="error">{error}</div>}
       {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>
-        <p>Teknik destek kapsamı: <strong>15.275.1111</strong>. Diğer kodlar kapsam dışı olarak raporlanır. Boş aday alanı, aday seçilmediği anlamına gelir.</p>
+        <p>Teknik destek kapsamı: <strong>15.275.1111</strong>. Diğer kodlar kapsam dışı olarak raporlanır. Aday poz, karşılaştırmak istediğin poz kodudur; onay anlamına gelmez. Boş bırakılırsa aday seçilmemiş olur.</p>
         <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
           <div className={styles.bulkFields}>
             <label>
@@ -302,7 +307,7 @@ export default function BatchTechnicalReviewPage() {
           <td><input type="checkbox" aria-label={`Excel satırı ${row.source_row} seç`} checked={selected.includes(row.work_item_id)} onChange={e => toggle(row.work_item_id, e.target.checked)} /></td><td>{row.source_row}{row.revision_id && <small className={styles.meta}>Revizyon var</small>}</td>
           <td className={styles.description}><details><summary>{row.effective_description.slice(0, 150)}{row.effective_description.length > 150 ? "…" : ""}</summary><p className={styles.quote}>{row.effective_description}</p>{row.original_description !== row.effective_description && <><strong>Özgün Excel tarifi</strong><p className={styles.quote}>{row.original_description}</p></>}</details>{row.input_review_required && <small className={styles.meta}>Girdi incelemesi gerekli</small>}</td>
           <td>{row.quantity ?? "Miktar eksik"}<br />{row.unit ?? "Birim eksik"}</td>
-          <td><label><span className={styles.srOnly}>Excel satırı {row.source_row} aday poz</span><input className={styles.codeInput} list="supported-positions" maxLength={80} placeholder="Aday yok" value={candidates[row.work_item_id] ?? ""} onChange={e => candidate(row.work_item_id, e.target.value)} /></label></td>
+          <td><label><span className={styles.srOnly}>Excel satırı {row.source_row} aday poz</span><input className={styles.codeInput} list="supported-positions" maxLength={80} placeholder="Poz kodu yaz" value={candidates[row.work_item_id] ?? ""} onChange={e => candidate(row.work_item_id, e.target.value)} /></label></td>
         </tr>)}</tbody></table></div><datalist id="supported-positions"><option value="15.275.1111" /></datalist>
         <div className={styles.toolbar}><div className={styles.tags}><button type="button" className="secondary" disabled={Boolean(busy) || offset === 0} onClick={() => loadItems(importId, Math.max(0, offset - 20))}>Önceki 20</button><button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null} onClick={() => loadItems(importId, selection.next_offset ?? 0)}>Sonraki 20</button></div><span>Sayfa değiştiğinde seçimler sıfırlanır.</span><button type="button" disabled={Boolean(busy) || selected.length === 0} onClick={compare}>Seçilen {selected.length} satırı incele</button></div>
       </section>}

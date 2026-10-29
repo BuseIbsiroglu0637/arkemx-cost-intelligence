@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import WorkflowNav from "../workflow-nav";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 type Evidence = {
   quote: string;
@@ -437,8 +438,11 @@ export default function TechnicalReviewPage() {
         </Link>
       </header>
       <main className="page stack">
+        <WorkflowNav active="technical" />
+        <Link href="/#technical">← Teknik inceleme seçenekleri</Link>
         <section className="card stack">
-          <h1>Kanıtlı teknik karşılaştırma</h1>
+          <h1>Tek tarif denemesi</h1>
+          <p>Gelişmiş araç · Excel satırlarını incelemek için <Link href="/batch-technical-review">Excel teknik incelemesine geç</Link>.</p>
           <p>
             Metraj tarifini 15.275.1111 pozunun doğrulanmış PDF
             tarifiyle karşılaştırın.

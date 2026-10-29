@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import WorkflowNav, { type WorkflowSection } from "./workflow-nav";
+import workflow from "./workflow-nav.module.css";
 
 import {useCallback, useEffect, useState, type FormEvent} from "react";
 
@@ -22,27 +24,17 @@ import RevisedMetrajPanel from "./revised-metraj-panel";
 
 type Project = {id: string; name: string; created_at: string};
 
-type Tab = "overview"|"metraj"|"catalog"|"bulk"|"review"|"cost";
+type Tab = "overview"|"metraj"|"technical"|"catalog"|"bulk"|"review"|"cost";
 
 type JobSummary = {status:string;total_rows:number;processed_rows:number;candidate_count:number};
 
 type QueueSummary = {run:null|{row_count:number;candidate_count:number};summary?:{decisions?:Record<string,number>}};
 
-const tabs: {id:Tab;title:string;subtitle:string}[] = [
-
- {id:"overview",title:"Genel Bakış",subtitle:"Özet"},
-
- {id:"metraj",title:"Metraj",subtitle:"M1 / M2.1"},
-
- {id:"catalog",title:"Kataloglar",subtitle:"M3"},
-
- {id:"bulk",title:"Toplu Analiz",subtitle:"M4.3"},
-
- {id:"review",title:"Mühendis İnceleme",subtitle:"M4.2"},
-
- {id:"cost",title:"Maliyet",subtitle:"M5.0"},
-
-];
+const sectionTitles: Record<WorkflowSection, string> = {
+  overview: "Proje özeti", metraj: "Metraj", technical: "Teknik inceleme",
+  cost: "Maliyet", catalog: "Kaynaklar",
+};
+const validTabs: Tab[] = ["overview", "metraj", "technical", "catalog", "bulk", "review", "cost"];
 
 type Row = {source_row: number; description: string; quantity: string | null; unit: string | null; issues: string[]; review_required: boolean};
 
@@ -118,11 +110,27 @@ export default function Home() {
 
   useEffect(()=>{const stored = sessionStorage.getItem("arkemx_dev_token"); if(stored){setToken(stored);loadProjects(stored).catch(()=>{sessionStorage.removeItem("arkemx_dev_token");setToken(null);});}},[loadProjects]);
 
+  useEffect(() => {
+    const readSection = () => {
+      const hash = window.location.hash.slice(1) as Tab;
+      if (validTabs.includes(hash)) setTab(hash);
+    };
+    readSection();
+    window.addEventListener("hashchange", readSection);
+    window.addEventListener("popstate", readSection);
+    return () => {
+      window.removeEventListener("hashchange", readSection);
+      window.removeEventListener("popstate", readSection);
+    };
+  }, []);
+  const activeSection: WorkflowSection = tab === "bulk" || tab === "review" ? "technical" : tab;
+
   const handleError = (e:unknown)=>setError(e instanceof Error?e.message:"Beklenmeyen hata");
 
   const goTo=(next:Tab)=>{
 
     setTab(next);
+    window.history.pushState(null, "", `#${next}`);
 
     document.getElementById("workspace-main")?.scrollIntoView({behavior:"smooth",block:"start"});
 
@@ -180,7 +188,7 @@ export default function Home() {
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
-  async function chooseProject(id:string){setProject(id);setInspection(null);setPreview(null);setFile(null);setItems([]);setTab("overview");setShowAllItems(false);setShowRevisions(false);setJobSummary(null);setQueueSummary(null);setError("");setMessage("");
+  async function chooseProject(id:string){setProject(id);setInspection(null);setPreview(null);setFile(null);setItems([]);setShowAllItems(false);setShowRevisions(false);setJobSummary(null);setQueueSummary(null);setError("");setMessage("");
 
     if(token){try{setItems(await request<Row[]>(`/api/projects/${id}/items`,token));}catch(e){handleError(e);}}}
 
@@ -259,14 +267,7 @@ export default function Home() {
           <div className="workspace-context-heading">
             <h1>ARKEMX çalışma alanı</h1>
             <p className="hint">Metrajdan teknik incelemeye tek proje üzerinden ilerleyin.</p>
-            <p>
-              <Link href="/technical-review">
-                Kanıtlı teknik karşılaştırmayı aç →
-              </Link>
-            </p>
-            <p>
-              <Link href="/batch-technical-review">Excel satırlarını toplu teknik incelemeye aç →</Link>
-            </p>
+
           </div>
 
           <label className="workspace-project-select">Aktif proje
@@ -319,21 +320,14 @@ export default function Home() {
 
       {summaryError&&<p role="status" className="hint">{summaryError}</p>}
 
-      <nav className="workspace-nav" role="tablist" aria-label="Proje modülleri">
-
-        {tabs.map(t=><button type="button" role="tab" id={`tab-${t.id}`} key={t.id}
-
-          aria-selected={tab===t.id} aria-controls="workspace-main"
-
-          className={`workspace-tab ${tab===t.id?"active":""}`} onClick={()=>goTo(t.id)}>
-
-          <span>{t.title}</span><small>{t.subtitle}</small>
-
-        </button>)}
-
-      </nav>
-
-      <div className="workspace-main" id="workspace-main" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+      <WorkflowNav active={activeSection} onSelect={goTo} />
+      <div className={workflow.steps}>Metrajı yükle → adayları ve teknik farkları incele → mühendis kararından sonra maliyet çalışmasına geç.</div>
+      <div className="workspace-main" id="workspace-main" aria-label={sectionTitles[activeSection]}>
+      {(tab === "bulk" || tab === "review") && <div className="card stack">
+        <button type="button" className="secondary" onClick={() => goTo("technical")}>← Teknik inceleme seçeneklerine dön</button>
+        <h2>{tab === "bulk" ? "Katalogdan aday bulma" : "Mühendis kararları"}</h2>
+        <p>{tab === "bulk" ? "Bu işlem aday üretir. Kanıtlı teknik uygunluk kontrolü veya mühendis onayı yerine geçmez." : "Bu bölüm kayıtlı karar akışıdır. Salt okunur teknik karşılaştırmanın sonuçları buraya otomatik aktarılmaz."}</p>
+      </div>}
 
       {!project?<section className="card empty">Yukarıdan bir proje seçin veya yeni proje oluşturun.</section>:
 
@@ -341,7 +335,7 @@ export default function Home() {
 
         <section className="card stack">
 
-          <div className="flex between"><div><h2>Proje özeti</h2><p className="hint">Son analiz ve mühendis inceleme sonuçları</p></div><span className="tag">Geliştirici pilotu</span></div>
+          <div className="flex between"><div><h2>Proje özeti</h2><p className="hint">Kayıtlı aday bulma ve mühendis kararlarının özeti. Salt okunur Excel teknik incelemesinin sonuçları bu sayaçlara dahil değildir.</p></div><span className="tag">Yerel pilot</span></div>
 
           <div className="workspace-kpis">
 
@@ -379,11 +373,11 @@ export default function Home() {
 
           <button type="button" className="secondary" aria-expanded={showLegacy} onClick={()=>setShowLegacy(v=>!v)}>
 
-            {showLegacy?"Gelişmiş testleri kapat":"Gelişmiş araçlar · Eski M2/M4 testleri"}</button>
+            {showLegacy?"Gelişmiş testleri kapat":"Gelişmiş araçlar · Eşleştirme denemeleri"}</button>
 
           {showLegacy&&<div className="stack">
 
-            <p className="warning">Bu araçlar yeni test çalışması oluşturabilir. M4.3 sonuçlarını korumak için gereksiz çalıştırmayın.</p>
+            <p className="warning">Bu araçlar yeni test çalışması oluşturabilir. Kayıtlı toplu sonuçları korumak için gereksiz çalıştırmayın.</p>
 
             <TechnicalPanel token={token} project={project} refreshKey={revisionTick} onMatch={()=>setRevisionTick(v=>v+1)}/>
 
@@ -395,6 +389,29 @@ export default function Home() {
 
        </div>:
 
+       tab==="technical"?<section className="card stack">
+         <div><h2>Teknik inceleme</h2><p>Excel satırlarını karşılaştırmak için ilk seçeneği kullan. Aday üretme ve mühendis kararı ayrı işlemlerdir.</p></div>
+         <div className={workflow.cards}>
+           <article className={`${workflow.card} ${workflow.primary}`}>
+             <h3>Excel satırlarını karşılaştır</h3>
+             <p>İçe aktardığın satırlarda kalınlık, malzeme ve dozaj farklarını kaynak ifadeleriyle gör.</p>
+             <p><strong>Salt okunur · Ana poz desteği: 15.275.1111</strong></p>
+             <Link href="/batch-technical-review">Excel teknik incelemesini aç →</Link>
+           </article>
+           <article className={workflow.card}>
+             <h3>Katalogdan aday bul</h3><p>Katalog ile metrajı tarayıp incelenecek poz adaylarını oluştur.</p>
+             <button type="button" className="secondary" onClick={() => goTo("bulk")}>Aday bulma ekranını aç</button>
+           </article>
+           <article className={workflow.card}>
+             <h3>Mühendis kararları</h3><p>Kayıtlı adayların inceleme ve onay sürecini yönet.</p>
+             <button type="button" className="secondary" onClick={() => goTo("review")}>Karar ekranını aç</button>
+           </article>
+         </div>
+         <details><summary>Gelişmiş araçlar · Tek tarif ve maliyet senaryosu</summary>
+           <p>Excel satırlarından bağımsız bir tarif denemek veya desteklenen alternatif harç senaryosunu incelemek için kullan.</p>
+           <Link href="/technical-review">Tek tarif denemesini aç →</Link>
+         </details>
+       </section>:
        tab==="metraj"?<div className="stack">
 
                 <section className="card stack"><div className="flex between"><h2>Excel metraj yükle</h2><span className="tag">.xlsx · en fazla 10 MB</span></div>
@@ -427,7 +444,7 @@ export default function Home() {
 
           <button type="button" className="secondary" aria-expanded={showRevisions} onClick={()=>setShowRevisions(v=>!v)}>
 
-            {showRevisions?"M2.1 revizyonlarını kapat":"M2.1 · Metraj düzeltme ve revizyonları aç"}</button>
+            {showRevisions?"Düzeltme geçmişini kapat":"Metraj düzeltme ve revizyon geçmişini aç"}</button>
 
           {showRevisions&&<CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>}
 
@@ -435,13 +452,13 @@ export default function Home() {
 
        </div>:
 
-       tab==="catalog"?<CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/>:
+       tab==="catalog"?<div className="stack"><section className="card stack"><h2>Kaynaklar</h2><p>Poz adaylarını bulmak için kullanılan katalogları yönet. Katalogda bulunmak, kanıtlı teknik inceleme desteği anlamına gelmez.</p><details><summary>PDF katalog araçları</summary><Link href="/catalog-analysis">PDF kataloğunu incele →</Link></details><p className="hint">Doğrulanmış analiz PDF’sinin belge kimliği ve fiyat tarihi, teknik inceleme sonucundaki kaynak kanıtında gösterilir.</p></section><CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/></div>:
 
        tab==="bulk"?<BulkPanel token={token} project={project} onCompleted={()=>setRevisionTick(v=>v+1)}/>:
 
        tab==="review"?<EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>:
 
-       <CostPanel token={token} project={project}/>}
+       <div className="stack"><section className="card stack"><h2>Maliyet</h2><p>Kayıtlı maliyet taslaklarını ve karşılaştırmalarını yönet. PDF kaynak fiyatı, metrajına otomatik uygulanmış fiyat değildir.</p><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostPanel token={token} project={project}/></div>}
 
       </div>
 
