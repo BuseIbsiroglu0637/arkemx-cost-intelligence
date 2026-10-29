@@ -264,6 +264,9 @@ export default function Home() {
                 Kanıtlı teknik karşılaştırmayı aç →
               </Link>
             </p>
+            <p>
+              <Link href="/batch-technical-review">Excel satırlarını toplu teknik incelemeye aç →</Link>
+            </p>
           </div>
 
           <label className="workspace-project-select">Aktif proje
