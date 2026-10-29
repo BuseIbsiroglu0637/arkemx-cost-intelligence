@@ -8,6 +8,7 @@ import workflow from "../workflow-nav.module.css";
 import { useEffect, useRef, useState } from "react";
 import styles from "./review.module.css";
 import AssessmentPanel from "./assessment-panel";
+import M4LinkPanel from "./m4-link-panel";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -319,6 +320,10 @@ export default function BatchTechnicalReviewPage() {
     setOffset(0); setArchive(null); setArchiveRow(null);
     setSaveNotice("Kayıtlı adaylar ve satırların güncel revizyonları yüklendi. Yeni sonucu görmek için ‘Seçilen satırları incele’ düğmesine bas. Eski sonuç aktif sonuca aktarılmadı.");
   }
+  function expireSavedSession() {
+    invalidate(); clearWorkspace(); setAuthenticated(false); setArchive(null); setSavedList(null);
+    setSelection(null); setProjects([]); setImports([]); setSelected([]);
+  }
   const archivedDetail = archive?.report.rows.find(row => row.identity.work_item_id === archiveRow);
   const selectedProject = projects.find(project => project.id === projectId);
   const detail = report?.rows.find(row => row.identity.work_item_id === detailId);
@@ -362,10 +367,10 @@ export default function BatchTechnicalReviewPage() {
           <RowDetail key={`archive-${archive.record.id}-${archiveRow}`} row={archivedDetail} />
           <AssessmentPanel key={`assessment-${archive.record.id}-${archiveRow}`} api={API} projectId={projectId} recordId={archive.record.id}
             itemId={archivedDetail.identity.work_item_id} snapshot={archive.record.snapshot_sha256} candidate={archivedDetail.candidate_code}
-            disabled={Boolean(busy)} onExpired={() => {
-              invalidate(); clearWorkspace(); setAuthenticated(false); setArchive(null); setSavedList(null);
-              setSelection(null); setProjects([]); setImports([]); setSelected([]);
-            }} />
+            disabled={Boolean(busy)} onExpired={expireSavedSession} />
+          <M4LinkPanel key={`m4-link-${archive.record.id}-${archiveRow}`} api={API} projectId={projectId} recordId={archive.record.id}
+            itemId={archivedDetail.identity.work_item_id} snapshot={archive.record.snapshot_sha256} candidate={archivedDetail.candidate_code}
+            disabled={Boolean(busy)} onExpired={expireSavedSession} />
         </>}
       </section>}
       {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>

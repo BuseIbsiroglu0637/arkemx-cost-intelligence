@@ -338,3 +338,6 @@ app.include_router(a3_review_records_router)
 
 from .a3_review_assessments import router as a3_review_assessments_router
 app.include_router(a3_review_assessments_router)
+
+from .a3_m4_bridge import router as a3_m4_bridge_router
+app.include_router(a3_m4_bridge_router)
