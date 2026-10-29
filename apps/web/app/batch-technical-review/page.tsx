@@ -7,6 +7,7 @@ import WorkflowNav from "../workflow-nav";
 import workflow from "../workflow-nav.module.css";
 import { useEffect, useRef, useState } from "react";
 import styles from "./review.module.css";
+import AssessmentPanel from "./assessment-panel";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -357,7 +358,15 @@ export default function BatchTechnicalReviewPage() {
         <button type="button" disabled={Boolean(busy) || !archive.resume_allowed} onClick={prepareResume}>Adayları güncel satırlarla yeniden incelemeye hazırla</button>
         <p className="hint">Mevcut kaydedilmemiş aday girişleri bu kayıttaki adaylarla değiştirilir. Sonuç yeniden hesaplanmadan güncel sayılmaz.</p>
         <label>Kaydedilmiş satır<select value={archiveRow ?? ""} onChange={e => setArchiveRow(e.target.value)}>{archive.report.rows.map(row => <option key={row.identity.work_item_id} value={row.identity.work_item_id}>Excel satırı {row.identity.source_row} · {row.candidate_code ?? "Aday yok"} · {label(row.technical_status)}</option>)}</select></label>
-        {archivedDetail && <RowDetail key={`archive-${archive.record.id}-${archiveRow}`} row={archivedDetail} />}
+        {archivedDetail && <>
+          <RowDetail key={`archive-${archive.record.id}-${archiveRow}`} row={archivedDetail} />
+          <AssessmentPanel key={`assessment-${archive.record.id}-${archiveRow}`} api={API} projectId={projectId} recordId={archive.record.id}
+            itemId={archivedDetail.identity.work_item_id} snapshot={archive.record.snapshot_sha256} candidate={archivedDetail.candidate_code}
+            disabled={Boolean(busy)} onExpired={() => {
+              invalidate(); clearWorkspace(); setAuthenticated(false); setArchive(null); setSavedList(null);
+              setSelection(null); setProjects([]); setImports([]); setSelected([]);
+            }} />
+        </>}
       </section>}
       {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>
         <p>Teknik destek kapsamı: <strong>15.275.1111</strong>. Diğer kodlar kapsam dışı olarak raporlanır. Aday poz, karşılaştırmak istediğin poz kodudur; onay anlamına gelmez. Boş bırakılırsa aday seçilmemiş olur.</p>

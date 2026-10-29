@@ -335,3 +335,6 @@ app.include_router(a3_batch_review_router)
 # Explicit saved previews; separate from engineering decisions and costing.
 from .a3_review_records import router as a3_review_records_router
 app.include_router(a3_review_records_router)
+
+from .a3_review_assessments import router as a3_review_assessments_router
+app.include_router(a3_review_assessments_router)
