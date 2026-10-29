@@ -104,7 +104,7 @@ function EvidenceView({
   evidence,
 }: {
   title: string;
-  evidence: Check["metraj_evidence"];
+  evidence: Pick<Evidence, "quote"> | Pick<Evidence, "quote">[] | null;
 }) {
   const items = evidence
     ? Array.isArray(evidence) ? evidence : [evidence]
@@ -138,6 +138,7 @@ export default function TechnicalReviewPage() {
   const [result, setResult] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [view, setView] = useState<"attention" | "all">("attention");
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -215,7 +216,10 @@ export default function TechnicalReviewPage() {
         throw new Error("Beklenen teknik önizleme yanıtı alınamadı.");
       }
 
-      if (requestRef.current === controller) setResult(data);
+      if (requestRef.current === controller) {
+        setView("attention");
+        setResult(data);
+      }
     } catch (exception) {
       if (controller.signal.aborted) return;
       if (requestRef.current === controller) {
@@ -238,6 +242,14 @@ export default function TechnicalReviewPage() {
   const checks = comparison
     ? [...comparison.checks, ...comparison.technical_checks]
     : [];
+
+  const indexedChecks = checks.map((check, index) => ({ check, index }));
+  const attentionChecks = indexedChecks.filter(({ check }) => check.status !== "match");
+  const visibleChecks = view === "all" ? indexedChecks : attentionChecks;
+  const blockedCount = checks.filter((check) => check.status === "block").length;
+  const reviewCount = checks.filter((check) => check.status === "review").length;
+  const matchCount = checks.filter((check) => check.status === "match").length;
+  const otherCount = attentionChecks.length - blockedCount - reviewCount;
 
   const title = comparison?.status === "blocked"
     ? "Teknik uyuşmazlık bulundu"
@@ -332,7 +344,48 @@ export default function TechnicalReviewPage() {
                 </div>
               )}
 
-              <div className="table-scroll">
+              <div className="flex" aria-label="Teknik kontrol özeti">
+                <span className="tag">{blockedCount} uyuşmazlık</span>
+                <span className="tag">{reviewCount} inceleme gerekli</span>
+                <span className="tag">{matchCount} eşleşen özellik</span>
+                {otherCount > 0 && (
+                  <span className="tag">{otherCount} diğer / belirtilmemiş kontrol</span>
+                )}
+              </div>
+
+              <div className="flex" role="group" aria-label="Karşılaştırma görünümü">
+                <button
+                  type="button"
+                  className={view === "attention" ? "" : "secondary"}
+                  aria-pressed={view === "attention"}
+                  aria-controls="technical-check-table"
+                  onClick={() => setView("attention")}
+                >
+                  Farklar ve eksikler ({attentionChecks.length})
+                </button>
+                <button
+                  type="button"
+                  className={view === "all" ? "" : "secondary"}
+                  aria-pressed={view === "all"}
+                  aria-controls="technical-check-table"
+                  onClick={() => setView("all")}
+                >
+                  Tüm özellikler ({checks.length})
+                </button>
+              </div>
+              <p className="hint" role="status">
+                {visibleChecks.length} / {checks.length} kontrol gösteriliyor.
+                Sayılar tablodaki özellik kontrollerine aittir; genel bulgular yukarıda ayrıca listelenir.
+              </p>
+              {view === "attention" && attentionChecks.length === 0 && (
+                <p className="notice" role="status">
+                  Gösterilecek fark veya eksik özellik satırı yok.
+                  Tüm özellikleri açabilirsiniz. Bu görünüm mühendis onayı değildir;
+                  varsa yukarıdaki genel inceleme bulguları geçerlidir.
+                </p>
+              )}
+
+              <div className="table-scroll" id="technical-check-table">
                 <table>
                   <caption>Katman ve teknik özellik karşılaştırması</caption>
                   <thead>
@@ -344,7 +397,7 @@ export default function TechnicalReviewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {checks.map((check, index) => (
+                    {visibleChecks.map(({ check, index }) => (
                       <tr key={index}>
                         <td>
                           {check.layer ? `Katman ${check.layer} · ` : ""}
@@ -356,7 +409,7 @@ export default function TechnicalReviewPage() {
                           <strong>
                             {STATUS_LABELS[check.status] ?? check.status}
                           </strong>
-                          <details>
+                          <details name="technical-check-evidence">
                             <summary>Kaynak ifadelerini göster</summary>
                             <EvidenceView
                               title="Metraj"
@@ -430,16 +483,12 @@ export default function TechnicalReviewPage() {
                   title="Metraj tarifi"
                   evidence={{
                     quote: result.sources.metraj,
-                    start: 0,
-                    end: 0,
                   }}
                 />
                 <EvidenceView
                   title="PDF teknik tarifi"
                   evidence={{
                     quote: result.sources.catalog,
-                    start: 0,
-                    end: 0,
                   }}
                 />
               </details>
