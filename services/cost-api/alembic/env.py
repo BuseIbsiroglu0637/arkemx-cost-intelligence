@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.database import Base
 from app import models  # noqa: F401 - model registration
+from app import a3_assessment_store  # noqa: F401 - assessment model registration
 from app import a3_review_store  # noqa: F401 - saved review model registration
 
 config = context.config
