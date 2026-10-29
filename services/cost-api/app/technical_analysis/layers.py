@@ -1,4 +1,4 @@
-"""A1.2 - Source-backed technical layer extraction.
+"""A3.5 - Preserve explicitly named layers without thickness.
 
 Pilot for wall and plaster descriptions.
 Preserves material context before and after measurements.
@@ -51,7 +51,7 @@ MATERIALS = (
 @dataclass(frozen=True)
 class LayerMeasurement:
     order: int
-    thickness_mm: Decimal
+    thickness_mm: Decimal | None
     work_type: str | None
     materials: tuple[str, ...]
     quote: str
@@ -67,12 +67,13 @@ def fold(text: str) -> str:
 def extract_layer_measurements(
     description: str,
 ) -> tuple[LayerMeasurement, ...]:
-    """Extract measurements inside explicitly separated clauses.
+    """Extract measured applications and explicitly named unmeasured layers.
 
     Source offsets refer to the original input string.
 
     Material and work-type associations are extracted only when a clause
-    contains exactly one measurement. Multiple measurements in the same
+    contains one measurement or one explicitly named unmeasured application.
+    Multiple measurements in the same
     clause remain unresolved rather than being assigned by guesswork.
 
     Unknown work types remain None. These records do not grant technical
@@ -98,6 +99,53 @@ def extract_layer_measurements(
     for clause_start, clause_end in spans:
         clause = normalized[clause_start:clause_end]
         matches = list(THICKNESS.finditer(clause))
+
+        # A named application can exist even when its thickness is absent.
+        # Keep its original clause so dosage ownership remains source-backed.
+        if not matches:
+            work_pattern = "|".join(
+                f"(?:{pattern})" for _, pattern in WORK_TYPES
+            )
+            mentions = list(re.finditer(work_pattern, clause))
+            excluded = re.search(
+                r"\b(?:haric|yok|yapilmayacak|uygulanmayacak|"
+                r"yapilmamasi|uygulanmamasi|degil)\b",
+                clause,
+            )
+            if not mentions or excluded:
+                continue
+
+            work_type = None
+            materials = ()
+            if len(mentions) == 1:
+                work_type = next(
+                    name for name, pattern in WORK_TYPES
+                    if re.fullmatch(pattern, mentions[0].group())
+                )
+                materials = tuple(
+                    name for name, pattern in MATERIALS
+                    if re.search(pattern, clause)
+                )
+
+            quote_start = clause_start
+            quote_end = clause_end
+            while quote_start < quote_end and description[quote_start].isspace():
+                quote_start += 1
+            while quote_end > quote_start and description[quote_end - 1].isspace():
+                quote_end -= 1
+
+            results.append(
+                LayerMeasurement(
+                    order=len(results) + 1,
+                    thickness_mm=None,
+                    work_type=work_type,
+                    materials=materials,
+                    quote=description[quote_start:quote_end],
+                    start=quote_start,
+                    end=quote_end,
+                )
+            )
+            continue
 
         for match in matches:
             value = Decimal(

@@ -54,7 +54,7 @@ def _layer_record(
     return {
         "order": layer.order,
         "work_type": layer.work_type,
-        "thickness_mm": str(layer.thickness_mm),
+        "thickness_mm": _serialize_value(layer.thickness_mm),
         "materials": list(layer.materials),
         "evidence": {
             "quote": layer.quote,
