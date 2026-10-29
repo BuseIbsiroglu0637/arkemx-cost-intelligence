@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { clearWorkspace, readWorkspace, rememberImport, rememberProject } from "../workspace-context";
 import WorkflowNav from "../workflow-nav";
 import workflow from "../workflow-nav.module.css";
 import { useEffect, useRef, useState } from "react";
@@ -86,10 +87,11 @@ function RowDetail({ row }: { row: Row }) {
       <dl><dt>Belge</dt><dd>{price.source.filename}</dd><dt>Fiyat tarihi</dt><dd>{price.source.price_date}</dd><dt>PDF / basılı sayfa</dt><dd>{price.source.pdf_page} / {price.source.printed_page}</dd><dt>SHA-256</dt><dd><code>{price.source.sha256}</code></dd></dl>
     </details>}
     {checks.length > 0 ? <><div className={styles.toolbar}><h3>Özellik karşılaştırması</h3><label className={styles.checkLabel}><input type="checkbox" checked={differencesOnly} onChange={e => setDifferencesOnly(e.target.checked)} />Yalnızca farklar ve eksikler</label></div>
-      {visible.length === 0 ? <p>Kontrol edilen özelliklerde fark bulunmadı. Tümünü görmek için filtreyi kaldırabilirsin.</p> : <div className={styles.tableScroll}><table><thead><tr><th>Özellik</th><th>Metraj</th><th>Poz tarifi</th><th>Durum ve kaynak ifadeleri</th></tr></thead><tbody>{visible.map((check, index) => <tr key={`${check.layer ?? 0}-${check.field}-${index}`}>
-        <td>{check.layer ? `Katman ${check.layer} · ` : ""}{label(check.field)}</td><td>{display(check.metraj_value)}</td><td>{display(check.catalog_value)}</td>
-        <td><span className={`${styles.badge} ${badgeClass(check.status)}`}>{label(check.status)}</span><details><summary>Kanıtları aç</summary><EvidenceView title="Metraj ifadesi" value={check.metraj_evidence} /><EvidenceView title="Poz ifadesi" value={check.catalog_evidence} />{check.code && <small>{check.code}</small>}</details></td>
-      </tr>)}</tbody></table></div>}</> : <p>Bu satır için teknik özellik karşılaştırması üretilemedi. Gerekçeler yukarıda gösteriliyor.</p>}
+      {visible.length === 0 ? <p>Kontrol edilen özelliklerde fark bulunmadı. Tümünü görmek için filtreyi kaldırabilirsin.</p> : <div className={styles.featureList}>{visible.map((check, index) => <article className={styles.featureCard} key={`${check.layer ?? 0}-${check.field}-${index}`}>
+        <div className={styles.featureHeading}><h4>{check.layer ? `Katman ${check.layer} · ` : ""}{label(check.field)}</h4><span className={`${styles.badge} ${badgeClass(check.status)}`}>{label(check.status)}</span></div>
+        <dl className={styles.values}><div><dt>Metraj</dt><dd>{display(check.metraj_value)}</dd></div><div><dt>Poz tarifi</dt><dd>{display(check.catalog_value)}</dd></div></dl>
+        <details><summary>Kaynak ifadelerini aç</summary><EvidenceView title="Metraj ifadesi" value={check.metraj_evidence} /><EvidenceView title="Poz ifadesi" value={check.catalog_evidence} />{check.code && <small>{check.code}</small>}</details>
+      </article>)}</div>}</> : <p>Bu satır için teknik özellik karşılaştırması üretilemedi. Gerekçeler yukarıda gösteriliyor.</p>}
   </section>;
 }
 
@@ -121,19 +123,24 @@ export default function BatchTechnicalReviewPage() {
   async function request<T>(path: string, apply: (data: T) => void, task: string, init: RequestInit = {}) {
     requestRef.current?.abort();
     const token = sessionStorage.getItem("arkemx_dev_token");
-    if (!token) { setAuthenticated(false); clearResult(); setSelection(null); return; }
+    if (!token) { clearWorkspace(); setAuthenticated(false); clearResult(); setSelection(null); return; }
     const controller = new AbortController(); requestRef.current = controller;
     setBusy(task); setError("");
     try {
       const response = await fetch(`${API}${path}`, { ...init, cache: "no-store", signal: controller.signal,
         headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}) } });
-      if (controller.signal.aborted || requestRef.current !== controller) return;
+      if (controller.signal.aborted || requestRef.current !== controller || sessionStorage.getItem("arkemx_dev_token") !== token) return;
       if (response.status === 401) {
-        sessionStorage.removeItem("arkemx_dev_token"); setAuthenticated(false);
+        sessionStorage.removeItem("arkemx_dev_token"); clearWorkspace(); setAuthenticated(false);
         setSelection(null); setProjects([]); setImports([]); setSelected([]); clearResult();
         throw new Error("Oturum süresi doldu. Ana çalışma alanından yeniden giriş yap.");
       }
       if (!response.ok) {
+        if ((response.status === 403 || response.status === 404 || response.status === 409) && task === "items") {
+          const currentProject = readWorkspace(token)?.projectId;
+          if (currentProject) rememberImport(token, currentProject, null);
+          setImportId(""); setSelection(null);
+        }
         const messages: Record<number, string> = {
           403: "Bu işlem için erişim izni bulunmuyor.", 404: "Proje, aktarım veya seçilen satır bulunamadı.",
           409: "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
@@ -154,22 +161,38 @@ export default function BatchTechnicalReviewPage() {
     setReady(true);
     if (sessionStorage.getItem("arkemx_dev_token")) {
       setAuthenticated(true);
-      void request<Project[]>("/api/projects", setProjects, "projects");
+      void request<Project[]>("/api/projects", data => {
+        setProjects(data);
+        const token = sessionStorage.getItem("arkemx_dev_token");
+        const saved = token ? readWorkspace(token) : null;
+        if (saved && data.some(project => project.id === saved.projectId)) chooseProject(saved.projectId, saved.importId);
+        else if (saved) clearWorkspace();
+      }, "projects");
     }
     return () => { requestRef.current?.abort(); requestRef.current = null; };
     // The initial request reads the current session; later reloads are explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function chooseProject(id: string) {
+  function chooseProject(id: string, rememberedImport: string | null = null) {
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setOffset(0);
-    if (id) void request<Import[]>(`/api/projects/${encodeURIComponent(id)}/imports`, setImports, "imports");
+    setBulkCode("");
+    const token = sessionStorage.getItem("arkemx_dev_token");
+    if (token) rememberProject(token, id);
+    if (id) void request<Import[]>(`/api/projects/${encodeURIComponent(id)}/imports`, data => {
+      setImports(data);
+      if (rememberedImport && data.some(item => item.id === rememberedImport)) loadItems(rememberedImport, 0, id);
+      else if (token) rememberImport(token, id, null);
+    }, "imports");
   }
-  function loadItems(id: string, pageOffset = 0) {
+  function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setOffset(pageOffset);
-    if (id) void request<Selection>(`/api/projects/${encodeURIComponent(projectId)}/a3/imports/${encodeURIComponent(id)}/items?limit=20&offset=${pageOffset}`, data => {
-      if (data.read_only !== true || data.approval_allowed !== false || data.import_source.import_id !== id || data.import_source.project_id !== projectId || data.rows.length > 20) throw new Error("Satır kaynağı doğrulanamadı.");
+    const token = sessionStorage.getItem("arkemx_dev_token");
+    if (token) rememberImport(token, sourceProject, null);
+    if (id) void request<Selection>(`/api/projects/${encodeURIComponent(sourceProject)}/a3/imports/${encodeURIComponent(id)}/items?limit=20&offset=${pageOffset}`, data => {
+      if (data.read_only !== true || data.approval_allowed !== false || data.import_source.import_id !== id || data.import_source.project_id !== sourceProject || data.rows.length > 20) throw new Error("Satır kaynağı doğrulanamadı.");
       setSelection(data);
+      if (token) rememberImport(token, sourceProject, id);
     }, "items");
   }
   function toggle(id: string, checked: boolean) {
@@ -237,6 +260,7 @@ export default function BatchTechnicalReviewPage() {
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
   return <main className={`page ${styles.page}`}>
     <WorkflowNav active="technical" />
+    <div className={styles.journey} aria-label="Proje çalışma adımları"><Link href="/#metraj">1. Metrajı hazırla</Link><strong aria-current="step">2. Pozları incele</strong><span>3. Mühendis kararı</span><span>4. Maliyet taslağı</span></div>
     <Link href="/#technical">← Teknik inceleme seçenekleri</Link>
     <div><span className={styles.eyebrow}>ARKEMX · TEKNİK İNCELEME</span><h1>Excel teknik incelemesi</h1><p>Proje ve aktarımı seç, en fazla 20 satırı açıkça belirlediğin aday pozlarla karşılaştır.</p></div>
     <div className={styles.notice}>Bu ekran salt okunurdur. Kaynak fiyat doğrulaması mühendis onayı değildir; metraj toplamı veya alternatif maliyet hesaplanmaz.</div>
@@ -249,7 +273,7 @@ export default function BatchTechnicalReviewPage() {
       {!busy && projects.length === 0 && <p>Hesabında proje yok. Ana çalışma alanından proje ve Excel aktarımı oluşturabilirsin.</p>}
       {selectedProject?.name.toLowerCase().includes("sentetik") && <p className={styles.testNote}>Sentetik test projesi seçili. Sonuçlar gerçek proje doğruluğunu ölçmez.</p>}
       {selection && <div className={workflow.context} aria-label="İncelenen kaynak"><span><strong>Proje:</strong> {selectedProject?.name}</span><span><strong>Excel:</strong> {selection.import_source.filename}</span><span><strong>Sayfa:</strong> {selection.import_source.sheet_name}</span></div>}
-      <p className="hint">Proje, aktarım veya sayfa değiştiğinde ve satırlar yeniden yüklendiğinde aday girişleri sıfırlanır. Adayları düzenledikten sonra doğrudan inceleme düğmesini kullan.</p>
+      <p className="hint">Proje ve doğrulanan Excel seçimi bu tarayıcı sekmesinde hatırlanır. Proje, aktarım veya sayfa değiştiğinde ve satırlar yeniden yüklendiğinde aday girişleri sıfırlanır. Adayları düzenledikten sonra doğrudan inceleme düğmesini kullan.</p>
       {selection && <details><summary>Excel kaynak kimliği</summary><dl><dt>Dosya / sayfa</dt><dd>{selection.import_source.filename} / {selection.import_source.sheet_name}</dd><dt>Aktarım kimliği</dt><dd><code>{selection.import_source.import_id}</code></dd><dt>SHA-256</dt><dd><code>{selection.import_source.sha256}</code></dd></dl></details>}</section>
       {busy && <p role="status">{busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : "Kaynak kayıtları yükleniyor…"}</p>}
       {error && <div role="alert" className="error">{error}</div>}
@@ -311,14 +335,20 @@ export default function BatchTechnicalReviewPage() {
         </tr>)}</tbody></table></div><datalist id="supported-positions"><option value="15.275.1111" /></datalist>
         <div className={styles.toolbar}><div className={styles.tags}><button type="button" className="secondary" disabled={Boolean(busy) || offset === 0} onClick={() => loadItems(importId, Math.max(0, offset - 20))}>Önceki 20</button><button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null} onClick={() => loadItems(importId, selection.next_offset ?? 0)}>Sonraki 20</button></div><span>Sayfa değiştiğinde seçimler sıfırlanır.</span><button type="button" disabled={Boolean(busy) || selected.length === 0} onClick={compare}>Seçilen {selected.length} satırı incele</button></div>
       </section>}
-      {report && <section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. İnceleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
+      {report && <div className={styles.workbench}><section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. İnceleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
         <div className={styles.filters} role="group" aria-label="Teknik sonuç filtreleri">{views.map(option => {
           const count = report.rows.filter(row => option.key === "all" || (option.key === "attention" ? row.technical_status !== "checked_features_match" : row.technical_status === option.key)).length;
           return <button type="button" key={option.key} aria-pressed={view === option.key} onClick={() => setView(option.key)}>{option.title} <strong>{count}</strong></button>;
         })}</div>
-        {filtered.length ? <div className={styles.tableScroll}><table><thead><tr><th>Excel satırı</th><th>Aday poz</th><th>Teknik durum</th><th>Fiyat kaynağı</th><th>İnceleme</th></tr></thead><tbody>{filtered.map(row => <tr key={row.identity.work_item_id}><td>{row.identity.source_row}</td><td>{row.candidate_code ?? "Seçilmedi"}</td><td><span className={`${styles.badge} ${badgeClass(row.technical_status)}`}>{label(row.technical_status)}</span></td><td><span className={`${styles.badge} ${badgeClass(row.price_source_status)}`}>{label(row.price_source_status)}</span></td><td><button type="button" className="secondary" aria-label={`Excel satırı ${row.identity.source_row} kanıtlarını aç`} onClick={() => { setDetailId(row.identity.work_item_id); requestAnimationFrame(() => document.getElementById("batch-detail")?.focus()); }}>Kanıtları aç</button></td></tr>)}</tbody></table></div> : <p>Bu filtrede satır bulunmuyor. Diğer sonuçları görmek için “Tümü” filtresini seç.</p>}
-      </section>}
-      {detail && <div id="batch-detail" tabIndex={-1}><RowDetail key={detail.identity.work_item_id} row={detail} /></div>}
+        {filtered.length ? <ul className={styles.resultList} aria-label="İncelenen Excel satırları">{filtered.map(row => <li className={styles.resultCard} key={row.identity.work_item_id} data-active={detailId === row.identity.work_item_id ? "true" : undefined}>
+          <div className={styles.resultHeading}><strong>Excel satırı {row.identity.source_row}</strong><span className={styles.positionCode}>{row.candidate_code ?? "Aday seçilmedi"}</span></div>
+          <div className={styles.resultStatuses}><div><small>Teknik durum</small><span className={`${styles.badge} ${badgeClass(row.technical_status)}`}>{label(row.technical_status)}</span></div><div><small>Fiyat kaynağı</small><span className={`${styles.badge} ${badgeClass(row.price_source_status)}`}>{label(row.price_source_status)}</span></div></div>
+          <button type="button" className="secondary" aria-label={`Excel satırı ${row.identity.source_row} kanıtlarını aç`} aria-pressed={detailId === row.identity.work_item_id} onClick={() => { setDetailId(row.identity.work_item_id); requestAnimationFrame(() => document.getElementById("batch-detail")?.focus()); }}>{detailId === row.identity.work_item_id ? "Kanıtlar gösteriliyor" : "Kanıtları aç"}</button>
+        </li>)}</ul> : <p>Bu filtrede satır bulunmuyor. Diğer sonuçları görmek için “Tümü” filtresini seç.</p>}
+      </section>
+      <aside id="batch-detail" tabIndex={-1} aria-label="Seçili satırın teknik kanıtları" className={styles.evidencePane}>
+        {detail ? <><div className={styles.nextAction}><strong>Excel satırı {detail.identity.source_row} · Sonraki işlem</strong><p>{detail.flags.includes("CANDIDATE_NOT_SELECTED") ? "Bu satır için aday poz kodu belirle ve yeniden incele." : detail.technical_status === "incompatible" ? "Uyuşmazlığı incele; tarifi veya aday pozu değiştirmek gerekiyorsa kaynak kaydı düzelt." : detail.technical_status === "out_of_scope" ? "Bu aday pilot kapsamının dışında. Bağımsız mühendis incelemesi gerekir." : detail.technical_status === "review_required" ? "Eksik veya belirsiz bilgileri aşağıdaki gerekçelerden kontrol et." : "Kontrol edilen özellikler eşleşti. Bu önizleme henüz mühendis kararına veya maliyet taslağına aktarılamaz."}</p><p className="hint">Bu adımda sonuç ve aday girişleri kalıcı kaydedilmez. Mühendis kararı bağlantısı sonraki geliştirmedir.</p></div><RowDetail key={detail.identity.work_item_id} row={detail} /></> : <div className={styles.card}><h2>Satırın kanıtları</h2><p>Soldaki listeden “Kanıtları aç” seç. Teknik farklar ve özgün ifadeler burada görünecek.</p></div>}
+      </aside></div>}
     </>}
   </main>;
 }

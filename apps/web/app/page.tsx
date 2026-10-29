@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { clearWorkspace, readWorkspace, rememberImport, rememberProject } from "./workspace-context";
 import WorkflowNav, { type WorkflowSection } from "./workflow-nav";
 import workflow from "./workflow-nav.module.css";
 
-import {useCallback, useEffect, useState, type FormEvent} from "react";
+import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 
 import MatchPanel from "./match-panel";
 
@@ -105,10 +106,12 @@ export default function Home() {
   const [queueSummary,setQueueSummary] = useState<QueueSummary|null>(null);
 
   const [summaryError,setSummaryError] = useState("");
+  const projectRequestRef = useRef(0);
+  const [activeExcel, setActiveExcel] = useState("");
 
   const loadProjects = useCallback(async (t:string) => {setProjects(await request<Project[]>("/api/projects",t));},[]);
 
-  useEffect(()=>{const stored = sessionStorage.getItem("arkemx_dev_token"); if(stored){setToken(stored);loadProjects(stored).catch(()=>{sessionStorage.removeItem("arkemx_dev_token");setToken(null);});}},[loadProjects]);
+  useEffect(()=>{const stored = sessionStorage.getItem("arkemx_dev_token"); if(stored){setToken(stored);loadProjects(stored).catch(()=>{sessionStorage.removeItem("arkemx_dev_token");clearWorkspace();setToken(null);});}},[loadProjects]);
 
   useEffect(() => {
     const readSection = () => {
@@ -123,6 +126,29 @@ export default function Home() {
       window.removeEventListener("popstate", readSection);
     };
   }, []);
+  useEffect(() => {
+    if (!token || projects.length === 0 || project) return;
+    const saved = readWorkspace(token);
+    if (!saved) return;
+    if (!projects.some(item => item.id === saved.projectId)) { clearWorkspace(); return; }
+    void chooseProject(saved.projectId);
+    // Only server-listed projects can be restored. Selection remains explicit otherwise.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, projects]);
+  useEffect(() => {
+    setActiveExcel("");
+    if (!token || !project) return;
+    const saved = readWorkspace(token);
+    if (saved?.projectId !== project || !saved.importId) return;
+    let active = true;
+    request<{id:string;filename:string;sheet:string}[]>(`/api/projects/${project}/imports`, token).then(imports => {
+      if (!active || sessionStorage.getItem("arkemx_dev_token") !== token) return;
+      const selected = imports.find(item => item.id === saved.importId);
+      if (selected) setActiveExcel(`${selected.filename} · ${selected.sheet}`);
+      else rememberImport(token, project, null);
+    }).catch(() => { if (active) setActiveExcel("Excel seçimi doğrulanamadı; teknik incelemede yeniden seç."); });
+    return () => { active = false; };
+  }, [token, project]);
   const activeSection: WorkflowSection = tab === "bulk" || tab === "review" ? "technical" : tab;
 
   const handleError = (e:unknown)=>setError(e instanceof Error?e.message:"Beklenmeyen hata");
@@ -172,25 +198,38 @@ export default function Home() {
 
     const result = await request<{access_token:string}>(endpoint,null,"POST",body);
 
+    clearWorkspace(); projectRequestRef.current += 1; setProjects([]); setProject(""); setItems([]);
     sessionStorage.setItem("arkemx_dev_token",result.access_token);setToken(result.access_token);
 
     await loadProjects(result.access_token);setMessage("Oturum açıldı.");
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
-  function logout(){sessionStorage.removeItem("arkemx_dev_token");setToken(null);setProjects([]);setProject("");setItems([]);setPreview(null);setTab("overview");}
+  function logout(){projectRequestRef.current += 1; clearWorkspace();sessionStorage.removeItem("arkemx_dev_token");setToken(null);setProjects([]);setProject("");setItems([]);setPreview(null);setTab("overview");}
 
   async function createProject(e:FormEvent){e.preventDefault();if(!token)return;setBusy(true);setError("");try{
 
     const p = await request<Project>("/api/projects",token,"POST",{name:projectName});
 
-    await loadProjects(token);setProject(p.id);setProjectName("");setItems([]);setTab("overview");setShowRevisions(false);setMessage("Proje oluşturuldu.");
+    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("overview");setShowRevisions(false);setMessage("Proje oluşturuldu.");
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
-  async function chooseProject(id:string){setProject(id);setInspection(null);setPreview(null);setFile(null);setItems([]);setShowAllItems(false);setShowRevisions(false);setJobSummary(null);setQueueSummary(null);setError("");setMessage("");
-
-    if(token){try{setItems(await request<Row[]>(`/api/projects/${id}/items`,token));}catch(e){handleError(e);}}}
+  async function chooseProject(id:string) {
+    const generation = ++projectRequestRef.current;
+    if (token) rememberProject(token, id);
+    setProject(id); setInspection(null); setPreview(null); setFile(null); setItems([]);
+    setShowAllItems(false); setShowRevisions(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
+    if (!token || !id) return;
+    try {
+      const rows = await request<Row[]>(`/api/projects/${id}/items`, token);
+      if (projectRequestRef.current === generation && sessionStorage.getItem("arkemx_dev_token") === token) setItems(rows);
+    } catch(e) {
+      if (projectRequestRef.current === generation && sessionStorage.getItem("arkemx_dev_token") === token) {
+        handleError(e); clearWorkspace(); setProject("");
+      }
+    }
+  }
 
   async function inspect(sheet?:string,rowOverride?:number){if(!token||!file)return;setBusy(true);setError("");setPreview(null);try{
 
@@ -320,6 +359,7 @@ export default function Home() {
 
       {summaryError&&<p role="status" className="hint">{summaryError}</p>}
 
+      {project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Teknik incelemede bir Excel aktarımı seç."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
       <WorkflowNav active={activeSection} onSelect={goTo} />
       <div className={workflow.steps}>Metrajı yükle → adayları ve teknik farkları incele → mühendis kararından sonra maliyet çalışmasına geç.</div>
       <div className="workspace-main" id="workspace-main" aria-label={sectionTitles[activeSection]}>
