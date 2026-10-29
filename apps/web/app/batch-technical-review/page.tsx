@@ -102,6 +102,8 @@ export default function BatchTechnicalReviewPage() {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<Record<string, string>>({});
+  const [bulkCode, setBulkCode] = useState("");
+  const [bulkMode, setBulkMode] = useState<"empty" | "replace">("empty");
   const [report, setReport] = useState<Report | null>(null);
   const [view, setView] = useState<View>("attention");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -174,6 +176,44 @@ export default function BatchTechnicalReviewPage() {
   function candidate(id: string, value: string) {
     invalidate(); setCandidates(prev => ({ ...prev, [id]: value }));
   }
+  const selectedRows = selection?.rows.filter(
+    row => selected.includes(row.work_item_id)
+  ) ?? [];
+
+  const trimmedBulkCode = bulkCode.trim();
+
+  const affectedRows = selectedRows.filter(row => {
+    if (!trimmedBulkCode) return false;
+
+    const current = (candidates[row.work_item_id] ?? "").trim();
+
+    return bulkMode === "empty"
+      ? !current
+      : Boolean(current) && current !== trimmedBulkCode;
+  });
+
+  function applyBulkCandidate() {
+    if (
+      busy ||
+      !trimmedBulkCode ||
+      trimmedBulkCode.length > 80 ||
+      affectedRows.length === 0
+    ) return;
+
+    const ids = affectedRows.map(row => row.work_item_id);
+
+    invalidate();
+
+    setCandidates(previous => {
+      const next = { ...previous };
+
+      for (const id of ids) {
+        next[id] = trimmedBulkCode;
+      }
+
+      return next;
+    });
+  }
   function compare() {
     if (!selection || selected.length === 0 || selected.length > 20) return;
     const source = selection;
@@ -210,6 +250,52 @@ export default function BatchTechnicalReviewPage() {
       {error && <div role="alert" className="error">{error}</div>}
       {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>
         <p>Teknik destek kapsamı: <strong>15.275.1111</strong>. Diğer kodlar kapsam dışı olarak raporlanır. Boş aday alanı, aday seçilmediği anlamına gelir.</p>
+        <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
+          <div className={styles.bulkFields}>
+            <label>
+              Toplu aday poz kodu
+              <input
+                type="text"
+                list="supported-positions"
+                maxLength={80}
+                placeholder="15.275.1111"
+                value={bulkCode}
+                disabled={Boolean(busy)}
+                onChange={e => setBulkCode(e.target.value)}
+              />
+            </label>
+            <label>
+              Uygulama kapsamı
+              <select
+                value={bulkMode}
+                disabled={Boolean(busy)}
+                onChange={e => setBulkMode(
+                  e.target.value === "replace" ? "replace" : "empty"
+                )}
+              >
+                <option value="empty">Yalnızca boş adayları doldur</option>
+                <option value="replace">Yalnızca mevcut adayları değiştir</option>
+              </select>
+            </label>
+          </div>
+          <p role="status" aria-live="polite">
+            {selectedRows.length} satır seçili ·{" "}
+            <strong>{affectedRows.length} satır etkilenecek.</strong>
+          </p>
+          <button
+            type="button"
+            disabled={Boolean(busy) || !trimmedBulkCode ||
+              trimmedBulkCode.length > 80 || affectedRows.length === 0}
+            onClick={applyBulkCandidate}
+          >
+            Seçilen {affectedRows.length} satıra aday uygula
+          </button>
+          <p className={styles.testNote}>
+            Bu işlem yalnızca aday kodunu belirler.
+            Eski inceleme sonucu temizlenir.
+            Mühendislik onayı verilmez.
+          </p>
+        </div>
         <div className={styles.tableScroll}><table><caption className={styles.srOnly}>Seçilen Excel aktarımındaki satırlar ve aday poz alanları</caption><thead><tr>
           <th><input type="checkbox" aria-label="Görünen tüm satırları seç" checked={selection.rows.length > 0 && selected.length === selection.rows.length} onChange={e => { invalidate(); setSelected(e.target.checked ? selection.rows.map(row => row.work_item_id) : []); }} /></th><th>Excel satırı</th><th>İmalat tarifi</th><th>Miktar / birim</th><th>Aday poz</th>
         </tr></thead><tbody>{selection.rows.map(row => <tr key={row.work_item_id}>

@@ -20,6 +20,11 @@
 .tableScroll input[type="checkbox"], .checkLabel input { width: 18px; min-width: 18px; height: 18px; accent-color: var(--blue); }
 .description { min-width: 280px; max-width: 460px; }
 .codeInput { width: 175px; min-width: 150px; font-variant-numeric: tabular-nums; }
+.bulkPanel { margin: 14px 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
+.bulkFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.bulkFields label { display: grid; gap: 6px; }
+.bulkFields input, .bulkFields select { width: 100%; max-width: 100%; }
+@media (max-width: 850px) { .bulkFields { grid-template-columns: 1fr; } }
 .page details { margin: 10px 0; }
 .page td details { margin: 0; }
 .page summary { cursor: pointer; font-weight: 600; }
