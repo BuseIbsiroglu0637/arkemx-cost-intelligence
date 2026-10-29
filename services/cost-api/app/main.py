@@ -17,6 +17,7 @@ from .models import Organization, User, Project, ImportBatch, WorkItem, CatalogS
 from .security import hash_password, verify_password, create_token, current_user, key
 from .excel import read_metraj, safe_name, ExcelValidationError, MAX_FILE_BYTES, open_sheet, guess_map
 
+
 # Refuse production startup when a proper JWT signing secret is not configured.
 if os.getenv("ENVIRONMENT", "development") != "development":
     key()
@@ -323,3 +324,6 @@ app.include_router(m6_preview_router)
 # A3.1 technical comparison preview
 from .a3_technical_review import router as a3_technical_review_router
 app.include_router(a3_technical_review_router)
+
+from .a3_cost_scenario import router as a3_cost_scenario_router
+app.include_router(a3_cost_scenario_router)

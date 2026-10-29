@@ -1,14 +1,11 @@
 "use client";
-
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 type Evidence = {
   quote: string;
   start: number;
   end: number;
 };
-
 type Check = {
   layer?: number;
   field: string;
@@ -19,9 +16,8 @@ type Check = {
   metraj_evidence: Evidence | Evidence[] | null;
   catalog_evidence: Evidence | Evidence[] | null;
 };
-
 type Review = {
-  schema: string;
+  schema: "arkemx.pdf_technical_review_preview.v1";
   read_only: boolean;
   approval_allowed: boolean;
   sources: {
@@ -61,10 +57,43 @@ type Review = {
   };
 };
 
+type ScenarioPreview = {
+  schema: string;
+  read_only: boolean;
+  approval_allowed: boolean;
+  scenario: {
+    read_only: boolean;
+    approval_allowed: boolean;
+    technical_compatibility: string;
+    alternative_price_verification: string;
+    source: {
+      position_code: string;
+      sha256: string;
+      pdf_page: number;
+      price_date: string;
+    };
+    original: {
+      resource_code: string;
+      total_tl: string;
+    };
+    replacement: {
+      resource_code: string;
+      quantity: string;
+      unit_price_tl: string;
+      line_amount_tl: string;
+    };
+    scenario: {
+      subtotal_tl: string;
+      overhead_tl: string;
+      total_tl: string;
+      difference_tl: string;
+      unit: string;
+    };
+  };
+};
 const API = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
-
 const FIELD_LABELS: Record<string, string> = {
   work_type: "İmalat türü",
   thickness_mm: "Kalınlık (mm)",
@@ -76,7 +105,6 @@ const FIELD_LABELS: Record<string, string> = {
   work_scope_siva: "Sıva kapsamı",
   work_scope_gazbeton_duvar: "Gazbeton duvar kapsamı",
 };
-
 const VALUE_LABELS: Record<string, string> = {
   included: "Kapsamda",
   excluded: "Kapsam dışı",
@@ -88,14 +116,12 @@ const VALUE_LABELS: Record<string, string> = {
   alci: "Alçı",
   gazbeton: "Gazbeton",
 };
-
 const STATUS_LABELS: Record<string, string> = {
   match: "Eşleşiyor",
   block: "Uyuşmazlık",
   review: "İnceleme gerekli",
   not_specified: "Belirtilmemiş",
 };
-
 function display(value: unknown): string {
   if (value === null || value === undefined) return "Belirtilmemiş";
   if (Array.isArray(value)) {
@@ -104,7 +130,6 @@ function display(value: unknown): string {
   if (typeof value === "string") return VALUE_LABELS[value] ?? value;
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
-
 function EvidenceView({
   title,
   evidence,
@@ -115,7 +140,6 @@ function EvidenceView({
   const items = evidence
     ? Array.isArray(evidence) ? evidence : [evidence]
     : [];
-
   return (
     <div>
       <strong>{title}</strong>
@@ -136,7 +160,6 @@ function EvidenceView({
     </div>
   );
 }
-
 export default function TechnicalReviewPage() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -146,39 +169,52 @@ export default function TechnicalReviewPage() {
   const [error, setError] = useState("");
   const [view, setView] = useState<"attention" | "all">("attention");
   const requestRef = useRef<AbortController | null>(null);
+  const scenarioRequestRef = useRef<AbortController | null>(null);
+  const [scenarioResult, setScenarioResult] = useState<ScenarioPreview | null>(null);
+  const [scenarioBusy, setScenarioBusy] = useState(false);
+  const [scenarioError, setScenarioError] = useState("");
+
+  function clearScenario() {
+    scenarioRequestRef.current?.abort();
+    scenarioRequestRef.current = null;
+    setScenarioResult(null);
+    setScenarioError("");
+    setScenarioBusy(false);
+  }
 
   useEffect(() => {
     setAuthenticated(Boolean(sessionStorage.getItem("arkemx_dev_token")));
     setReady(true);
-    return () => requestRef.current?.abort();
+    return () => {
+      requestRef.current?.abort();
+      scenarioRequestRef.current?.abort();
+    };
   }, []);
-
   function changeDescription(value: string) {
     requestRef.current?.abort();
     requestRef.current = null;
     setDescription(value);
     setResult(null);
+    clearScenario();
     setError("");
     setBusy(false);
   }
-
   async function compare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (!token) {
       setAuthenticated(false);
       setResult(null);
+      clearScenario();
       return;
     }
-
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
     setBusy(true);
     setError("");
     setResult(null);
-
+    clearScenario();
     try {
       const response = await fetch(`${API}/api/a3/compare-pdf`, {
         method: "POST",
@@ -190,14 +226,14 @@ export default function TechnicalReviewPage() {
         cache: "no-store",
         signal: controller.signal,
       });
-
       if (response.status === 401) {
         if (requestRef.current === controller) {
           setAuthenticated(false);
+          setResult(null);
+          clearScenario();
         }
         return;
       }
-
       if (!response.ok) {
         throw new Error(
           response.status === 503
@@ -207,9 +243,7 @@ export default function TechnicalReviewPage() {
               : `Karşılaştırma tamamlanamadı (HTTP ${response.status}).`
         );
       }
-
       const data = await response.json() as Review;
-
       if (
         data.schema !== "arkemx.pdf_technical_review_preview.v1" ||
         data.read_only !== true ||
@@ -221,7 +255,6 @@ export default function TechnicalReviewPage() {
       ) {
         throw new Error("Beklenen teknik önizleme yanıtı alınamadı.");
       }
-
       if (requestRef.current === controller) {
         setView("attention");
         setResult(data);
@@ -242,13 +275,117 @@ export default function TechnicalReviewPage() {
       }
     }
   }
+  // This is a constrained cost illustration, not an engineering approval.
+  const scenarioEligible = Boolean(
+    result?.catalog_analysis.position_code === "15.275.1111" &&
+    result?.comparison.status === "blocked" &&
+    result?.comparison.approval_allowed === false &&
+    result?.comparison.blockers.length === 1 &&
+    result?.comparison.blockers[0] === "LAYER_2_CEMENT_DOSAGE_KG_MISMATCH" &&
+    result?.comparison.review_flags.length === 0 &&
+    result?.comparison.technical_checks.some(
+      (check) =>
+        check.layer === 2 &&
+        check.field === "cement_dosage_kg" &&
+        check.status === "block" &&
+        String(check.metraj_value) === "300" &&
+        String(check.catalog_value) === "350"
+    )
+  );
+
+  async function calculateScenario() {
+    const current = result;
+    if (!current || !scenarioEligible) return;
+
+    const token = sessionStorage.getItem("arkemx_dev_token");
+    if (!token) {
+      setAuthenticated(false);
+      setScenarioError("Oturum bulunamadı. Yeniden giriş yapın.");
+      return;
+    }
+
+    scenarioRequestRef.current?.abort();
+    const controller = new AbortController();
+    scenarioRequestRef.current = controller;
+    setScenarioBusy(true);
+    setScenarioError("");
+    setScenarioResult(null);
+
+    try {
+      const response = await fetch(`${API}/api/a3/cost-scenario`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          alternative_resource_code: "19.100.2506",
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          response.status === 401
+            ? "Oturum süresi doldu. Yeniden giriş yapın."
+            : response.status === 503
+              ? "PDF veya senaryo kaynağı doğrulanamadı."
+              : `Senaryo hesaplanamadı (HTTP ${response.status}).`
+        );
+      }
+
+      const data = (await response.json()) as ScenarioPreview;
+      const scenario = data.scenario;
+      const original = current.catalog_analysis;
+
+      if (
+        data.schema !== "arkemx.cost_scenario_preview.v1" ||
+        data.read_only !== true ||
+        data.approval_allowed !== false ||
+        scenario?.read_only !== true ||
+        scenario?.approval_allowed !== false ||
+        scenario.technical_compatibility !== "not_evaluated" ||
+        scenario.alternative_price_verification !== "pending_source_document" ||
+        scenario.source.sha256 !== original.source.sha256 ||
+        scenario.source.position_code !== original.position_code ||
+        scenario.source.pdf_page !== original.source.pdf_page ||
+        scenario.source.price_date !== original.source.price_date ||
+        scenario.original.resource_code !== "19.100.2508" ||
+        scenario.original.total_tl !== original.totals.total ||
+        scenario.replacement.resource_code !== "19.100.2506" ||
+        scenario.replacement.quantity !== "0.010" ||
+        scenario.scenario.unit !== original.unit
+      ) {
+        throw new Error("Senaryo sonucu kaynak PDF ile eşleşmiyor.");
+      }
+
+      // A stale response cannot overwrite a new description or comparison.
+      if (scenarioRequestRef.current === controller) {
+        setScenarioResult(data);
+      }
+    } catch (exception) {
+      if (controller.signal.aborted) return;
+      if (scenarioRequestRef.current === controller) {
+        setScenarioError(
+          exception instanceof Error
+            ? exception.message
+            : "Senaryo bağlantısı sırasında hata oluştu."
+        );
+      }
+    } finally {
+      if (scenarioRequestRef.current === controller) {
+        setScenarioBusy(false);
+        scenarioRequestRef.current = null;
+      }
+    }
+  }
 
   const comparison = result?.comparison;
   const analysis = result?.catalog_analysis;
   const checks = comparison
     ? [...comparison.checks, ...comparison.technical_checks]
     : [];
-
   const indexedChecks = checks.map((check, index) => ({ check, index }));
   const attentionChecks = indexedChecks.filter(({ check }) => check.status !== "match");
   const visibleChecks = view === "all" ? indexedChecks : attentionChecks;
@@ -256,19 +393,16 @@ export default function TechnicalReviewPage() {
   const reviewCount = checks.filter((check) => check.status === "review").length;
   const matchCount = checks.filter((check) => check.status === "match").length;
   const otherCount = attentionChecks.length - blockedCount - reviewCount;
-
   const title = comparison?.status === "blocked"
     ? "Teknik uyuşmazlık bulundu"
     : comparison?.status === "review"
       ? "Eksik veya belirsiz bilgi var"
       : "Kontrol edilen özellikler eşleşiyor";
-
   const priceApplicability = comparison?.status === "blocked"
     ? "Bu fiyat girilen tarife uygulanamaz."
     : comparison?.status === "review"
       ? "Bu fiyatın girilen tarife uygulanabilirliği henüz doğrulanmadı."
       : "Kontrol edilen özellikler eşleşiyor; fiyatın projede kullanımı için kapsam ve mühendis incelemesi gereklidir.";
-
   return (
     <>
       <header>
@@ -280,7 +414,6 @@ export default function TechnicalReviewPage() {
           Çalışma alanına dön
         </Link>
       </header>
-
       <main className="page stack">
         <section className="card stack">
           <h1>Kanıtlı teknik karşılaştırma</h1>
@@ -292,7 +425,6 @@ export default function TechnicalReviewPage() {
             Tek poz pilotu · Sonuçlar mühendis onayı değildir.
             Bu ekran proje kaydı veya maliyet taslağı oluşturmaz.
           </p>
-
           {!ready ? <p>Oturum kontrol ediliyor…</p> : !authenticated ? (
             <p role="status">
               Devam etmek için <Link href="/">giriş yapın</Link>,
@@ -308,7 +440,7 @@ export default function TechnicalReviewPage() {
                 minLength={3}
                 maxLength={5000}
                 value={description}
-                onChange={(event) => changeDescription(event.target.value)}
+                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => changeDescription(event.target.value)}
                 placeholder="Metraj cetvelindeki imalat tarifini yapıştırın."
                 style={{
                   width: "100%",
@@ -324,11 +456,9 @@ export default function TechnicalReviewPage() {
               </button>
             </form>
           )}
-
           {busy && <p role="status">PDF ve teknik özellikler inceleniyor…</p>}
           {error && <div className="error" role="alert">{error}</div>}
         </section>
-
         {result && comparison && analysis && (
           <>
             <section className="card stack">
@@ -337,7 +467,6 @@ export default function TechnicalReviewPage() {
                 Değerlendirme yalnızca motorun kontrol ettiği özellikleri
                 kapsar. Nihai teknik uygunluk mühendis incelemesi gerektirir.
               </p>
-
               {comparison.blockers.length > 0 && (
                 <div>
                   <strong>Engelleyen bulgular</strong>
@@ -346,7 +475,6 @@ export default function TechnicalReviewPage() {
                   ))}</ul>
                 </div>
               )}
-
               {comparison.review_flags.length > 0 && (
                 <div>
                   <strong>İncelenmesi gereken bulgular</strong>
@@ -355,7 +483,6 @@ export default function TechnicalReviewPage() {
                   ))}</ul>
                 </div>
               )}
-
               <div className="flex" aria-label="Teknik kontrol özeti">
                 <span className="tag">{blockedCount} uyuşmazlık</span>
                 <span className="tag">{reviewCount} inceleme gerekli</span>
@@ -364,7 +491,6 @@ export default function TechnicalReviewPage() {
                   <span className="tag">{otherCount} diğer / belirtilmemiş kontrol</span>
                 )}
               </div>
-
               <div className="flex" role="group" aria-label="Karşılaştırma görünümü">
                 <button
                   type="button"
@@ -396,7 +522,6 @@ export default function TechnicalReviewPage() {
                   varsa yukarıdaki genel inceleme bulguları geçerlidir.
                 </p>
               )}
-
               <div className="table-scroll" id="technical-check-table">
                 <table>
                   <caption>Katman ve teknik özellik karşılaştırması</caption>
@@ -440,7 +565,6 @@ export default function TechnicalReviewPage() {
                 </table>
               </div>
             </section>
-
             <section className="card stack">
               <h2>PDF kaynak bilgisi · {analysis.position_code}</h2>
               <p>
@@ -458,27 +582,94 @@ export default function TechnicalReviewPage() {
                   Metraj metnini değiştirmeniz belgedeki fiyatı değiştirmez.
                 </p>
               </div>
-
               <p
                 role="status"
                 className={comparison.status === "blocked" ? "error" : "notice"}
               >
                 {priceApplicability}
               </p>
-
               <div
                 className="stack"
-                aria-label="Girilen tarife göre maliyet"
-                style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}
+                aria-label="Alternatif maliyet senaryosu"
+                style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}
               >
-                <strong>Girilen tarife göre maliyet: Henüz hesaplanmadı</strong>
+                <h3>Alternatif maliyet senaryosu</h3>
                 <p className="hint">
-                  Uyarlanmış maliyet için değişen imalatın malzeme miktarları,
-                  yardımcı analizleri ve işçilik girdileri ayrıca değerlendirilmelidir.
-                  Yukarıdaki kaynak fiyatı, bu tarifin hesaplanmış maliyeti değildir.
+                  Kaynak PDF fiyatı değiştirilmez. Bu pilot yalnızca ikinci
+                  katmandaki 350 kg ince harç yerine 300 kg alternatifini,
+                  0,010 m³ miktarı sabit tutarak hesaplar. Diğer analiz girdileri
+                  değişmez.
                 </p>
+                {scenarioEligible ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={scenarioBusy}
+                      onClick={calculateScenario}
+                    >
+                      {scenarioBusy
+                        ? "Senaryo hesaplanıyor…"
+                        : "300 kg alternatifinin maliyetini hesapla"}
+                    </button>
+                    {scenarioError && (
+                      <div className="error" role="alert">{scenarioError}</div>
+                    )}
+                    {scenarioResult && (
+                      <>
+                        <div className="workspace-kpis" aria-label="Senaryo tutarları">
+                          <div className="kpi">
+                            <b>{scenarioResult.scenario.original.total_tl} TL</b>
+                            <span>Kaynak PDF fiyatı / m²</span>
+                          </div>
+                          <div className="kpi">
+                            <b>{scenarioResult.scenario.scenario.total_tl} TL</b>
+                            <span>Alternatif senaryo / m²</span>
+                          </div>
+                          <div className="kpi">
+                            <b>{scenarioResult.scenario.scenario.difference_tl} TL</b>
+                            <span>Fark / m² (senaryo − PDF)</span>
+                          </div>
+                        </div>
+                        <details>
+                          <summary>Senaryo varsayımları ve hesaplama ayrıntıları</summary>
+                          <p>
+                            Harç poz değişimi: {scenarioResult.scenario.original.resource_code}
+                            {" → "}{scenarioResult.scenario.replacement.resource_code}
+                          </p>
+                          <p>
+                            Sabit miktar: {scenarioResult.scenario.replacement.quantity} m³
+                            {" · "}Alternatif birim fiyatı: {scenarioResult.scenario.replacement.unit_price_tl} TL/m³
+                          </p>
+                          <p>
+                            Alternatif satır tutarı: {scenarioResult.scenario.replacement.line_amount_tl} TL
+                          </p>
+                          <p>
+                            Yeni ara toplam: {scenarioResult.scenario.scenario.subtotal_tl} TL
+                            {" · "}Genel gider ve kâr: {scenarioResult.scenario.scenario.overhead_tl} TL
+                          </p>
+                          <p className="hint">
+                            Kaynak analiz: {scenarioResult.scenario.source.position_code}
+                            {" · "}PDF sayfası {scenarioResult.scenario.source.pdf_page}
+                            {" · "}Kaynak SHA-256: {scenarioResult.scenario.source.sha256}
+                          </p>
+                        </details>
+                        <p className="warning" role="status">
+                          Bu bir maliyet senaryosudur, teknik uygunluk veya mühendis onayı değildir.
+                          300 kg harç, kaynak PDF'deki 350 kg tarifiyle uyuşmaz.
+                          Alternatif harcın 1.926,15 TL/m³ birim fiyatının yardımcı analiz
+                          belgesiyle bağımsız doğrulaması beklenmektedir.
+                        </p>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <p className="notice">
+                    Bu tarif için desteklenen bir alternatif senaryo bulunmuyor.
+                    İlk pilot yalnızca ikinci katmandaki 300 kg / 350 kg dozaj
+                    farkı için geçerlidir; fiyat değişimi kendiliğinden teknik onay sağlamaz.
+                  </p>
+                )}
               </div>
-
               <details>
                 <summary>Analiz girdileri ve belge kimliği</summary>
                 <p style={{ overflowWrap: "anywhere" }}>
@@ -510,7 +701,6 @@ export default function TechnicalReviewPage() {
                   </table>
                 </div>
               </details>
-
               <details>
                 <summary>Karşılaştırılan kaynak metinleri</summary>
                 <EvidenceView
