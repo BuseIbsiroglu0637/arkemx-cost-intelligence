@@ -327,3 +327,7 @@ app.include_router(a3_technical_review_router)
 
 from .a3_cost_scenario import router as a3_cost_scenario_router
 app.include_router(a3_cost_scenario_router)
+
+# A3.9.2 selected metraj rows, read-only technical preview
+from .a3_batch_review import router as a3_batch_review_router
+app.include_router(a3_batch_review_router)
