@@ -346,7 +346,7 @@ export default function TechnicalReviewPage() {
         scenario?.read_only !== true ||
         scenario?.approval_allowed !== false ||
         scenario.technical_compatibility !== "not_evaluated" ||
-        scenario.alternative_price_verification !== "pending_source_document" ||
+        scenario.alternative_price_verification !== "verified_source_document" ||
         scenario.source.sha256 !== original.source.sha256 ||
         scenario.source.position_code !== original.position_code ||
         scenario.source.pdf_page !== original.source.pdf_page ||

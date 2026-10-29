@@ -1,9 +1,5 @@
 
-"""A3.7 - Authenticated, read-only cost scenario API.
-
-The alternative price is a constrained pilot fixture.
-No approval, database writes or cost estimate creation.
-"""
+"""A3.8.4 - PDF-backed, read-only cost scenario API."""
 
 import os
 from typing import Annotated, Literal
@@ -13,6 +9,9 @@ from pydantic import BaseModel, ConfigDict
 
 from .models import User
 from .security import current_user
+from .technical_analysis.alternative_mortar_source import (
+    read_alternative_mortar,
+)
 from .technical_analysis.cost_scenario import (
     calculate_300kg_scenario,
 )
@@ -30,44 +29,71 @@ class CostScenarioRequest(BaseModel):
     alternative_resource_code: Literal["19.100.2506"]
 
 
+def unavailable(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=detail,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
 @router.post("/cost-scenario")
 def preview_cost_scenario(
     payload: CostScenarioRequest,
     response: Response,
     _user: Annotated[User, Depends(current_user)],
 ):
-    pdf_path = os.environ.get("ARKEMX_ANALYSIS_PDF")
+    original_path = os.environ.get("ARKEMX_ANALYSIS_PDF")
+    alternative_path = os.environ.get("ARKEMX_ALT_PDF")
 
-    if not pdf_path:
-        raise HTTPException(
-            status_code=503,
-            detail="PDF analysis source is not configured",
-            headers={"Cache-Control": "private, no-store"},
-        )
+    if not original_path or not alternative_path:
+        raise unavailable("Required PDF source is not configured")
 
     try:
-        analysis = read_analysis(pdf_path)
+        original = read_analysis(original_path)
+        alternative = read_alternative_mortar(alternative_path)
+
+        if (
+            alternative["position_code"]
+            != payload.alternative_resource_code
+            or alternative["unit"] != "m³"
+            or alternative["read_only"] is not True
+            or alternative["approval_allowed"] is not False
+        ):
+            raise ValueError("Unsafe alternative source")
 
         scenario = calculate_300kg_scenario(
-            analysis,
-            alternative_code=payload.alternative_resource_code,
+            original,
+            alternative_code=alternative["position_code"],
+            alternative_unit=alternative["unit"],
+            alternative_unit_price=alternative["unit_price_tl"],
         )
+
+        if (
+            scenario.get("read_only") is not True
+            or scenario.get("approval_allowed") is not False
+        ):
+            raise ValueError("Unsafe scenario result")
+
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Scenario source could not be verified",
-            headers={"Cache-Control": "private, no-store"},
+        raise unavailable(
+            "Scenario PDF sources could not be verified"
         ) from exc
 
-    if (
-        scenario.get("approval_allowed") is not False
-        or scenario.get("read_only") is not True
-    ):
-        raise HTTPException(
-            status_code=500,
-            detail="Unsafe scenario result",
-            headers={"Cache-Control": "private, no-store"},
-        )
+    # Mark the price source verified only after both pinned
+    # PDF readers and the scenario calculation succeeded.
+    scenario["alternative_price_verification"] = (
+        "verified_source_document"
+    )
+
+    scenario["alternative_price_source"] = {
+        "position_code": alternative["position_code"],
+        "description": alternative["description"],
+        "unit": alternative["unit"],
+        "unit_price_tl": alternative["unit_price_tl"],
+        "source": alternative["source"],
+        "evidence": alternative["evidence"],
+    }
 
     response.headers["Cache-Control"] = "private, no-store"
 

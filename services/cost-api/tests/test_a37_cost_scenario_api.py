@@ -60,7 +60,17 @@ def test_verified_scenario_response(client):
 
     assert scenario["technical_compatibility"] == "not_evaluated"
     assert scenario["alternative_price_verification"] == (
-        "pending_source_document"
+        "verified_source_document"
+    )
+
+    alternative = scenario["alternative_price_source"]
+
+    assert alternative["position_code"] == "19.100.2506"
+    assert alternative["unit_price_tl"] == "1926.15"
+    assert alternative["source"]["pdf_page"] == 697
+    assert alternative["source"]["sha256"] == (
+        "ca7453f9e8d583e28bb16130b19487"
+        "edc8308831017d8d7e4daa0367c8038431"
     )
 
 
@@ -95,3 +105,45 @@ def test_missing_pdf_configuration_rejected(client, monkeypatch):
 
     assert response.status_code == 503
     assert response.headers["cache-control"] == "private, no-store"
+
+def test_missing_alternative_pdf_rejected(
+    client,
+    monkeypatch,
+):
+    token_headers = headers(client)
+    monkeypatch.delenv("ARKEMX_ALT_PDF", raising=False)
+
+    response = client.post(
+        URL,
+        json=VALID,
+        headers=token_headers,
+    )
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == (
+        "private, no-store"
+    )
+
+
+def test_modified_alternative_pdf_rejected(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    token_headers = headers(client)
+
+    altered = tmp_path / "modified.pdf"
+    altered.write_bytes(b"%PDF-1.4\ninvalid source")
+
+    monkeypatch.setenv("ARKEMX_ALT_PDF", str(altered))
+
+    response = client.post(
+        URL,
+        json=VALID,
+        headers=token_headers,
+    )
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == (
+        "private, no-store"
+    )
