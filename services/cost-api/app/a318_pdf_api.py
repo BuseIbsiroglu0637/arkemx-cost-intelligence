@@ -46,16 +46,36 @@ class SavePdfCandidateRequest(BaseModel):
     expected_pdf_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
-def _technical_status(current, position: PdfPosition) -> str:
+def _pdf_candidate_check(current, position: PdfPosition,
+                         *, plaster_partner_rows: list[int] | None = None) -> dict:
+    """Separate missing metraj inputs from contradictory technical attributes.
+
+    A missing/ambiguous quantity requires review, but it is not evidence
+    that a proposed material or finish is technically incompatible.
+    """
     check = compare(
         current.raw_description, current.normalized_unit,
         position.description, position.unit,
         quantity_known=current.quantity is not None,
         review_required=current.review_required,
     )
-    return enrich_technical(
+    check = enrich_technical(
         current.raw_description, position.description, check,
-    )["status"]
+        plaster_partner_rows=plaster_partner_rows,
+    )
+    if "METRAJ_REVIEW_REQUIRED" in check["blockers"]:
+        blockers = sorted(set(check["blockers"]) - {"METRAJ_REVIEW_REQUIRED"})
+        flags = sorted(set(check["review_flags"]) | {"METRAJ_INPUT_REVIEW_REQUIRED"})
+        check = {
+            **check, "blockers": blockers, "review_flags": flags,
+            "status": "blocked" if blockers else "review",
+            "manual_approval_allowed": False,
+        }
+    return check
+
+
+def _technical_status(current, position: PdfPosition) -> str:
+    return _pdf_candidate_check(current, position)["status"]
 
 
 def _saved_choice_blocked(current, row: PdfCandidateSelection,
@@ -287,15 +307,8 @@ def suggestions_from_pdf(
         rejected = 0
         for result in candidates:
             position = by_code[result["position_id"]]
-            check = compare(
-                current.raw_description, current.normalized_unit,
-                position.description, position.unit,
-                quantity_known=current.quantity is not None,
-                review_required=current.review_required,
-            )
-            check = enrich_technical(
-                current.raw_description, position.description, check,
-                plaster_partner_rows=partners,
+            check = _pdf_candidate_check(
+                current, position, plaster_partner_rows=partners,
             )
             # Technical contradictions are not suggestions. The actual PDF
             # record remains available as source evidence but cannot be
