@@ -10,7 +10,7 @@ from .excel import normalized
 VERSION = "technical-rules-v0.3"
 MATERIAL_ALIASES = {
     "gazbeton": (r"\bgazbeton\b",),
-    "seramik": (r"\bseramik\w*\b", r"\bporselen\w*\b", r"\bkaro\w*\b", r"\bfayans\w*\b"),
+    "seramik": (r"\bseramik\w*\b", r"\bporselen\w*\b", r"\bkaro(?:s\w*|l\w*|n\w*|d\w*)?\b", r"\bfayans\w*\b"),
     "poliuretan": (r"\bpoliuretan\w*\b",),
     "epoksi": (r"\bepoksi\w*\b",),
     "beton": (r"\bbeton\b",),

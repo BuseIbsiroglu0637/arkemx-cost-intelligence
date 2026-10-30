@@ -18,7 +18,7 @@ MAX_MATCH_ROWS = 100
 MATERIALS = ("gazbeton", "seramik", "beton", "kapi", "boya", "celik", "siva", "yalitim", "poliuretan", "epoksi")
 # Explicit surface finishes must agree; generic "zemin kaplama" cannot be
 # treated as a ceramic poz merely because both descriptions contain "kaplama".
-CERAMIC_TERMS = re.compile(r"\b(?:seramik\w*|porselen\w*|karo\w*|fayans\w*)\b")
+CERAMIC_TERMS = re.compile(r"\b(?:seramik\w*|porselen\w*|karo(?:s\w*|l\w*|n\w*|d\w*)?|fayans\w*)\b")
 POLYURETHANE_TERMS = re.compile(r"\bpoliuretan\w*\b")
 EPOXY_TERMS = re.compile(r"\bepoksi\w*\b")
 STOP = {"ve", "ile", "dahil", "olan", "isleri", "imalati", "uygulanmasi", "yapilmasi", "is", "malzeme"}

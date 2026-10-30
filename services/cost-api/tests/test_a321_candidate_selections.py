@@ -76,7 +76,8 @@ def test_stale_metraj_revision_never_restores_as_current(client, auth, monkeypat
     db.add(WorkItemRevision(
         work_item_id=source.id, revision=1,
         description=source.raw_description + " 500 kg/m³",
-        quantity=Decimal(str(source.quantity)), unit=source.normalized_unit,
+        quantity=Decimal(str(source.quantity)) if source.quantity is not None else Decimal("1"),
+        unit=source.normalized_unit,
         corrected_by_id=author.id, reason="Revizyon testi",
     ))
     db.commit()
