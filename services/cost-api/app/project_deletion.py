@@ -11,7 +11,6 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, or_, select, update
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .database import Base, get_db
@@ -27,7 +26,7 @@ class DeleteProjectRequest(BaseModel):
     confirm_name: str
 
 
-def dependent_rows(db: Session, project_id: str) -> dict[str, set]:
+def dependent_rows(db: Session, project_id: str, organization_id: str) -> dict[str, set]:
     """Follow child foreign keys from THIS project, never shared catalogs/users.
 
     Tables must have single-column primary keys; unknown schemas fail closed.
@@ -48,10 +47,19 @@ def dependent_rows(db: Session, project_id: str) -> dict[str, set]:
             ]
             if not parents:
                 continue
+            # A malformed cross-project foreign key must never pull another
+            # tenant's or another project's root-scoped data into a deletion.
+            if "project_id" in table.c:
+                parents.append(table.c.project_id == project_id)
+                predicate = (or_(*parents[:-1])) & parents[-1]
+            else:
+                predicate = or_(*parents)
+            if "organization_id" in table.c:
+                predicate = predicate & (table.c.organization_id == organization_id)
             primary = list(table.primary_key.columns)
             if len(primary) != 1:
                 raise RuntimeError("Unrecognized project dependency schema")
-            found = set(db.scalars(select(primary[0]).where(or_(*parents))).all())
+            found = set(db.scalars(select(primary[0]).where(predicate)).all())
             if not found.issubset(selected.get(table.name, set())):
                 selected.setdefault(table.name, set()).update(found)
                 updated = True
@@ -63,10 +71,18 @@ def dependent_rows(db: Session, project_id: str) -> dict[str, set]:
 def upload_paths(project: Project, keys: list[str]) -> tuple[Path, list[Path]]:
     """Validate all stored paths before any mutation, without following symlinks."""
     root = Path(os.environ.get("UPLOAD_DIR", "./data/uploads")).resolve()
-    prefix = f"{project.organization_id}/{project.id}/"
     result = []
     for key in keys:
-        if not key.startswith(prefix) or "\\" in key:
+        relative = Path(key)
+        segments = relative.parts
+        if (
+            len(segments) != 3
+            or segments[0] != project.organization_id
+            or segments[1] != project.id
+            or not segments[2].endswith(".xlsx")
+            or relative.is_absolute()
+            or "\\" in key
+        ):
             raise ValueError("Unexpected project upload key")
         candidate = (root / key).resolve()
         if not candidate.is_relative_to(root) or candidate.suffix.lower() != ".xlsx":
@@ -104,7 +120,7 @@ def delete_project(
     if active:
         raise HTTPException(409, "Stop the active batch operation before deleting")
 
-    owned = dependent_rows(db, project.id)
+    owned = dependent_rows(db, project.id, user.organization_id)
     import_ids = owned.get("imports", set())
     keys = list(db.scalars(
         select(ImportBatch.stored_key).where(ImportBatch.id.in_(import_ids))

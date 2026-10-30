@@ -1,11 +1,20 @@
 """Project hard-delete API: exact confirmation, isolation, source cleanup."""
-from pathlib import Path
+from io import BytesIO
 
+from openpyxl import Workbook
 from app.database import get_db
 from app.models import Project, WorkItem, ImportBatch
 from sqlalchemy import select
 
-from tests.test_api import xlsx_bytes
+def xlsx_bytes():
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["İmalat", "Metraj", "Ölçü Birimi"])
+    worksheet.append(["Seramik 60x60", "245,50", "m2"])
+    worksheet.append(["Gazbeton 10 cm", "1.234", "m2"])
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
 
 
 def make_project(client, headers, name):
