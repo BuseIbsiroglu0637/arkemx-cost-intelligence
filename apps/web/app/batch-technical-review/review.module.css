@@ -267,3 +267,28 @@
 .simpleSourceCitation {font-size:11px;color:#476b8d;padding:7px 11px;background:#eef6fc;border:1px solid #dbeaf3;border-radius:8px}
 .simpleMatchDetail details {font-size:12px;line-height:1.5}
 .simpleMatchDetail details ul {margin:10px 0;padding-left:20px}
+
+
+/* Simplified technical matching: one primary recommendation, alternatives on demand. */
+.simpleMatchTable th:nth-child(1) {width:36%}
+.simpleMatchTable th:nth-child(2) {width:38%}
+.simpleMatchTable th:nth-child(3) {width:19%}
+.simpleMatchTable th:nth-child(4) {width:80px}
+.simpleMatchPosition small {display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.simpleMatchDescription strong {font-size:13px}
+.simpleMatchDetail {gap:12px}
+.simplePrimaryCandidate {display:grid;gap:10px;background:white;border:1px solid #dee6f2;border-radius:10px;padding:15px}
+.simplePrimaryCandidate > div > strong {display:block;color:#17488e;font-size:14px}
+.simplePrimaryCandidate > div > p {margin:5px 0 8px;line-height:1.55}
+.simplePrimaryCandidate > div > small {display:block;color:#677f99;margin-top:7px}
+.simplePrimaryCandidate > details {font-size:12px}
+.simplePrimaryCandidate > button {justify-self:start}
+.otherCandidates {padding:12px 14px;background:#f7f9fc;border:1px solid #dbe4f0;border-radius:9px}
+.otherCandidates > summary {font-size:13px;font-weight:650;color:#2d567f}
+.otherCandidateRow {display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #e3e9f1;margin-top:12px;padding-top:12px;font-size:12px}
+.otherCandidateRow small {display:block;color:#627790;margin-top:5px}
+.otherCandidateRow button {white-space:nowrap}
+@media(max-width:720px){
+  .simpleMatchTable {min-width:680px}
+  .otherCandidateRow {align-items:stretch;flex-direction:column}
+}
