@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from .excel import normalized
 from .a324_ceramic_features import ceramic_finish_conflict
+from .a335_plaster_matching import plaster_checks, plaster_stages
 from .matching import dimensions, evaluate, family, find_candidates, similarity
 
 CONCRETE_CLASS = re.compile(r"(?<![a-z0-9])c\s*(\d{2})\s*/\s*(\d{2})(?!\d)")
@@ -97,6 +98,51 @@ def find_pdf_candidates(item, positions) -> list[dict]:
     cls = _concrete(desc)
     is_paint = _paint(desc)
     is_ceramic = family(desc) == "seramik"
+    if family(desc) == "siva" and plaster_stages(desc):
+        # A3.35: lexical top-3 can be crowded by the *other* plaster layer.
+        # Search only PDF-grounded plaster positions, rank matching stages
+        # before unspecified descriptions, and let strict checks block clashes.
+        from .matching import dimensions as measured_dimensions
+        source_stages = plaster_stages(desc)
+        _, source_thickness = measured_dimensions(desc)
+        plaster_results = []
+        for position in positions:
+            if family(position.description) != "siva":
+                continue
+            score = similarity(desc, position.description)
+            stages = plaster_stages(position.description)
+            _, candidate_thickness = measured_dimensions(position.description)
+            if score < 0.08 and stages != source_stages:
+                continue
+            result = evaluate(item, position)
+            if result is None:
+                if score < 0.08:
+                    continue
+                result = {
+                    "position_id": position.id, "similarity": score,
+                    "reasons": ["Poz PDF'sindeki sıva katmanı ayrıca doğrulanmalı"],
+                    "warnings": ["LOW_LEXICAL_SIMILARITY"], "approvable": False,
+                }
+            incompatible, _ = plaster_checks(desc, position.description)
+            thickness_conflict = bool(
+                source_thickness and candidate_thickness
+                and source_thickness != candidate_thickness
+            )
+            unit_conflict = item.normalized_unit != position.unit
+            plaster_results.append((
+                result, stages, incompatible, thickness_conflict, unit_conflict,
+                bool(source_thickness and candidate_thickness
+                     and source_thickness == candidate_thickness),
+            ))
+        plaster_results.sort(key=lambda entry: (
+            int(bool(entry[2]) or entry[3] or entry[4]),
+            int(entry[1] != source_stages),
+            -int(entry[5]),
+            -entry[0]["similarity"], entry[0]["position_id"],
+        ))
+        # Return up to three real PDF candidates; contradictory candidates
+        # remain blocked/removed by _pdf_candidate_check in the API.
+        return [entry[0] for entry in plaster_results[:3]]
     if not cls and not is_paint and not is_ceramic:
         return initial
     source_dims, _ = dimensions(desc)
@@ -172,6 +218,9 @@ def enrich_technical(description: str, position_description: str, check: dict,
     if _paint(description) and _water_based(description):
         if not _water_based(position_description):
             reviews.add("PAINT_BASE_UNVERIFIED")
+    plaster_blockers, plaster_reviews = plaster_checks(description, position_description)
+    blockers.update(plaster_blockers)
+    reviews.update(plaster_reviews)
     if plaster_partner_rows:
         reviews.add("POSSIBLE_COMBINED_PLASTER_SCOPE")
     return {
@@ -183,7 +232,7 @@ def enrich_technical(description: str, position_description: str, check: dict,
 def issue_summary(description: str, suggestions: list[dict],
                   plaster_partner_rows: list[int] | None = None) -> str | None:
     if plaster_partner_rows:
-        return "Kaba ve ince sıva aynı yüzeyde olabilir; birleşik poz kapsamı kontrol edilmeli."
+        return "Kaba ve ince sıva ayrı katmanlardır. Aynı yüzeyin çift fiyatlanmaması için poz kapsamı kontrol edilmeli."
     if not suggestions:
         return "PDF'de doğrulanabilir aday bulunamadı. Teknik tarif kontrol edilmeli."
     checks = suggestions[0]
