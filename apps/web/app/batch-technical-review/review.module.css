@@ -240,3 +240,18 @@
   .simpleMatchHead {align-items:flex-start}
   .simpleMatchTable {min-width:770px}
 }
+
+
+.simpleSource {display:flex;align-items:center;justify-content:space-between;gap:14px;background:#fff;border:1px solid #dbe3ef;border-radius:12px;padding:13px 18px;flex-wrap:wrap}
+.simpleSourceIdentity {display:grid;gap:3px;min-width:0}
+.simpleSourceIdentity strong {font-size:13px;overflow-wrap:anywhere}
+.simpleSourceIdentity span {font-size:12px;color:#667a98}
+.simpleSourceSettings {position:relative;margin:0 !important}
+.simpleSourceSettings > summary {border:1px solid #d2def0;border-radius:8px;padding:9px 12px;color:#2456a1;font-size:12px;white-space:nowrap}
+.simpleSourceSettings[open] {width:min(100%,430px)}
+.simpleSourceSettings[open] > summary {white-space:normal}
+.simpleSourceSettings > label,.simpleSourceSettings > button,.simpleSourceSettings > section {margin-top:12px}
+.simpleSourceSettings > section {border-top:1px solid #e3ebf6;padding-top:12px}
+.simpleSourceSettings h3 {margin:3px 0 8px}
+.simpleSourceSettings .resultList li {font-size:12px;line-height:1.6}
+@media(max-width:650px) {.simpleSource {align-items:stretch}.simpleSourceSettings {width:100%}.simpleSourceSettings > summary {text-align:center}}
