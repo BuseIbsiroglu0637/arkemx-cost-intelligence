@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from .a3_batch_review import NO_STORE, _source, _source_view
 from .a318_pdf_engine import PdfPosition, read_positions
+from .a324_ceramic_features import ceramic_finish_conflict, ceramic_question
 from .a320_smart_matching import (
     enrich_technical,
     find_pdf_candidates,
@@ -87,7 +88,8 @@ def _saved_choice_blocked(current, row: PdfCandidateSelection,
         return True
     # The material class must be positively grounded for ceramic finishes.
     return (family(current.raw_description) == "seramik"
-            and family(position.description) != "seramik")
+            and (family(position.description) != "seramik" or
+                 ceramic_finish_conflict(current.raw_description, position.description)))
 
 
 def _selected_view(row: PdfCandidateSelection, *, current_revision: str | None,
@@ -142,7 +144,10 @@ def save_pdf_candidate(
     if position is None:
         raise HTTPException(422, "Poz code is not present in this PDF source", headers=NO_STORE)
     if _technical_status(current, position) == "blocked" or (
-        family(current.raw_description) == "seramik" and family(position.description) != "seramik"
+        family(current.raw_description) == "seramik" and (
+            family(position.description) != "seramik" or
+            ceramic_finish_conflict(current.raw_description, position.description)
+        )
     ):
         raise HTTPException(
             422, "Candidate contradicts the metraj material or technical properties",
@@ -314,8 +319,10 @@ def suggestions_from_pdf(
             # record remains available as source evidence but cannot be
             # presented as a recommended or saveable candidate.
             if check["status"] == "blocked" or (
-                family(current.raw_description) == "seramik" and
-                family(position.description) != "seramik"
+                family(current.raw_description) == "seramik" and (
+                    family(position.description) != "seramik" or
+                    ceramic_finish_conflict(current.raw_description, position.description)
+                )
             ):
                 rejected += 1
                 continue
@@ -338,7 +345,12 @@ def suggestions_from_pdf(
             {"compatible": 0, "review": 1, "blocked": 2}[c["technical_status"]],
             -c["similarity"], c["code"],
         ))
+        question = (
+            ceramic_question(current.raw_description, scored)
+            if family(current.raw_description) == "seramik" else None
+        )
         rows.append({
+            "clarification": question,
             "work_item_id": current.id, "source_row": current.source_row,
             "revision_id": current.revision_id, "suggestions": scored,
             "saved_selection": (
