@@ -6,6 +6,7 @@ authorization and an exact project-name + project-ID confirmation.
 import os
 import shutil
 from pathlib import Path
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -95,8 +96,8 @@ def upload_paths(project: Project, keys: list[str]) -> tuple[Path, list[Path]]:
 def delete_project(
     project_id: str,
     payload: DeleteProjectRequest,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ):
     if user.role != "admin":
         raise HTTPException(403, "Administrator required")
@@ -136,11 +137,13 @@ def delete_project(
     quarantine = root / ".project-deletion" / uuid4().hex
     moved: list[tuple[Path, Path]] = []
     try:
-        for source in sources:
+        for index, source in enumerate(sources):
             if not source.exists():
                 continue
-            relative = source.relative_to(root)
-            held = quarantine / relative
+            # Windows may reject nested quarantine paths beyond MAX_PATH.
+            # Short unique names retain the original path in "moved" for
+            # rollback without repeating tenant/project UUID folders.
+            held = quarantine / f"{index:06d}.xlsx"
             held.parent.mkdir(parents=True, exist_ok=True)
             source.replace(held)
             moved.append((source, held))

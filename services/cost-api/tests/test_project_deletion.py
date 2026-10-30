@@ -2,9 +2,10 @@
 from io import BytesIO
 
 from openpyxl import Workbook
-from app.database import get_db
-from app.models import Project, WorkItem, ImportBatch
 from sqlalchemy import select
+
+from app.database import get_db
+from app.models import ImportBatch, Project, WorkItem
 
 def xlsx_bytes():
     workbook = Workbook()
