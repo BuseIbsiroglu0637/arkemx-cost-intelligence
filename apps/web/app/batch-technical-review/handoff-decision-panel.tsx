@@ -32,7 +32,7 @@ export default function HandoffDecisionPanel({projectId,importId,rowId}:{project
     finally{setBusy(false)}
   }
   async function save(){
-    if(!data||busy||!ack||reason.trim().length<10||!data.allowed_actions.includes(action))return;
+    if(!data||busy||!ack||!data.allowed_actions.includes(action))return;
     setBusy(true);setError("");setNotice("");
     try{
       const x=await api<Event>("/decisions",{action,reason:reason.trim(),expected_source_fingerprint:data.source_fingerprint,expected_previous_id:data.latest_id,request_key:crypto.randomUUID(),confirmation:"I_REVIEWED_SOURCE_EVIDENCE"});
@@ -51,9 +51,9 @@ export default function HandoffDecisionPanel({projectId,importId,rowId}:{project
       {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
       {data&&<>
         <label>İşlem <select value={action} disabled={busy} onChange={e=>setAction(e.target.value as Action)}>{data.allowed_actions.map(x=><option value={x} key={x}>{names[x]}</option>)}</select></label>
-        <label>Gerekçe <textarea rows={2} maxLength={1000} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Hangi bilgi eksik veya neden inceleme gerekiyor?"/></label>
+        <label>Gerekçe (isteğe bağlı) <textarea rows={2} maxLength={1000} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Hangi bilgi eksik veya neden inceleme gerekiyor?"/></label>
         <label><input type="checkbox" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/> Kaynak kanıtını inceledim.</label>
-        <button type="button" disabled={busy||!ack||reason.trim().length<10||!data.allowed_actions.includes(action)} onClick={()=>void save()}>İnceleme kararını kaydet</button>
+        <button type="button" disabled={busy||!ack||!data.allowed_actions.includes(action)} onClick={()=>void save()}>İnceleme kararını kaydet</button>
         <button type="button" className="secondary" disabled={busy} onClick={()=>void reload()}>Kayıtları yenile</button>
         {data.events.length>0&&<div><strong>Karar geçmişi</strong><ul>{data.events.map(x=><li key={x.id}>{names[x.action]} · {new Date(x.created_at).toLocaleString("tr-TR")} · {x.source_current===false?"Eski kaynak":"Güncel kaynak"} — {x.reason}</li>)}</ul></div>}
       </>}
