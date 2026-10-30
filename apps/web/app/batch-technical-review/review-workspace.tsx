@@ -30,7 +30,9 @@ type Report = { schema: string; read_only: boolean; approval_allowed: boolean; r
 type PdfSource = { present: boolean; read_only: boolean; sha256?: string; year?: number; volume?: number; position_count?: number; verified_price_count?: number; uncertain_price_count?: number };
 type CandidateCatalog = { version_id: string; institution: string; period: string; year: number; position_count: number; synthetic: boolean };
 type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean; source_page?: number; source_price?: string | null; source_price_verified?: boolean; analysis_inputs?: {code:string;description:string;unit:string;quantity:string;unit_price:string;amount:string}[]; scope_excerpt?: string };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type SavedCandidate = { code: string | null; current: boolean; stale: boolean; revision_id: string | null; pdf_sha256: string | null; saved_at: string | null; engineering_approved: false; cost_allowed: false };
+type CandidateSaveResponse = { saved: true; approval_allowed: false; engineering_approved: false; cost_allowed: false; work_item_id: string; import_id: string; selection: SavedCandidate };
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -139,6 +141,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<Record<string, string>>({});
+  const [savedCandidates, setSavedCandidates] = useState<Record<string, string>>({});
   const [pdfSource, setPdfSource] = useState<PdfSource | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfRightsConfirmed, setPdfRightsConfirmed] = useState(false);
@@ -200,8 +203,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           409: "PDF kaynak klasöründe güvenlik kontrolü başarısız.",
         } : {
           403: "Bu işlem için erişim izni bulunmuyor.", 404: "Proje, aktarım veya seçilen satır bulunamadı.",
-          409: task === "save" ? "Önizleme veya kaynak değişmiş olabilir. Güncel teknik incelemeyi yeniden çalıştırıp kaydet." : task === "archive" ? "Kayıt bütünlüğü doğrulanamadı; eski sonuç gösterilmedi." : "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
-          422: "Seçimi kontrol et. Bir incelemede 1–20 farklı satır ve geçerli aday kodları kullanılmalı.",
+          409: task === "candidate-save" ? "PDF veya metraj revizyonu değişti. Yenileyip yeniden seç." : task === "save" ? "Önizleme veya kaynak değişmiş olabilir. Güncel teknik incelemeyi yeniden çalıştırıp kaydet." : task === "archive" ? "Kayıt bütünlüğü doğrulanamadı; eski sonuç gösterilmedi." : "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
+          422: task === "candidate-save" ? "Poz kodu bağlı PDF’de bulunamadı. PDF’den aday seç." : "Seçimi kontrol et. Bir incelemede 1–20 farklı satır ve geçerli aday kodları kullanılmalı.",
           503: "Kaynak hizmeti şu anda kullanılamıyor.",
         };
         throw new Error(messages[response.status] ?? `İşlem tamamlanamadı (HTTP ${response.status}).`);
@@ -236,7 +239,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
 
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
-    invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setOffset(0);
+    invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(0);
     setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     setBulkCode("");
@@ -251,7 +254,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   }
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
-    invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setOffset(pageOffset);
+    invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(pageOffset);
     setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -285,6 +288,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setPdfRightsConfirmed(false);
       // Old source candidates must never survive an explicit PDF replacement.
       setCandidates({});
+      setSavedCandidates({});
       setSelected([]);
       setAutoCandidates(null);
       setCandidateDetailId(null);
@@ -316,6 +320,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         ) throw new Error("Öneriler özgün Excel kaynağıyla uyuşmuyor.");
         setAutoCandidates(data);
         setCandidateDetailId(null); setAutoFilter("all");
+        const restored = data.rows.flatMap(row => {
+          const saved = row.saved_selection;
+          return saved?.current && saved.code && saved.pdf_sha256 === sourceSha &&
+            saved.revision_id === row.revision_id && !saved.engineering_approved && !saved.cost_allowed
+            ? [{ id: row.work_item_id, code: saved.code }] : [];
+        });
+        setSavedCandidates(Object.fromEntries(restored.map(row => [row.id, row.code])));
         // Only preselect unambiguous, strongly similar, non-blocked candidates.
         // Rows with technical unknowns remain visible but are never approved.
         const selectedCandidates = data.rows.flatMap(row => {
@@ -325,14 +336,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             (!second || top.similarity - second.similarity >= 0.12)
             ? [{ id: row.work_item_id, code: top.code }] : [];
         });
-        setCandidates(previous => {
-          const next = { ...previous };
-          for (const item of selectedCandidates) {
-            if (!next[item.id]?.trim()) next[item.id] = item.code;
-          }
-          return next;
-        });
-        setSelected(previous => [...new Set([...previous, ...selectedCandidates.map(item => item.id)])]);
+        setCandidates(Object.fromEntries([
+          ...selectedCandidates.map(item => [item.id, item.code] as const),
+          ...restored.map(item => [item.id, item.code] as const),
+        ]));
+        setSelected([...new Set([...selectedCandidates.map(item => item.id), ...restored.map(item => item.id)])]);
         setAutoMessage("Otomatik poz taraması tamamlandı. Teknik açıdan belirsiz eşleşmeler inceleme için ayrıldı.");
       }, "auto"
     );
@@ -355,6 +363,35 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
 
   function toggle(id: string, checked: boolean) {
     invalidate(); setSelected(prev => checked ? [...new Set([...prev, id])] : prev.filter(value => value !== id));
+  }
+  function saveCandidate(id: string, code: string) {
+    if (!selection || !projectId || !importId || !pdfSource?.sha256 || busy) return;
+    const item = selection.rows.find(row => row.work_item_id === id);
+    if (!item || !code.trim()) return;
+    const sourceSha = pdfSource.sha256;
+    const targetCode = code.trim();
+    clearResult();
+    void request<CandidateSaveResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/a318/imports/${encodeURIComponent(importId)}/items/${encodeURIComponent(id)}/candidate`,
+      data => {
+        if (data.saved !== true || data.approval_allowed !== false ||
+            data.engineering_approved !== false || data.cost_allowed !== false ||
+            data.work_item_id !== id || data.import_id !== importId ||
+            data.selection.current !== true || data.selection.code !== targetCode ||
+            data.selection.pdf_sha256 !== sourceSha || data.selection.revision_id !== item.revision_id) {
+          throw new Error("Kaydedilen pozun kaynak doğrulaması başarısız.");
+        }
+        setCandidates(prev => ({ ...prev, [id]: targetCode }));
+        setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
+        setSelected(prev => [...new Set([...prev, id])]);
+        setSaveNotice(`${targetCode} inceleme için kaydedildi. Mühendis onayı verilmedi.`);
+      }, "candidate-save", {
+        method: "POST", body: JSON.stringify({
+          position_code: targetCode, expected_revision_id: item.revision_id,
+          expected_pdf_sha256: sourceSha,
+        }),
+      }
+    );
   }
   function candidate(id: string, value: string) {
     invalidate(); setCandidates(prev => ({ ...prev, [id]: value }));
