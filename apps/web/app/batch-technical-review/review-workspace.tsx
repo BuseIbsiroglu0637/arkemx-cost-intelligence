@@ -923,13 +923,14 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 <button type="button" disabled={Boolean(busy) || !specFile} onClick={uploadSpecification}>
                   Şartnameyi bağla
                 </button>
-                <button type="button" disabled={Boolean(busy)}
+                {!expandedIsPlaster && <button type="button" disabled={Boolean(busy)}
                   className="secondary" onClick={() => findSpecificationEvidence(expandedRow.work_item_id)}>
                   Belgede ara
-                </button>
+                </button>}
               </div>
               {projectSpec?.present && <small>Bağlı belge: {projectSpec.filename ?? "Proje şartnamesi PDF"} · Kaynak {projectSpec.sha256?.slice(0,12)}…</small>}
-              {expandedEvidence && <div className={styles.projectEvidenceResult} role="status">
+              {expandedIsPlaster && <small>Sıva için PDF bilgileri aşağıdaki “Kaynaklı teknik bilgiler” tablosunda otomatik karşılaştırılır.</small>}
+              {!expandedIsPlaster && expandedEvidence && <div className={styles.projectEvidenceResult} role="status">
                 <strong>{expandedEvidence.status === "no_document" ? "Önce proje şartnamesi yükle" :
                   expandedEvidence.status === "not_found" ? "Bilgi bulunamadı · Belge veya proje tarifi kontrol edilmeli" :
                   expandedEvidence.status === "unreadable_text" ? "Bu PDF taranmış olabilir · okunabilir metin bulunamadı" :
