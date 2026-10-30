@@ -28,6 +28,9 @@ type Row = {
   source_price: { value: string; currency: string; unit: string; source: { filename: string; sha256: string; pdf_page: number; printed_page: number; price_date: string } } | null;
 };
 type Report = { schema: string; read_only: boolean; approval_allowed: boolean; row_count: number; rows: Row[]; import_source: Source };
+type CandidateCatalog = { version_id: string; institution: string; period: string; year: number; position_count: number; synthetic: boolean };
+type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean };
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[] }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -134,6 +137,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<Record<string, string>>({});
+  const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
+  const [catalogVersion, setCatalogVersion] = useState("");
+  const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
+  const [autoMessage, setAutoMessage] = useState("");
   const [bulkCode, setBulkCode] = useState("");
   const [bulkMode, setBulkMode] = useState<"empty" | "replace">("empty");
   const [report, setReport] = useState<Report | null>(null);
@@ -216,6 +223,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setOffset(0);
+    setCatalogs([]); setCatalogVersion(""); setAutoCandidates(null); setAutoMessage("");
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (token) rememberProject(token, id);
@@ -229,19 +237,84 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setOffset(pageOffset);
+    setAutoCandidates(null); setAutoMessage("");
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (token) rememberImport(token, sourceProject, null);
     if (id) void request<Selection>(`/api/projects/${encodeURIComponent(sourceProject)}/a3/imports/${encodeURIComponent(id)}/items?limit=20&offset=${pageOffset}`, data => {
       if (data.read_only !== true || data.approval_allowed !== false || data.import_source.import_id !== id || data.import_source.project_id !== sourceProject || data.rows.length > 20) throw new Error("Satır kaynağı doğrulanamadı.");
       setSelection(data);
       if (token) rememberImport(token, sourceProject, id);
+      loadCatalogs(sourceProject);
     }, "items");
   }
+  function loadCatalogs(id: string) {
+    void request<{ read_only: boolean; catalogs: CandidateCatalog[] }>(
+      `/api/projects/${encodeURIComponent(id)}/a317/catalogs`, data => {
+        if (data.read_only !== true) throw new Error("Katalog yetkisi doğrulanamadı.");
+        setCatalogs(data.catalogs);
+        setCatalogVersion(previous =>
+          data.catalogs.some(item => item.version_id === previous)
+            ? previous : (data.catalogs[0]?.version_id ?? ""));
+      }, "catalogs"
+    );
+  }
+
+  function seedDemoCatalog() {
+    if (!projectId || busy) return;
+    void request<{ synthetic: boolean }>("/api/m2/demo-catalog", data => {
+      if (data.synthetic !== true) throw new Error("Deneme kataloğu doğrulanamadı.");
+      loadCatalogs(projectId);
+      setAutoMessage("Sentetik deneme kataloğu hazır. Gerçek poz veya fiyat içermez.");
+    }, "catalog-demo", { method: "POST" });
+  }
+
+  function findAutomaticCandidates() {
+    if (!selection || !projectId || !importId || !catalogVersion || busy) return;
+    const source = selection;
+    clearResult();
+    setAutoCandidates(null);
+    void request<CandidateResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/a317/imports/${encodeURIComponent(importId)}/suggestions?version_id=${encodeURIComponent(catalogVersion)}&offset=${offset}`,
+      data => {
+        const expected = new Map(source.rows.map(row => [row.work_item_id, row]));
+        if (
+          data.read_only !== true || data.approval_allowed !== false || data.cost_allowed !== false
+          || data.import_source.import_id !== source.import_source.import_id
+          || data.import_source.sha256 !== source.import_source.sha256
+          || data.catalog.version_id !== catalogVersion
+          || data.rows.length !== source.rows.length
+          || new Set(data.rows.map(row => row.work_item_id)).size !== source.rows.length
+          || data.rows.some(row => {
+            const original = expected.get(row.work_item_id);
+            return !original || original.revision_id !== row.revision_id
+              || original.source_row !== row.source_row || row.suggestions.length > 3;
+          })
+        ) throw new Error("Öneriler özgün Excel kaynağıyla uyuşmuyor.");
+        setAutoCandidates(data);
+        const selectedCandidates = data.rows.flatMap(row => {
+          const top = row.suggestions[0];
+          return top && top.technical_status !== "blocked" && !top.possible_shared_scope
+            ? [{ id: row.work_item_id, code: top.code }] : [];
+        });
+        setCandidates(previous => {
+          const next = { ...previous };
+          for (const item of selectedCandidates) {
+            if (!next[item.id]?.trim()) next[item.id] = item.code;
+          }
+          return next;
+        });
+        setSelected(previous => [...new Set([...previous, ...selectedCandidates.map(item => item.id)])]);
+        setAutoMessage(`${selectedCandidates.length} satıra otomatik aday önerildi. Diğer satırları aşağıdaki listeden kontrol et. Bu sonuç mühendis onayı değildir.`);
+      }, "auto"
+    );
+  }
+
   function toggle(id: string, checked: boolean) {
     invalidate(); setSelected(prev => checked ? [...new Set([...prev, id])] : prev.filter(value => value !== id));
   }
   function candidate(id: string, value: string) {
     invalidate(); setCandidates(prev => ({ ...prev, [id]: value }));
+    setSelected(prev => [...new Set([...prev, id])]);
   }
   const selectedRows = selection?.rows.filter(
     row => selected.includes(row.work_item_id)
@@ -401,9 +474,33 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             disabled={Boolean(busy)} onExpired={expireSavedSession} />
         </>}
       </section>}
-      {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>
+      {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Poz adaylarını bul</h2><span>{selected.length} / 20 satır seçili</span></div>
+        <div className={styles.autoCandidatePanel}>
+          <div><strong>Otomatik poz önerileri</strong><p>Önce katalog seç, ardından tek düğmeyle adayları getir. Bu işlem poz onayı veya maliyet hesabı yapmaz.</p></div>
+          {catalogs.length > 0 ? <div className={styles.autoCandidateControls}>
+            <label>Kaynak katalog<select value={catalogVersion} disabled={Boolean(busy)}
+              onChange={event => { setCatalogVersion(event.target.value); setAutoCandidates(null); setAutoMessage(""); clearResult(); }}>
+              {catalogs.map(item => <option key={item.version_id} value={item.version_id}>
+                {item.institution} · {item.year} · {item.position_count} poz{item.synthetic ? " · DENEME" : ""}
+              </option>)}
+            </select></label>
+            <button type="button" disabled={Boolean(busy) || !catalogVersion} onClick={findAutomaticCandidates}>
+              Pozları otomatik bul
+            </button>
+          </div> : <div className={styles.autoCandidateControls}>
+            <p>Yetkili poz kataloğu bulunamadı. Gerçek katalog için kaynak izni gereklidir.</p>
+            <button type="button" className="secondary" disabled={Boolean(busy)} onClick={seedDemoCatalog}>
+              Sentetik test kataloğu oluştur
+            </button>
+          </div>}
+          {autoMessage && <p role="status" className={styles.autoCandidateMessage}>{autoMessage}</p>}
+          {autoCandidates && <p className={styles.testNote}>
+            {autoCandidates.catalog.synthetic ? "Yalnızca sentetik örnek katalog kullanıldı. Fiyat veya gerçek poz değildir. " : ""}
+            Aynı pozun birden fazla satıra önerildiği yerler otomatik doldurulmaz; çift maliyet riski ayrıca incelenir.
+          </p>}
+        </div>
         <p>Teknik destek kapsamı: <strong>15.275.1111</strong> (PDF) ve <strong>DEMO-ARKEMX-SIVA-01</strong> (ARKEMX test verisi). Diğer kodlar kapsam dışı olarak raporlanır. Aday poz, karşılaştırmak istediğin poz kodudur; onay anlamına gelmez. Boş bırakılırsa aday seçilmemiş olur.</p>
-        <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
+        <details><summary>İsteğe bağlı: elle ve toplu poz kodu gir</summary><div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
           <div className={styles.bulkFields}>
             <label>
               Toplu aday poz kodu
@@ -448,14 +545,21 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             Eski inceleme sonucu temizlenir.
             Mühendislik onayı verilmez.
           </p>
-        </div>
+        </div></details>
         <div className={styles.tableScroll}><table><caption className={styles.srOnly}>Seçilen Excel aktarımındaki satırlar ve aday poz alanları</caption><thead><tr>
           <th><input type="checkbox" aria-label="Görünen tüm satırları seç" checked={selection.rows.length > 0 && selected.length === selection.rows.length} onChange={e => { invalidate(); setSelected(e.target.checked ? selection.rows.map(row => row.work_item_id) : []); }} /></th><th>Excel satırı</th><th>İmalat tarifi</th><th>Miktar / birim</th><th>Aday poz</th>
         </tr></thead><tbody>{selection.rows.map(row => <tr key={row.work_item_id}>
           <td><input type="checkbox" aria-label={`Excel satırı ${row.source_row} seç`} checked={selected.includes(row.work_item_id)} onChange={e => toggle(row.work_item_id, e.target.checked)} /></td><td>{row.source_row}{row.revision_id && <small className={styles.meta}>Revizyon var</small>}</td>
           <td className={styles.description}><details><summary>{row.effective_description.slice(0, 150)}{row.effective_description.length > 150 ? "…" : ""}</summary><p className={styles.quote}>{row.effective_description}</p>{row.original_description !== row.effective_description && <><strong>Özgün Excel tarifi</strong><p className={styles.quote}>{row.original_description}</p></>}</details>{row.input_review_required && <small className={styles.meta}>Girdi incelemesi gerekli</small>}</td>
           <td>{row.quantity ?? "Miktar eksik"}<br />{row.unit ?? "Birim eksik"}</td>
-          <td><label><span className={styles.srOnly}>Excel satırı {row.source_row} aday poz</span><input className={styles.codeInput} list="supported-positions" maxLength={80} placeholder="Poz kodu yaz" value={candidates[row.work_item_id] ?? ""} onChange={e => candidate(row.work_item_id, e.target.value)} /></label></td>
+          <td><label><span className={styles.srOnly}>Excel satırı {row.source_row} aday poz</span><input className={styles.codeInput} list="supported-positions" maxLength={80} placeholder="Poz kodu yaz" value={candidates[row.work_item_id] ?? ""} onChange={e => candidate(row.work_item_id, e.target.value)} /></label>
+             {autoCandidates?.rows.find(item => item.work_item_id === row.work_item_id)?.suggestions.slice(0, 2).map(suggestion =>
+               <button type="button" key={suggestion.code} className={styles.candidateChoice}
+                 title={suggestion.description} onClick={() => candidate(row.work_item_id, suggestion.code)}>
+                 {suggestion.code} · {suggestion.technical_status === "blocked" ? "Uyumsuzluk" : suggestion.technical_status === "review" ? "Kontrol gerekli" : "Ön kontrol uyumlu"}
+                 {suggestion.possible_shared_scope ? " · Birleşik kapsam?" : ""}
+               </button>)}
+           </td>
         </tr>)}</tbody></table></div><datalist id="supported-positions"><option value="15.275.1111" /><option value="DEMO-ARKEMX-SIVA-01" /></datalist>
         <div className={styles.toolbar}><div className={styles.tags}><button type="button" className="secondary" disabled={Boolean(busy) || offset === 0} onClick={() => loadItems(importId, Math.max(0, offset - 20))}>Önceki 20</button><button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null} onClick={() => loadItems(importId, selection.next_offset ?? 0)}>Sonraki 20</button></div><span>Sayfa değiştiğinde seçimler sıfırlanır.</span><button type="button" disabled={Boolean(busy) || selected.length === 0} onClick={compare}>Seçilen {selected.length} satırı incele</button></div>
       </section>}

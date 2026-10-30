@@ -83,3 +83,12 @@
 
 .scopedFields { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; align-items:end; }
 @media(max-width:850px) { .scopedFields { grid-template-columns:1fr; } }
+
+.autoCandidatePanel {display:grid;gap:12px;padding:16px;border:1px solid #b8cdf4;border-radius:12px;background:#f3f7ff}
+.autoCandidatePanel p {margin:4px 0;font-size:13px;color:#52627b;line-height:1.45}
+.autoCandidateControls {display:flex;flex-wrap:wrap;align-items:end;gap:12px}
+.autoCandidateControls label {display:grid;gap:6px;flex:1;min-width:220px;font-size:13px}
+.autoCandidateControls select {width:100%;min-width:0}
+.autoCandidateMessage {font-weight:650;color:#173e79 !important}
+.candidateChoice {display:block;width:100%;margin-top:6px;padding:6px 8px;text-align:left;font-size:11px;line-height:1.3;border-radius:7px;border:1px solid #d6e0f0;background:#f2f6fd;color:#214470;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
+.candidateChoice:hover {border-color:#3164ac}
