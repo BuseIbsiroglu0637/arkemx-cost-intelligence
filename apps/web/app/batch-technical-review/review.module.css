@@ -336,3 +336,22 @@
 .missingFacts strong {font-size:13px}
 .missingFacts small {font-size:11px;color:#907342}
 @media(max-width:650px){.queueHeading{align-items:flex-start;flex-direction:column}.queueFilters{grid-template-columns:1fr}.queueFilters button{grid-template-columns:40px 1fr;align-items:center}.queueFilters button small{grid-column:2}}
+
+
+/* A3.26 local project-spec evidence: one optional panel in existing details. */
+.projectEvidence {border:1px solid #d5e2f4;border-radius:10px;background:#fbfdff;padding:12px 14px;font-size:12px}
+.projectEvidence > summary {cursor:pointer;font-size:13px;font-weight:700;color:#214d89}
+.projectEvidence > p {font-size:12px;line-height:1.6;color:#687b96;margin:9px 0}
+.projectEvidence > small {display:block;color:#718299;font-size:11px;margin-top:8px}
+.projectEvidenceActions {display:flex;gap:9px;flex-wrap:wrap;align-items:end}
+.projectEvidenceActions label {flex:1 1 240px;display:grid;gap:5px;color:#455f85;font-size:11px}
+.projectEvidenceActions input {width:100%;padding:7px;font-size:11px}
+.projectEvidenceActions button {min-height:36px;white-space:nowrap}
+.projectEvidenceResult {display:grid;gap:8px;margin-top:12px;border:1px solid #d8e4f3;background:#f4f8ff;border-radius:9px;padding:11px}
+.projectEvidenceResult > strong {font-size:12px;color:#1a5385}
+.projectEvidenceResult > p {color:#9a4d13;font-size:12px;margin:0}
+.projectEvidenceResult > small {font-size:11px;color:#6e7890}
+.projectEvidenceQuote {border:1px solid #e0e8f2;background:#fff;padding:9px 11px;border-radius:8px}
+.projectEvidenceQuote strong {font-size:11px;color:#475f87}
+.projectEvidenceQuote p {font-size:12px;line-height:1.5;color:#344760;overflow-wrap:anywhere;white-space:normal;margin:4px 0 0}
+@media(max-width:650px){.projectEvidenceActions{display:grid}.projectEvidenceActions label{min-width:0}.projectEvidenceActions button{width:100%}}
