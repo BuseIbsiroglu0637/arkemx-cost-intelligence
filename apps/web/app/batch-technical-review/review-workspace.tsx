@@ -151,6 +151,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const requestRef = useRef<AbortController | null>(null);
+  const automaticRunKeyRef = useRef("");
   const saveGeneration = useRef(0);
   const saveAttempt = useRef<{ basis: string; key: string } | null>(null);
   const [recordTitle, setRecordTitle] = useState("");
@@ -225,7 +226,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setOffset(0);
-    setCatalogs([]); setCatalogVersion(""); setAutoCandidates(null); setAutoMessage("");
+    setCatalogs([]); setCatalogVersion(""); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -240,7 +241,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setOffset(pageOffset);
-    setAutoCandidates(null); setAutoMessage("");
+    setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (token) rememberImport(token, sourceProject, null);
@@ -255,10 +256,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     void request<{ read_only: boolean; catalogs: CandidateCatalog[] }>(
       `/api/projects/${encodeURIComponent(id)}/a317/catalogs`, data => {
         if (data.read_only !== true) throw new Error("Katalog yetkisi doğrulanamadı.");
-        setCatalogs(data.catalogs);
+        const ordered = [...data.catalogs].sort((a, b) =>
+          Number(a.synthetic) - Number(b.synthetic) ||
+          b.year - a.year || b.period.localeCompare(a.period));
+        setCatalogs(ordered);
         setCatalogVersion(previous =>
-          data.catalogs.some(item => item.version_id === previous)
-            ? previous : (data.catalogs[0]?.version_id ?? ""));
+          ordered.some(item => item.version_id === previous)
+            ? previous : (ordered[0]?.version_id ?? ""));
       }, "catalogs"
     );
   }
@@ -296,9 +300,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         ) throw new Error("Öneriler özgün Excel kaynağıyla uyuşmuyor.");
         setAutoCandidates(data);
         setCandidateDetailId(null); setAutoFilter("all");
+        // Only preselect unambiguous, strongly similar, non-blocked candidates.
+        // Rows with technical unknowns remain visible but are never approved.
         const selectedCandidates = data.rows.flatMap(row => {
-          const top = row.suggestions[0];
-          return top && top.technical_status !== "blocked" && !top.possible_shared_scope
+          const [top, second] = row.suggestions;
+          return top && top.technical_status === "compatible" &&
+            !top.possible_shared_scope && top.similarity >= 0.5 &&
+            (!second || top.similarity - second.similarity >= 0.12)
             ? [{ id: row.work_item_id, code: top.code }] : [];
         });
         setCandidates(previous => {
@@ -309,10 +317,25 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           return next;
         });
         setSelected(previous => [...new Set([...previous, ...selectedCandidates.map(item => item.id)])]);
-        setAutoMessage(`${selectedCandidates.length} satıra otomatik aday önerildi. Diğer satırları aşağıdaki listeden kontrol et. Bu sonuç mühendis onayı değildir.`);
+        setAutoMessage("Otomatik poz taraması tamamlandı. Teknik açıdan belirsiz eşleşmeler inceleme için ayrıldı.");
       }, "auto"
     );
   }
+
+  // Run automatically once per Excel import, page, source revision and catalog.
+  // Never create a synthetic catalog or accept a cost decision automatically.
+  useEffect(() => {
+    if (!selection || !projectId || !importId || !catalogVersion || !authenticated || !ready || busy) return;
+    const key = [
+      projectId, importId, selection.import_source.sha256,
+      offset, catalogVersion, ...selection.rows.map(row => row.work_item_id + ":" + (row.revision_id ?? "")),
+    ].join("|");
+    if (automaticRunKeyRef.current === key) return;
+    automaticRunKeyRef.current = key;
+    findAutomaticCandidates();
+    // The trigger is the verified source and catalog identity, not manual inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, projectId, importId, catalogVersion, offset, busy, authenticated, ready]);
 
   function toggle(id: string, checked: boolean) {
     invalidate(); setSelected(prev => checked ? [...new Set([...prev, id])] : prev.filter(value => value !== id));
@@ -434,25 +457,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const filtered = report?.rows.filter(row => view === "all" || (view === "attention" ? row.technical_status !== "checked_features_match" : row.technical_status === view)) ?? [];
   const suggestionsFor = (id: string) =>
     autoCandidates?.rows.find(item => item.work_item_id === id)?.suggestions ?? [];
-  const countSuggested = selection?.rows.filter(row => suggestionsFor(row.work_item_id).length > 0).length ?? 0;
-  const countReview = selection?.rows.filter(row =>
-    suggestionsFor(row.work_item_id).some(entry => entry.technical_status !== "compatible" || entry.possible_shared_scope)
-  ).length ?? 0;
-  const countMissing = autoCandidates
-    ? (selection?.rows.filter(row => suggestionsFor(row.work_item_id).length === 0).length ?? 0) : 0;
-  const shownRows = selection?.rows.filter(row => {
-    const found = suggestionsFor(row.work_item_id);
-    const normalizedText = rowSearch.trim().toLocaleLowerCase("tr-TR");
-    const matchesText = !normalizedText ||
-      row.effective_description.toLocaleLowerCase("tr-TR").includes(normalizedText) ||
-      String(row.source_row).includes(normalizedText) ||
-      found.some(pos => pos.code.toLocaleLowerCase("tr-TR").includes(normalizedText));
-    const matchesFilter = autoFilter === "all" ||
-      (autoFilter === "suggested" && found.length > 0) ||
-      (autoFilter === "review" && found.some(entry => entry.technical_status !== "compatible" || entry.possible_shared_scope)) ||
-      (autoFilter === "none" && Boolean(autoCandidates) && found.length === 0);
-    return matchesText && matchesFilter;
-  }) ?? [];
+  const countSuggested = selection?.rows.filter(row => suggestionsFor(row.work_item_id).some(item => item.technical_status !== 'blocked')).length ?? 0;
+  const countMissing = autoCandidates ? (selection?.rows.length ?? 0) - countSuggested : 0;
   const expandedRow = selection?.rows.find(row => row.work_item_id === candidateDetailId);
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
   const Container = projectScope ? "div" : "main";
@@ -501,192 +507,149 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             disabled={Boolean(busy)} onExpired={expireSavedSession} />
         </>}
       </section>}
-      {selection && <section className={`${styles.card} ${styles.suggestionPanel}`} aria-labelledby="rows-heading">
-        <div className={styles.suggestionTop}>
-          <div><span className={styles.eyebrow}>ADIM 2 · POZ İNCELEME</span><h2 id="rows-heading">Poz adaylarını bul</h2>
-            <p>Excel satırlarını yetkili bir katalogla karşılaştır, aday pozları ve teknik uyarıları incele.</p></div>
-          <div className={styles.suggestionActions}>
-            <label className={styles.searchLabel}><span className={styles.srOnly}>İmalat açıklamasında ara</span>
-              <input type="search" value={rowSearch} onChange={e => setRowSearch(e.target.value)}
-                placeholder="Bu sayfada imalat ara…" /></label>
-            <button type="button" disabled={Boolean(busy) || !catalogVersion}
-              onClick={findAutomaticCandidates}>Poz önerilerini bul</button>
+      {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-labelledby="rows-heading">
+        <div className={styles.simpleMatchHead}>
+          <div><h2 id="rows-heading">Otomatik poz eşleştirme</h2>
+            <p>Metraj satırları seçili kaynak kataloğuna göre kendiliğinden taranır.</p></div>
+          <div className={styles.simpleMatchSummary} role="status">
+            {busy === "auto" ? "Pozlar eşleştiriliyor…" :
+              autoCandidates ? `${selection.rows.length} imalat tarandı · ${countSuggested} aday bulundu · ${countMissing} aday bulunamadı` :
+              catalogs.length ? "Eşleştirme hazırlanıyor…" : "Katalog bekleniyor"}
           </div>
         </div>
-        <div className={styles.catalogBar}>
-          {catalogs.length ? <label>Kaynak katalog
-            <select value={catalogVersion} disabled={Boolean(busy)}
-              onChange={event => { setCatalogVersion(event.target.value); setAutoCandidates(null); setAutoMessage(""); setCandidateDetailId(null); clearResult(); }}>
-              {catalogs.map(item => <option key={item.version_id} value={item.version_id}>
-                {item.institution} · {item.year} · {item.position_count} poz{item.synthetic ? " · DENEME" : ""}
+        {catalogs.length > 0 ? <div className={styles.simpleCatalog}>
+          <span>Kaynak: <strong>{catalogs.find(c => c.version_id === catalogVersion)?.institution ?? "Katalog"}</strong>
+            {" · "}{catalogs.find(c => c.version_id === catalogVersion)?.year ?? ""}
+            {catalogs.find(c => c.version_id === catalogVersion)?.synthetic ? " · SENTETİK TEST" : ""}
+          </span>
+          <details><summary>Kaynağı değiştir</summary>
+            <label>Poz kataloğu<select value={catalogVersion} disabled={Boolean(busy)}
+              onChange={event => {
+                setCatalogVersion(event.target.value);
+                setAutoCandidates(null); setAutoMessage("");
+                setCandidateDetailId(null); clearResult();
+              }}>
+              {catalogs.map(c => <option key={c.version_id} value={c.version_id}>
+                {c.institution} · {c.year} · {c.position_count} poz{c.synthetic ? " · DENEME" : ""}
               </option>)}
-            </select></label> : <div className={styles.noCatalog}>
-              <strong>Henüz izinli poz kataloğu yok.</strong>
-              <span>Gerçek PDF kaynakları için ayrı kullanım izni gerekir. Şimdilik sentetik katalogla deneyebilirsin.</span>
-              <button type="button" className="secondary" disabled={Boolean(busy)}
-                onClick={seedDemoCatalog}>Sentetik test kataloğu oluştur</button>
-            </div>}
-          <span className={styles.humanReview}>Otomatik öneri ≠ mühendis onayı</span>
-        </div>
-        {autoMessage && <p className={styles.inlineResult} role="status">{autoMessage}</p>}
-        {autoCandidates?.catalog.synthetic && <p className={styles.demoLabel}>DENEME KATALOĞU · Buradaki kodlar resmî poz veya fiyat değildir.</p>}
-        <div className={styles.suggestionFilters} role="group" aria-label="Poz önerilerini filtrele">
-          {([
-            ["all", "Tümü", selection.rows.length],
-            ["suggested", "Öneri bulundu", countSuggested],
-            ["review", "Kontrol gerekli", countReview],
-            ["none", "Öneri yok", countMissing],
-          ] as const).map(([value, title, count]) =>
-            <button type="button" key={value} aria-pressed={autoFilter === value}
-              onClick={() => setAutoFilter(value)}>{title} <strong>{count}</strong></button>)}
-        </div>
-        <div className={styles.summaryLine} role="status">
-          {shownRows.length} satır gösteriliyor · {countSuggested} satırda aday bulundu
-          {autoCandidates ? ` · ${countMissing} satırda aday yok` : " · Öneri araması henüz yapılmadı"}
-          <span>{selected.length} satır seçili</span>
-        </div>
-        <div className={styles.tableScroll}><table className={styles.suggestionTable}>
-          <caption className={styles.srOnly}>Metraj satırları, aday pozlar ve teknik öneriler</caption>
+            </select></label>
+          </details>
+        </div> : <div className={styles.simpleMissingSource}>
+          <strong>Eşleştirme için onaylı poz kataloğu gerekli.</strong>
+          <p>Bu projeye bağlı kullanılabilir gerçek katalog bulunamadı. Katalog ve kullanım izni tanımlanınca pozlar otomatik aranacak.</p>
+          <details><summary>Yalnızca deneme için sentetik katalog kullan</summary>
+            <button type="button" className="secondary" disabled={Boolean(busy)} onClick={seedDemoCatalog}>Test kataloğunu oluştur</button>
+          </details>
+        </div>}
+        {autoCandidates?.catalog.synthetic && <div className={styles.demoLabel} role="note">
+          DENEME KATALOĞU · Gösterilen poz kodları resmî fiyatlandırma için kullanılamaz.
+        </div>}
+        {error && <div role="alert" className="error">{error}
+          {catalogVersion && <button type="button" className="secondary" disabled={Boolean(busy)}
+            onClick={() => { automaticRunKeyRef.current = ""; findAutomaticCandidates(); }}>Yeniden dene</button>}
+        </div>}
+        <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
+          <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
-            <th scope="col"><input type="checkbox" aria-label="Bu sayfadaki tüm satırları seç"
-              checked={selection.rows.length > 0 && selected.length === selection.rows.length}
-              onChange={e => { invalidate(); setSelected(e.target.checked ? selection.rows.map(row => row.work_item_id) : []); }}/></th>
-            <th scope="col">Excel satırı</th><th scope="col">İmalat tarifi</th>
-            <th scope="col">Miktar / birim</th><th scope="col">Aday poz önerileri</th><th scope="col">İşlem</th>
+            <th scope="col">Excel satırı</th><th scope="col">İmalat</th>
+            <th scope="col">Otomatik bulunan poz</th><th scope="col">Durum</th><th scope="col">Ayrıntı</th>
           </tr></thead>
-          <tbody>{shownRows.map(row => {
-            const proposals = suggestionsFor(row.work_item_id);
-            const chosen = (candidates[row.work_item_id] ?? "").trim();
-            const needsManual = !proposals.length;
+          <tbody>{selection.rows.map(row => {
+            const proposed = suggestionsFor(row.work_item_id);
+            const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
+            const top = suitable ?? proposed[0] ?? null;
+            const shared = Boolean(top?.possible_shared_scope);
+            const blocked = Boolean(top && top.technical_status === "blocked");
+            const missing = Boolean(autoCandidates && !top);
+            const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
+            const needsReview = Boolean(top && (top.technical_status !== "compatible" ||
+              shared || top.similarity < 0.5 || row.input_review_required));
             return <tr key={row.work_item_id}>
-              <td><input type="checkbox" aria-label={`Excel satırı ${row.source_row} seç`}
-                checked={selected.includes(row.work_item_id)} onChange={e => toggle(row.work_item_id, e.target.checked)} /></td>
-              <td className={styles.rowNumber}>{row.source_row}{row.revision_id && <small>Revizyonlu</small>}</td>
-              <td className={styles.itemDescription}><strong>{row.effective_description}</strong>
-                {row.input_review_required && <small>Metraj girdisi kontrol edilmeli</small>}
+              <td className={styles.rowNumber}>{row.source_row}</td>
+              <td className={styles.simpleMatchDescription}>
+                <strong>{row.effective_description}</strong>
+                <small>{row.quantity ?? "Miktar belirtilmemiş"} {row.unit ?? ""}</small>
               </td>
-              <td className={styles.itemQuantity}>{row.quantity ?? "Miktar eksik"} <span>{row.unit ?? "Birim eksik"}</span></td>
-              <td className={styles.proposals}>
-                {proposals.length > 0 ? <div className={styles.candidateChips}>
-                  {proposals.map(item => <button type="button" key={item.code}
-                    aria-label={`${item.code} adayını Excel satırı ${row.source_row} için seç`}
-                    aria-pressed={chosen === item.code}
-                    className={`${styles.proposalChip} ${item.technical_status === "blocked" ? styles.proposalBlocked : item.technical_status === "review" || item.possible_shared_scope ? styles.proposalReview : styles.proposalCompatible}`}
-                    disabled={Boolean(busy)}
-                    onClick={() => candidate(row.work_item_id, item.code)}>
-                    <strong>{item.code}</strong><span title={item.description}>{item.description}</span>
-                    {item.possible_shared_scope && <em>Ortak kapsam? · Kontrol et</em>}
-                  </button>)}
-                </div> : <p className={styles.noSuggestion}>{autoCandidates ? "Uygun aday önerilemedi" : "Öneri araması bekleniyor"}</p>}
-                {chosen && <small className={styles.selectedCode}>Seçili aday: {chosen}</small>}
-                {needsManual && chosen && <small className={styles.manualCode}>Elle girilen aday · doğrulama gerekli</small>}
+              <td>
+                {top && !blocked ? <div className={styles.simpleMatchPosition}>
+                  <strong>{top.code}</strong><small>{top.description}</small>
+                  {selectedCode === top.code && <em>Ön seçildi · onaylanmadı</em>}
+                </div> :
+                  <span className={styles.simpleNoCandidate}>{blocked ? "Uygun aday doğrulanamadı" :
+                    missing ? "Aday bulunamadı" : "Katalog taraması bekleniyor"}</span>}
+              </td>
+              <td>
+                <span className={`${styles.simpleStatus} ${
+                  blocked ? styles.simpleStatusBlocked :
+                  missing || needsReview ? styles.simpleStatusReview :
+                  top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
+                  {blocked ? "Teknik uyumsuzluk" :
+                    shared ? "Çift fiyatlama riski" :
+                    missing ? "İnceleme gerekli" :
+                    needsReview ? "Teknik kontrol gerekli" :
+                    top ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
+                </span>
               </td>
               <td><button type="button" className={styles.showCandidates}
                 aria-expanded={candidateDetailId === row.work_item_id}
-                onClick={() => setCandidateDetailId(previous => previous === row.work_item_id ? null : row.work_item_id)}>
-                {candidateDetailId === row.work_item_id ? "Kapat" : proposals.length ? "Adayları gör" : "Poz seç"}
+                onClick={() => setCandidateDetailId(old => old === row.work_item_id ? null : row.work_item_id)}>
+                {candidateDetailId === row.work_item_id ? "Kapat" : "Detay"}
               </button></td>
             </tr>;
           })}</tbody>
         </table></div>
-        {shownRows.length === 0 && <p className={styles.emptyRows}>Bu filtrede satır bulunmuyor. Filtreyi değiştirebilirsin.</p>}
-        {expandedRow && <div className={styles.candidateDetail} id="candidate-detail">
-          <div className={styles.suggestionTop}><div>
-            <h3>Excel satırı {expandedRow.source_row} · Aday ayrıntısı</h3>
+        {expandedRow && <div className={styles.simpleMatchDetail}>
+          <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
             <p>{expandedRow.effective_description}</p></div>
-            <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button>
-          </div>
-          {suggestionsFor(expandedRow.work_item_id).map(item => <div key={item.code} className={styles.candidateDetailLine}>
-            <div><strong>{item.code} · {item.description}</strong><small>
-              {item.technical_status === "blocked" ? "Teknik çelişki bulundu" :
-                item.technical_status === "review" ? "Teknik doğrulama gerekli" : "Kontrol edilen özelliklerde çelişki yok; tam uygunluk onayı değil"}
-              {item.possible_shared_scope ? " · Başka satırla aynı kapsam olabilir, çift fiyatlama yapma." : ""}
-            </small>
-              {[...item.blockers, ...item.review_flags].length > 0 && <p className={styles.issues}>
-                {[...item.blockers, ...item.review_flags].map(value => label(value)).join(" · ")}
-              </p>}
-            </div>
-            <button type="button" disabled={Boolean(busy)} onClick={() => candidate(expandedRow.work_item_id, item.code)}>
-              {(candidates[expandedRow.work_item_id] ?? "") === item.code ? "Seçildi" : "Adayı seç"}
-            </button>
-          </div>)}
-          <label className={styles.manualEntry}>Gerekirse aday poz kodunu elle gir
-            <input maxLength={80} list="supported-positions" placeholder="Poz kodu gir"
-              disabled={Boolean(busy)} value={candidates[expandedRow.work_item_id] ?? ""}
-              onChange={e => candidate(expandedRow.work_item_id, e.target.value)} />
-          </label>
-          <p className="hint">Aday seçimi teknik onay değildir. Kanıtlı karşılaştırma için ilgili satırı işaretleyip incelemeyi başlat.</p>
+            <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
+          {suggestionsFor(expandedRow.work_item_id).length ? suggestionsFor(expandedRow.work_item_id).map(option =>
+            <div key={option.code} className={styles.candidateDetailLine}>
+              <div><strong>{option.code} · {option.description}</strong>
+                <small>{option.technical_status === "blocked" ? "Teknik çelişki" :
+                  option.technical_status === "review" ? "Teknik kontrol gerekli" : "İlk kontrol olumlu · mühendis onayı değil"}</small>
+                {option.possible_shared_scope && <small>Aynı poz başka satırda da önerilmiş olabilir. Çift maliyet hesabı yapılmamalı.</small>}
+                {[...option.blockers, ...option.review_flags].length > 0 &&
+                  <p className={styles.issues}>{[...option.blockers, ...option.review_flags].map(v => label(v)).join(" · ")}</p>}
+              </div>
+              <button type="button" disabled={Boolean(busy)}
+                onClick={() => candidate(expandedRow.work_item_id, option.code)}>
+                {(candidates[expandedRow.work_item_id] ?? "") === option.code ? "Aday seçildi" : "Adayı değiştir"}
+              </button>
+            </div>) : <p>Bu satır için katalogda aday bulunamadı. Poz veya teknik tarif ayrıca incelenmelidir.</p>}
+          <details><summary>Manuel poz kodu gir (gerekirse)</summary>
+            <label>Poz kodu<input maxLength={80} disabled={Boolean(busy)}
+              value={candidates[expandedRow.work_item_id] ?? ""} placeholder="Poz kodu"
+              onChange={e => candidate(expandedRow.work_item_id, e.target.value)} /></label>
+          </details>
+          <button type="button" disabled={Boolean(busy)} onClick={() => {
+            setSelected([expandedRow.work_item_id]);
+            setCandidateDetailId(null);
+          }}>Bu satırı teknik incelemeye hazırla</button>
         </div>}
+        {autoMessage && <p role="status" className={styles.simpleFootnote}>{autoMessage}</p>}
         <div className={styles.tableFooter}>
-          <span>Bu sayfada {selection.rows.length} metraj satırı · En fazla 20 kayıt gösterilir.</span>
+          <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
           <div className={styles.pager}>
             <button type="button" className="secondary" disabled={Boolean(busy) || offset === 0}
-              onClick={() => loadItems(importId, Math.max(0, offset - 20))}>← Önceki</button>
-            <span>Sayfa {Math.floor(offset / 20) + 1}</span>
+              onClick={() => loadItems(importId, Math.max(0,offset-20))}>← Önceki</button>
             <button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null}
-              onClick={() => loadItems(importId, selection.next_offset ?? 0)}>Sonraki →</button>
+              onClick={() => loadItems(importId,selection.next_offset ?? 0)}>Sonraki →</button>
           </div>
         </div>
-        <details className={styles.advancedReview}>
-          <summary>Gelişmiş işlemler · Elle veya toplu aday girişi</summary>
-          <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
-          <div className={styles.bulkFields}>
-            <label>
-              Toplu aday poz kodu
-              <input
-                type="text"
-                list="supported-positions"
-                maxLength={80}
-                placeholder="15.275.1111"
-                value={bulkCode}
-                disabled={Boolean(busy)}
-                onChange={e => setBulkCode(e.target.value)}
-              />
-            </label>
-            <label>
-              Uygulama kapsamı
-              <select
-                value={bulkMode}
-                disabled={Boolean(busy)}
-                onChange={e => setBulkMode(
-                  e.target.value === "replace" ? "replace" : "empty"
-                )}
-              >
-                <option value="empty">Yalnızca boş adayları doldur</option>
-                <option value="replace">Yalnızca mevcut adayları değiştir</option>
-              </select>
-            </label>
+        <details className={styles.helpCard}>
+          <summary>Teknik inceleme ve kanıtlar (isteğe bağlı)</summary>
+          <p>Bu listede pozlar otomatik önerilir. Seçilen poz mühendis tarafından ayrıca doğrulanmadan maliyete aktarılmaz.</p>
+          <p>Teknik inceleme mevcut pilotun desteklediği pozlarla sınırlıdır. Teknik kanıtlar desteklenmeyen pozlar için otomatik onay üretmez.</p>
+          <button type="button" disabled={Boolean(busy) || !selection.rows.length}
+            onClick={() => {
+              setSelected(selection.rows.map(row => row.work_item_id));
+            }}>Tüm satırları teknik incelemeye hazırla</button>
+          <div className={styles.primaryAction}>
+            <span>{selected.length} satır incelemeye hazır</span>
+            <button type="button" disabled={Boolean(busy) || selected.length === 0}
+              onClick={compare}>Teknik karşılaştırmayı aç →</button>
           </div>
-          <p role="status" aria-live="polite">
-            {selectedRows.length} satır seçili ·{" "}
-            <strong>{affectedRows.length} satır etkilenecek.</strong>
-          </p>
-          <button
-            type="button"
-            disabled={Boolean(busy) || !trimmedBulkCode ||
-              trimmedBulkCode.length > 80 || affectedRows.length === 0}
-            onClick={applyBulkCandidate}
-          >
-            Seçilen {affectedRows.length} satıra aday uygula
-          </button>
-          <p className={styles.testNote}>
-            Bu işlem yalnızca aday kodunu belirler.
-            Eski inceleme sonucu temizlenir.
-            Mühendislik onayı verilmez.
-          </p>
-        </div>
-          <datalist id="supported-positions"><option value="15.275.1111" /><option value="DEMO-ARKEMX-SIVA-01" /></datalist>
         </details>
-        <details className={styles.helpCard}><summary>Katalog / analiz özeti ve rehberli karar</summary>
-          <p>Öneriler seçilen kataloğun açıklamalarından gelir. Benzerlik puanı teknik uygunluk yüzdesi değildir. Bilinmeyen özellikler ayrıca kontrol edilir.</p>
-          <p>Teknik PDF karşılaştırması bu pilotta yalnızca desteklenen kodlar için kanıt üretebilir. Diğer adaylar kapsam dışı olarak görüntülenebilir.</p>
-          <p>Aynı poz birden fazla Excel satırında görünüyorsa bunları tek fiyat altında birleştirmeden önce imalat kapsamı ve yüzey doğrulanmalıdır.</p>
-        </details>
-        <div className={styles.primaryAction}>
-          <span>Seçilen satırların adaylarını teknik olarak karşılaştır.</span>
-          <button type="button" disabled={Boolean(busy) || selected.length === 0}
-            onClick={compare}>Seçilen {selected.length} satırı incele →</button>
-        </div>
       </section>}
       {report && <div className={styles.workbench}><section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. Güncel önizleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
         <div className={styles.bulkPanel}><label>İnceleme adı<input maxLength={120} value={recordTitle} disabled={Boolean(busy)} onChange={e => setRecordTitle(e.target.value)} placeholder="Örn. Sıva katmanları ilk inceleme" /></label><button type="button" disabled={Boolean(busy) || recordTitle.trim().length < 3} onClick={() => void saveReview()}>İncelemeyi kaydet</button><p className="hint">Sunucu sonucu yeniden doğrular ve yeni, değiştirilemez bir kayıt oluşturur. Mühendis kararı veya maliyet taslağı oluşturmaz.</p></div>
