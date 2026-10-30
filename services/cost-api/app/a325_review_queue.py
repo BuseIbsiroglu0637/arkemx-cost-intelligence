@@ -15,6 +15,10 @@ EXPLICIT_MISSING = {
     "METRAJ_INPUT_REVIEW_REQUIRED": "Metraj miktarı veya girilen bilgi",
     "THICKNESS_MM_UNVERIFIED": "Ürün kalınlığı",
     "JOINT_WIDTH_MM_UNVERIFIED": "Derz aralığı",
+    "PLASTER_LAYER_UNVERIFIED": "Sıva katmanı (kaba/ince)",
+    "PLASTER_BINDER_UNVERIFIED": "Sıva harcı türü",
+    "PLASTER_CEMENT_DOSAGE_UNVERIFIED": "Çimento dozajı",
+    "PLASTER_CEMENT_DOSAGE_AMBIGUOUS": "Çimento dozajı (belirsiz)",
 }
 
 

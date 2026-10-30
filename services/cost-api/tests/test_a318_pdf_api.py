@@ -178,5 +178,7 @@ def test_combined_plaster_warning_keeps_two_original_rows(client, auth, monkeypa
     assert rows[0]["related_excel_rows"] == [3]
     assert rows[1]["related_excel_rows"] == [2]
     assert all("birleşik" in row["review_summary"] for row in rows)
-    assert any("POSSIBLE_COMBINED_PLASTER_SCOPE" in row["suggestions"][0]["review_flags"]
-               for row in rows if row["suggestions"])
+    # One two-layer PDF poz cannot be offered as the payable item for
+    # either separately measured plaster stage.
+    assert all(not row["suggestions"] for row in rows)
+    assert all(row["rejected_candidate_count"] == 1 for row in rows)

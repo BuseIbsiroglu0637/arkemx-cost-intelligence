@@ -22,6 +22,7 @@ from .a3_batch_review import NO_STORE, _source, _source_view
 from .a318_pdf_engine import PdfPosition, read_positions, verified_price_audit
 from .a324_ceramic_features import ceramic_finish_conflict, ceramic_question
 from .a325_review_queue import classify_row
+from .a335_plaster_matching import plaster_stages
 from .a320_smart_matching import (
     enrich_technical,
     find_pdf_candidates,
@@ -346,8 +347,13 @@ def suggestions_from_pdf(
                 "price_audit": verified_price_audit(position),
                 "scope_excerpt": position.scope,
             })
+        expected_plaster_stage = plaster_stages(current.raw_description)
         scored.sort(key=lambda c: (
             {"compatible": 0, "review": 1, "blocked": 2}[c["technical_status"]],
+            # Do not undo A3.35's safe same-layer retrieval with a raw
+            # lexical re-sort; a generic plaster can share many words.
+            int(bool(expected_plaster_stage) and
+                plaster_stages(c["description"]) != expected_plaster_stage),
             -c["similarity"], c["code"],
         ))
         question = (
