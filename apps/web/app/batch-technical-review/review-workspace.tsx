@@ -454,6 +454,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
+        setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setSelected(prev => [...new Set([...prev, id])]);
         setSaveNotice(`${targetCode} inceleme için kaydedildi. Mühendis onayı verilmedi.`);
         automaticRunKeyRef.current = ""; // Read current triage from the server after saving.
