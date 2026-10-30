@@ -829,13 +829,14 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
             </div>
           )}
-          {triageFor(expandedRow.work_item_id)?.group === "needs_info" && (
-            <div className={styles.missingFacts} role="note">
-              <strong>Projeden doğrulanması gereken bilgiler</strong>
-              <span>{triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")}</span>
-              <small>Bu bilgiler metraj tarifinde yoksa mimari/teknik şartnameye bak. Poz seçmek eksik bilgiyi otomatik doğrulamaz.</small>
-            </div>
-          )}
+          <div className={styles.missingFacts} role="note">
+            <strong>Projeden doğrulanması gereken bilgiler</strong>
+            <span>{triageFor(expandedRow.work_item_id)?.missing_fields.length
+              ? triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")
+              : triageFor(expandedRow.work_item_id)?.reason ??
+                "Pozun uygulama ve fiyat kapsamı teknik belgeyle ayrıca incelenmeli."}</span>
+            <small>Metraj, şartname ve poz kapsamı karşılaştırılmadan teknik onay verilmez.</small>
+          </div>
           {(
             <details className={styles.projectEvidence}>
               <summary>Bilgiyi doğrula · Proje şartnamesi PDF</summary>
