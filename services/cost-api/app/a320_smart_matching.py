@@ -9,7 +9,7 @@ import re
 from decimal import Decimal
 
 from .excel import normalized
-from .matching import evaluate, family, find_candidates, similarity
+from .matching import dimensions, evaluate, family, find_candidates, similarity
 
 CONCRETE_CLASS = re.compile(r"(?<![a-z0-9])c\s*(\d{2})\s*/\s*(\d{2})(?!\d)")
 PAINT_WORD = re.compile(r"\bboya\w*|\bboyan\w*")
@@ -95,8 +95,10 @@ def find_pdf_candidates(item, positions) -> list[dict]:
     desc = item.raw_description
     cls = _concrete(desc)
     is_paint = _paint(desc)
-    if not cls and not is_paint:
+    is_ceramic = family(desc) == "seramik"
+    if not cls and not is_paint and not is_ceramic:
         return initial
+    source_dims, _ = dimensions(desc)
     keyed = {entry["position_id"]: entry for entry in initial}
     for position in positions:
         if position.id in keyed:
@@ -107,6 +109,14 @@ def find_pdf_candidates(item, positions) -> list[dict]:
             if family(position_desc) != "beton" or _concrete(position_desc) != cls:
                 continue
             if score < 0.08:
+                continue
+        elif is_ceramic:
+            if family(position_desc) != "seramik" or score < 0.10:
+                continue
+            position_dims, _ = dimensions(position_desc)
+            # Explicit opposing dimensions must never be presented as a likely
+            # match, even when the finish material and words are similar.
+            if source_dims and position_dims and source_dims != position_dims:
                 continue
         elif is_paint:
             if not _paint(position_desc) or score < 0.14:
@@ -125,11 +135,15 @@ def find_pdf_candidates(item, positions) -> list[dict]:
                 "warnings": ["LOW_LEXICAL_SIMILARITY"], "approvable": False,
             }
         keyed[position.id] = result
+    lookup = {position.id: position for position in positions}
     ordered = list(keyed.values())
     ordered.sort(key=lambda entry: (
-        -int(bool(cls) and _concrete(next(
-            p.description for p in positions if p.id == entry["position_id"]
-        )) == cls),
+        # Explicit matching ceramic dimensions win over generic "kaplama"
+        # descriptions. Still only candidates; not a technical approval.
+        -int(bool(is_ceramic and source_dims and
+                  dimensions(lookup[entry["position_id"]].description)[0] == source_dims)),
+        -int(bool(cls) and _concrete(
+            lookup[entry["position_id"]].description) == cls),
         -entry["similarity"], entry["position_id"],
     ))
     return ordered[:3]
