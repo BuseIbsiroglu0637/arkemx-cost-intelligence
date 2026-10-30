@@ -283,6 +283,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setPdfSource(data);
       setPdfFile(null);
       setPdfRightsConfirmed(false);
+      // Old source candidates must never survive an explicit PDF replacement.
+      setCandidates({});
+      setSelected([]);
+      setAutoCandidates(null);
+      setCandidateDetailId(null);
       setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
     }, "pdf-upload", { method: "POST", body: form });
   }
@@ -471,6 +476,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const countSuggested = selection?.rows.filter(row => suggestionsFor(row.work_item_id).some(item => item.technical_status !== 'blocked')).length ?? 0;
   const countMissing = autoCandidates ? (selection?.rows.length ?? 0) - countSuggested : 0;
   const expandedRow = selection?.rows.find(row => row.work_item_id === candidateDetailId);
+  const expandedSelectedCode = expandedRow ? (candidates[expandedRow.work_item_id] ?? "").trim() : "";
+  const expandedSuggestions = expandedRow
+    ? [...suggestionsFor(expandedRow.work_item_id)].sort((a, b) =>
+        Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode))
+    : [];
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
   const Container = projectScope ? "div" : "main";
   const Heading = projectScope ? "h2" : "h1";
@@ -599,33 +609,45 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const paired = Boolean(reviewRow?.related_excel_rows?.length);
             const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
             const top = suitable ?? proposed[0] ?? null;
-            const shared = Boolean(top?.possible_shared_scope);
-            const blocked = Boolean(top && top.technical_status === "blocked");
-            const missing = Boolean(autoCandidates && !top);
             const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
-            const gasbetonDetailsMissing = Boolean(top?.review_flags.some(flag =>
+            const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
+            // Once the user selects a code, show that choice rather than the original
+            // top lexical suggestion. A manually typed, unverified code stays unverified.
+            const manuallyEntered = Boolean(selectedCode && !selectedCandidate);
+            const visibleCandidate = selectedCode ? selectedCandidate : top;
+            const shared = Boolean(visibleCandidate?.possible_shared_scope);
+            const blocked = visibleCandidate?.technical_status === "blocked";
+            const missing = Boolean(autoCandidates && !visibleCandidate && !manuallyEntered);
+            const gasbetonDetailsMissing = Boolean(visibleCandidate?.review_flags.some(flag =>
               flag === "GAZBETON_STRENGTH_N_MM2_UNVERIFIED" ||
               flag === "GAZBETON_DENSITY_KG_M3_UNVERIFIED"));
-            const ambiguous = gasbetonDetailsMissing && proposed.filter(item => item.technical_status !== "blocked").length > 1;
-            const needsReview = Boolean(top && (top.technical_status !== "compatible" ||
-              shared || paired || top.similarity < 0.5 || row.input_review_required || gasbetonDetailsMissing));
+            const ambiguous = !selectedCode && gasbetonDetailsMissing &&
+              proposed.filter(item => item.technical_status !== "blocked").length > 1;
+            const needsReview = manuallyEntered || Boolean(visibleCandidate &&
+              (visibleCandidate.technical_status !== "compatible" ||
+              shared || paired || visibleCandidate.similarity < 0.5 ||
+              row.input_review_required || gasbetonDetailsMissing));
             return <tr key={row.work_item_id}>
               <td className={styles.simpleMatchDescription}>
                 <strong>{row.effective_description}</strong>
                 <small>Excel {row.source_row} · {row.quantity ?? "Miktar eksik"} {row.unit ?? ""}</small>
               </td>
               <td>
-                {top && !blocked ? <div className={styles.simpleMatchPosition}>
+                {manuallyEntered ? <div className={styles.simpleMatchPosition}>
+                  <strong>{selectedCode}</strong>
+                  <small>Elle girilen poz · PDF adayları arasında doğrulanmadı</small>
+                  <em role="status">İnceleme için seçildi · onaylanmadı</em>
+                </div> : visibleCandidate ? <div className={styles.simpleMatchPosition}>
                   {ambiguous ? <>
                     <strong>{proposed.filter(item => item.technical_status !== "blocked").length} olası poz</strong>
                     <small>Dayanım ve yoğunluk belirtilmediği için doğru kod kesinleştirilemez.</small>
                   </> : <>
-                    <strong>{top.code}</strong><small title={top.description}>{top.description}</small>
+                    <strong>{visibleCandidate.code}</strong>
+                    <small title={visibleCandidate.description}>{visibleCandidate.description}</small>
                   </>}
-                  {selectedCode === top.code && <em>Öneri · onaylanmadı</em>}
+                  {selectedCandidate && <em role="status">İnceleme için seçildi · onaylanmadı</em>}
                 </div> :
-                  <span className={styles.simpleNoCandidate}>{blocked ? "Uygun aday doğrulanamadı" :
-                    missing ? "Aday bulunamadı" : "Katalog taraması bekleniyor"}</span>}
+                  <span className={styles.simpleNoCandidate}>{missing ? "Aday bulunamadı" : "PDF taraması bekleniyor"}</span>}
               </td>
               <td>
                 <span className={`${styles.simpleStatus} ${
@@ -633,12 +655,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   missing || needsReview ? styles.simpleStatusReview :
                   top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
                   {blocked ? "Teknik uyumsuzluk" :
+                    manuallyEntered ? "Poz doğrulanmalı" :
                     paired ? "Birleşik iş kontrolü" :
                     shared ? "Çift fiyatlama riski" :
                     missing ? "İnceleme gerekli" :
                     gasbetonDetailsMissing ? "Teknik bilgi eksik" :
                     needsReview ? "Kontrol gerekli" :
-                    top ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
+                    visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
               </td>
               <td><button type="button" className={styles.showCandidates}
@@ -660,8 +683,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
             <p>{expandedRow.effective_description}</p></div>
             <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
-          {suggestionsFor(expandedRow.work_item_id).length ? <>
-            {suggestionsFor(expandedRow.work_item_id).slice(0,1).map(option =>
+          {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
+            Seçimin: <strong>{expandedSelectedCode}</strong> · Teknik onay verilmedi.
+            {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
+              <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
+          </div>}
+          {expandedSuggestions.length ? <>
+            {expandedSuggestions.slice(0,1).map(option =>
               <div key={option.code} className={styles.simplePrimaryCandidate}>
                 <div>
                   <strong>Olası poz: {option.code}</strong>
@@ -690,15 +718,15 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   {(candidates[expandedRow.work_item_id] ?? "") === option.code ? "Aday işaretlendi" : "Bu adayı işaretle"}
                 </button>
               </div>)}
-            {suggestionsFor(expandedRow.work_item_id).length > 1 && <details className={styles.otherCandidates}>
-              <summary>Diğer {suggestionsFor(expandedRow.work_item_id).length - 1} adayı göster</summary>
-              {suggestionsFor(expandedRow.work_item_id).slice(1).map(option =>
+            {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
+              <summary>Diğer {expandedSuggestions.length - 1} adayı göster</summary>
+              {expandedSuggestions.slice(1).map(option =>
                 <div key={option.code} className={styles.otherCandidateRow}>
                   <div><strong>{option.code}</strong> · {option.description}
                     <small>{option.technical_status === "blocked" ? "Teknik uyumsuzluk" : "Teknik inceleme gerekli"} · PDF sayfa {option.source_page ?? "—"}</small>
                   </div>
                   <button type="button" className="secondary" disabled={Boolean(busy)}
-                    onClick={() => candidate(expandedRow.work_item_id, option.code)}>Bu adayı seç</button>
+                    onClick={() => candidate(expandedRow.work_item_id, option.code)}>{expandedSelectedCode === option.code ? "Seçildi" : "Bu adayı seç"}</button>
                 </div>)}
             </details>}
           </> : <p>Bu satır için uygun poz doğrulanamadı. Teknik tarif veya poz ayrıca incelenmeli.</p>}
