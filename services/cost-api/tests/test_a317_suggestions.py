@@ -1,7 +1,11 @@
 """A3.17 candidate proposals: source rights, no writes, isolation, multiple lines."""
+from io import BytesIO
+
+from openpyxl import Workbook
+from sqlalchemy import select
+
 from app.database import get_db
 from app.models import MatchRun
-from sqlalchemy import select
 
 from test_api import xlsx_bytes
 
@@ -78,3 +82,27 @@ def test_suggestions_fail_closed_on_unknown_catalog(client, auth):
         params={"version_id": "00000000-0000-0000-0000-000000000001"},
     )
     assert response.status_code == 404
+
+
+def test_repeated_poz_candidate_warns_about_double_count(client, auth):
+    pid = client.post("/api/projects", json={"name": "Shared scope"}, headers=auth).json()["id"]
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["İmalat", "Miktar", "Birim"])
+    sheet.append(["60 x 60 porselen seramik zemin kaplaması", 12, "m2"])
+    sheet.append(["60 x 60 porselen seramik zemin kaplaması", 12, "m2"])
+    buf = BytesIO()
+    workbook.save(buf)
+    imp = client.post(f"/api/projects/{pid}/imports", headers=auth,
+                      files={"file": ("shared.xlsx", buf.getvalue())})
+    assert imp.status_code == 201, imp.text
+    vid = client.post("/api/m2/demo-catalog", headers=auth).json()["version_id"]
+    response = client.get(
+        f"/api/projects/{pid}/a317/imports/{imp.json()['id']}/suggestions",
+        headers=auth, params={"version_id": vid},
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    assert len(rows) == 2
+    assert rows[0]["suggestions"][0]["code"] == rows[1]["suggestions"][0]["code"]
+    assert all(row["suggestions"][0]["possible_shared_scope"] for row in rows)
