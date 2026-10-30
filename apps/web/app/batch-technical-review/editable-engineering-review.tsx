@@ -145,6 +145,12 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     // This component has a key tied to the current row and candidate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[projectId,importId,rowId,position.code]);
+  async function retry(){
+    if(busy)return;
+    setBusy(true);setError("");
+    try{await reload();}catch(e){setError(e instanceof Error?e.message:"Kaynak yeniden okunamadı.");}
+    finally{setBusy(false);}
+  }
   function change(index:number,field:keyof InputLine,value:string){
     setLines(old=>old.map((x,i)=>i===index?{...x,[field]:value}:x));
   }
@@ -220,6 +226,10 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
       <div className={styles.a330Edit}>
         <small>Girdileri ekleyebilir, değiştirebilir veya çıkarabilirsin. Kaydedilen her taslak geçmişte saklanır.</small>
         {busy&&<p role="status">Kaynaklar yükleniyor…</p>}
+        {!busy&&!data&&<div className={styles.a330Warning} role="alert">
+          <p>{error||"Analiz verileri yüklenemedi; kayıtlı poz ve PDF kaynağını kontrol et."}</p>
+          <button type="button" className="secondary" onClick={()=>void retry()}>Tekrar yükle</button>
+        </div>}
         {data?.latest_revision&&<p className={styles.a330Note}>
           {data.latest_revision.source_current ? "Analiz kayıtlı" : "Analizi yeniden kontrol et"} ·
           Sürüm {data.latest_revision.version} · Taslak tutar {data.latest_revision.proposed_amount} TL
@@ -256,7 +266,9 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     <details className={styles.a330Approval} open={reviewOpen}
       onToggle={e=>setReviewOpen(e.currentTarget.open)}>
       <summary>3 · Pilot kontrolü tamamla</summary>
-      {!data||!pilot ? <p>Teknik karar bilgisi yükleniyor veya kaynak okunamıyor.</p> : <>
+      {!data||!pilot ? <p role={error?"alert":"status"}>
+        {busy?"Teknik kontrol yükleniyor…":error||"Analiz kaynağı yüklenemedi. 2. adımda tekrar yükle."}
+      </p> : <>
         <p className={pilot.pilot_confirmed ? styles.a330Note : undefined}>
           <strong>Durum:</strong> {pilot.pilot_confirmed ? "Pilot kontrol tamam" :
             pilot.last_event && !pilot.last_event.source_current
