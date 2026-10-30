@@ -880,15 +880,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         </p>}
         {expandedRow && <div className={styles.simpleMatchDetail}>
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · {expandedRow.effective_description}</h3>
-            <p>Üç adımda pozunu kontrol et ve pilot incelemeyi tamamla.</p></div>
-            <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
+            <p>Pozu kontrol et → Analizi düzenle → Pilot kontrolü tamamla.</p></div></div>
           <div className={styles.simpleStepTitle}><span>1</span><strong>Pozu kontrol et</strong>
             <small>Poz bilgisi ve proje şartnamesini karşılaştır.</small></div>
           {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && !expandedProof && (
-            <div className={expandedProof ? styles.evidenceConfirmed : styles.reviewReason} role="note">
-              {expandedProof
-                ? "Excel tarifinde eksik olan temel özellikler proje şartnamesinden bulundu ve kayıtlı pozla ön karşılaştırmada uyumlu. Teknik kapsam ve mühendis onayı bekliyor."
-                : autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
+            <div className={styles.reviewReason} role="note">
+              {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
               {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
                 <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
             </div>
@@ -1031,7 +1028,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
                   <details>
                     <summary>PDF kanıtı ve analiz girdileri</summary>
-                    <p>Önce bu poz adayını kaydet. Kaydedildikten sonra analiz taslağındaki girdileri düzenleyebilir ve mühendis incelemesine gönderebilirsin.</p>
+                    <p>Önce bu pozu kaydet; ardından analizi düzenleyip pilot kontrolü tamamla.</p>
                     {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
                     {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
                       <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
