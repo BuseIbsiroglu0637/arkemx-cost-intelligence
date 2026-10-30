@@ -54,6 +54,28 @@ type DocumentEvidence = {
   additional_evidence_count?: number;
   engineering_approved: false; cost_allowed: false;
 };
+type EngineerHandoff = {
+  schema: "arkemx.a327.readiness.v1";
+  read_only: true;
+  approval_allowed: false;
+  engineering_approved: false;
+  cost_allowed: false;
+  import_id: string;
+  source_sha256: string | null;
+  document_state: string;
+  rows: {
+    work_item_id: string;
+    source_row: number;
+    description: string;
+    status: string;
+    reason: string;
+    checks: string[];
+    evidence_page: number | null;
+    saved_candidate: string | null;
+    engineering_approved: false;
+    cost_allowed: false;
+  }[];
+};
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
@@ -169,6 +191,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [specFile, setSpecFile] = useState<File | null>(null);
   const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
   const [specEvidence, setSpecEvidence] = useState<{ rowId: string; data: DocumentEvidence } | null>(null);
+  const [engineerHandoff, setEngineerHandoff] = useState<EngineerHandoff | null>(null);
   const [pdfRightsConfirmed, setPdfRightsConfirmed] = useState(false);
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
@@ -271,7 +294,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(0);
-    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setSpecFile(null); setProjectSpec(null); setSpecEvidence(null); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
+    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setSpecFile(null); setProjectSpec(null); setSpecEvidence(null); setEngineerHandoff(null); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -286,7 +309,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(pageOffset);
-    setAutoCandidates(null); setAutoMessage(""); setSpecEvidence(null); automaticRunKeyRef.current = "";
+    setAutoCandidates(null); setAutoMessage(""); setSpecEvidence(null); setEngineerHandoff(null); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (token) rememberImport(token, sourceProject, null);
@@ -317,6 +340,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setProjectSpec(data);
         setSpecFile(null);
         setSpecEvidence(null);
+        setEngineerHandoff(null);
         setSaveNotice("Proje şartnamesi bağlandı. 'Belgede ara' ile kanıtları kontrol et.");
       }, "spec-upload", { method: "POST", body: form },
     );
@@ -339,6 +363,25 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       }, "spec-evidence",
     );
   }
+  function loadEngineerHandoff() {
+    if (!projectId || !importId || !selection || busy) return;
+    setEngineerHandoff(null);
+    void request<EngineerHandoff>(
+      `/api/projects/${encodeURIComponent(projectId)}/a327/imports/${encodeURIComponent(importId)}/readiness?offset=${offset}&limit=20`,
+      data => {
+        if (data.schema !== "arkemx.a327.readiness.v1" ||
+            data.import_id !== importId || data.read_only !== true ||
+            data.approval_allowed !== false || data.engineering_approved !== false ||
+            data.cost_allowed !== false ||
+            data.rows.some(row => row.engineering_approved !== false || row.cost_allowed !== false) ||
+            data.rows.length !== selection.rows.length ||
+            data.rows.some((row, index) => row.work_item_id !== selection.rows[index].work_item_id)) {
+          throw new Error("Mühendis hazırlık listesi aktif Excel ile doğrulanamadı.");
+        }
+        setEngineerHandoff(data);
+      }, "engineer-readiness",
+    );
+  }
   function attachPdf() {
     if (!projectId || !pdfFile || !pdfRightsConfirmed || busy) return;
     const form = new FormData();
@@ -357,6 +400,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setSavedCandidates({});
       setSelected([]);
       setAutoCandidates(null);
+      setEngineerHandoff(null);
       setQueueView("attention");
       setCandidateDetailId(null);
       setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
@@ -456,6 +500,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
+        setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
         setSaveNotice(`${targetCode} inceleme için kaydedildi. Mühendis onayı verilmedi.`);
         automaticRunKeyRef.current = ""; // Read current triage from the server after saving.
@@ -762,6 +807,35 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             </button>
           </div>
         </section>}
+        {autoCandidates && <details className={styles.projectEvidence}>
+          <summary>A3.27 · Mühendis incelemesine hazırlık</summary>
+          <p>Belgede kanıtı bulunan imalatları ve kontrolü eksik kalanları tek listede gör. Bu işlem teknik onay vermez veya maliyet oluşturmaz.</p>
+          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={loadEngineerHandoff}>
+            {busy === "engineer-readiness" ? "Kontrol ediliyor…" : "Bu sayfadaki imalatları kontrol et"}
+          </button>
+          {engineerHandoff && <div className={styles.handoffSummary} role="status">
+            <strong>Belge–poz ön karşılaştırması: {engineerHandoff.rows.filter(r => r.status === "documented_for_review").length} satırda kanıt uyumlu · {engineerHandoff.rows.filter(r => r.status !== "documented_for_review").length} satır kontrol bekliyor</strong>
+            <div className={styles.handoffRows}>
+              {engineerHandoff.rows.map(row => <div key={row.work_item_id} className={styles.handoffRow}>
+                <div><strong>Satır {row.source_row} · {row.description}</strong>
+                  <small>{row.status === "documented_for_review" ? "Kaynaklı ön kontrol uyumlu · Mühendis incelemesi bekliyor" :
+                    row.status === "conflicting" ? "Çelişki var · İnceleme gerekli" :
+                    row.status === "manual_review" ? "Belge–poz otomatik kontrolü henüz desteklenmiyor" :
+                    row.status === "needs_candidate" ? "Kaydedilmiş poz bekleniyor" :
+                    row.status === "stale_candidate" ? "Poz veya PDF kaynağı güncellenmeli" :
+                    row.status === "input_review" ? "Excel girdisi kontrol edilmeli" :
+                    "Teknik belge kanıtı bekleniyor"}</small>
+                </div>
+                <p>{row.reason}</p>
+                <small>Kontrol listesi: {row.checks.join(" · ")}
+                  {row.evidence_page ? ` · PDF sayfa ${row.evidence_page}` : ""}
+                  {row.saved_candidate ? ` · Poz ${row.saved_candidate}` : ""}
+                </small>
+              </div>)}
+            </div>
+            <small>Tüm satırlar mühendis kararına tabidir. Eksik bilgiler tahmin edilmez; onay veya fiyat hesabı yapılmadı.</small>
+          </div>}
+        </details>}
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>

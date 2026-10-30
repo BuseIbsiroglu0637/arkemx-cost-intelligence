@@ -1,0 +1,173 @@
+"""A3.27.1: read-only evidence handoff queue, never engineering approval.
+
+Only explicit, current project PDF evidence and the saved analysis-PDF candidate
+can support the "documented_for_review" state. All statuses still require a
+qualified human engineering decision in a separate authorized workflow.
+"""
+from __future__ import annotations
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .a3_batch_review import NO_STORE, _source
+from .a318_pdf_api import _read as read_analysis_pdf
+from .a326_project_evidence import (
+    _block_matches, _evidence_status, _file_path, _position_consistency,
+    _read_file, _scan,
+)
+from .database import get_db
+from .matching import family
+from .models import PdfCandidateSelection, User, WorkItem
+from .revisions import effective_item
+from .security import current_user
+
+router = APIRouter(
+    prefix="/api/projects/{project_id}/a327",
+    tags=["A3.27 Engineer Handoff (read-only)"],
+)
+
+# A checklist is NOT a claim that these attributes are absent. It lists
+# what a qualified reviewer must verify from the project and official poz.
+CHECKS = {
+    "siva": ["Katmanların ayrı kalınlıkları", "Harç/çimento dozajı", "İmalat kapsamı ve mükerrer fiyat riski"],
+    "beton": ["Beton sınıfı", "Uygulama yeri ve miktar/birim", "Poz kapsamı ve kaynak belge"],
+    "boya": ["Boya türü", "Kat sayısı ve yüzey hazırlığı", "Uygulama kapsamı"],
+    "seramik": ["Seramik türü ve yüzeyi", "Derz genişliği", "Karo kalınlığı ve uygulama detayları"],
+    "gazbeton": ["Duvar kalınlığı", "Dayanım ve yoğunluk", "Uygulama/işçilik kapsamı"],
+}
+SUPPORTED = frozenset(("gazbeton", "seramik"))
+
+
+def _row_status(
+    current, item: WorkItem, blocks, document_state: str, saved, positions, source_sha
+) -> dict:
+    description = current.raw_description
+    kind = family(description)
+    required = CHECKS.get(kind, ["Proje malzemesi ve teknik tarifi", "Poz kapsamı ve ölçü birimi"])
+    row = {
+        "work_item_id": item.id,
+        "source_row": item.source_row,
+        "description": description,
+        "revision_id": current.revision_id,
+        "status": "manual_review",
+        "reason": "Bu imalatta otomatik belge karşılaştırması henüz desteklenmiyor.",
+        "checks": required,
+        "evidence_page": None,
+        "saved_candidate": None,
+        "document_sha256": source_sha,
+        "engineering_approved": False,
+        "cost_allowed": False,
+    }
+    if current.quantity is None or not current.normalized_unit or current.review_required:
+        row.update(status="input_review", reason="Metraj miktarı, birimi veya giriş açıklaması kontrol edilmeli.")
+        return row
+    if kind not in SUPPORTED:
+        return row
+    if document_state != "available":
+        row.update(
+            status="needs_document",
+            reason="Proje teknik şartnamesi bulunamadı veya PDF metni okunamadı.",
+        )
+        return row
+    matches = _block_matches(description, blocks)
+    status = _evidence_status(matches)
+    if status == "conflicting":
+        row.update(
+            status="conflicting",
+            reason="Şartnamede çelişen teknik bilgiler var; mühendis incelemesi gerekiyor.",
+            evidence_page=matches[0]["page"],
+        )
+        return row
+    if status != "found_for_review":
+        row.update(status="needs_document", reason="Bu satır için şartnamede karşılaştırılabilir bilgi bulunamadı.")
+        return row
+    row["evidence_page"] = matches[0]["page"]
+    if saved is None:
+        row.update(status="needs_candidate", reason="Şartname kanıtı var fakat henüz kaydedilmiş poz yok.")
+        return row
+    if not positions or saved.pdf_sha256 != positions[0] or saved.revision_id != current.revision_id:
+        row.update(status="stale_candidate", reason="Pozun kaynak PDF'si veya metraj revizyonu değişmiş.")
+        return row
+    position = next((p for p in positions[1] if p.id == saved.position_code), None)
+    if position is None:
+        row.update(status="stale_candidate", reason="Kaydedilmiş poz güncel analiz PDF'sinde bulunmuyor.")
+        return row
+    row["saved_candidate"] = position.id
+    comparison = _position_consistency(matches, position.description)
+    if comparison == "conflicts":
+        row.update(status="conflicting", reason="Şartnamedeki teknik özellikler kayıtlı pozla uyuşmuyor.")
+    elif comparison == "matches_examined_facts":
+        row.update(
+            status="documented_for_review",
+            reason="İncelenen teknik özellikler aynı. Diğer şartlar ve mühendis onayı hâlâ gerekli.",
+        )
+    else:
+        row.update(status="needs_document", reason="Pozun karşılaştırılması için yeterli açık teknik özellik bulunamadı.")
+    return row
+
+
+@router.get("/imports/{import_id}/readiness")
+def engineering_readiness(
+    project_id: UUID,
+    import_id: UUID,
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=20)] = 20,
+):
+    batch = _source(db, user, str(project_id), str(import_id))
+    items = db.scalars(
+        select(WorkItem).where(WorkItem.import_id == batch.id)
+        .order_by(WorkItem.source_row, WorkItem.id)
+        .offset(offset).limit(limit + 1)
+    ).all()
+    visible = items[:limit]
+    selections = (
+        db.scalars(select(PdfCandidateSelection).where(
+            PdfCandidateSelection.organization_id == user.organization_id,
+            PdfCandidateSelection.project_id == batch.project_id,
+            PdfCandidateSelection.import_id == batch.id,
+            PdfCandidateSelection.work_item_id.in_([item.id for item in visible]),
+        )).all() if visible else []
+    )
+    saved_by_item = {row.work_item_id: row for row in selections}
+
+    doc = _read_file(_file_path(user, project_id))
+    blocks = []
+    source_sha = None
+    document_state = "missing"
+    if doc:
+        raw, source_sha = doc
+        try:
+            blocks, _ = _scan(raw)
+            document_state = "available" if blocks else "unreadable"
+        except ValueError:
+            document_state = "unreadable"
+    # Only read the price/analysis catalog when an active selection needs it.
+    catalog = read_analysis_pdf(user) if selections and document_state == "available" else None
+    rows = [
+        _row_status(
+            effective_item(db, item), item, blocks, document_state,
+            saved_by_item.get(item.id), catalog, source_sha,
+        )
+        for item in visible
+    ]
+    response.headers.update(NO_STORE)
+    return {
+        "schema": "arkemx.a327.readiness.v1",
+        "read_only": True,
+        "approval_allowed": False,
+        "engineering_approved": False,
+        "cost_allowed": False,
+        "project_id": str(project_id),
+        "import_id": batch.id,
+        "source_sha256": source_sha,
+        "document_state": document_state,
+        "rows": rows,
+        "next_offset": offset + limit if len(items) > limit else None,
+    }
