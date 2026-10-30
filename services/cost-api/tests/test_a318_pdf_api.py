@@ -1,5 +1,8 @@
 """A3.18 local PDF: authorization, tenant isolation, source evidence, no automatic pricing."""
 from decimal import Decimal
+from io import BytesIO
+
+from openpyxl import Workbook
 
 from app import a318_pdf_api
 from app.a318_pdf_engine import PdfPosition, number
@@ -112,3 +115,41 @@ def test_tr_decimal_parser_is_explicit():
     assert number("1.706,83") == Decimal("1706.83")
     assert number("-0,05") == Decimal("-0.05")
     assert number("unknown") is None
+
+
+def test_combined_plaster_warning_keeps_two_original_rows(client, auth, monkeypatch):
+    monkeypatch.setattr(a318_pdf_api, "_parse", lambda *args: (
+        PdfPosition(
+            id="15.999.2751", description="20 mm kaba sıva ve 8 mm ince sıva yapılması",
+            unit="m²", price=Decimal("700"), price_verified=True,
+            pdf_page=40, ingredients=(), scope="İki katmanlı sıva analizi",
+        ),
+    ))
+    pid = client.post("/api/projects", headers=auth,
+                      json={"name": "Plaster pair"}).json()["id"]
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["İmalat", "Miktar", "Birim"])
+    sheet.append(["20 mm çimento esaslı kaba sıva", 168.5, "m²"])
+    sheet.append(["8 mm ince sıva uygulaması", 168.5, "m²"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    imp = client.post(f"/api/projects/{pid}/imports", headers=auth,
+                      files={"file": ("plaster.xlsx", buffer.getvalue())})
+    assert imp.status_code == 201, imp.text
+    assert upload(client, pid, auth).status_code == 201
+    response = client.get(
+        f"/api/projects/{pid}/a318/imports/{imp.json()['id']}/suggestions",
+        headers=auth,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["cost_allowed"] is False
+    assert data["approval_allowed"] is False
+    rows = data["rows"]
+    assert len(rows) == 2
+    assert rows[0]["related_excel_rows"] == [3]
+    assert rows[1]["related_excel_rows"] == [2]
+    assert all("birleşik" in row["review_summary"] for row in rows)
+    assert any("POSSIBLE_COMBINED_PLASTER_SCOPE" in row["suggestions"][0]["review_flags"]
+               for row in rows if row["suggestions"])
