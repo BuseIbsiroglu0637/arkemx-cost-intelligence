@@ -7,7 +7,7 @@ import re
 from .matching import similarity
 from .excel import normalized
 
-VERSION = "technical-rules-v0.1"
+VERSION = "technical-rules-v0.2"
 MATERIAL_ALIASES = {
     "gazbeton": (r"\bgazbeton\b",),
     "seramik": (r"\bseramik\b", r"\bporselen\b"),
@@ -36,6 +36,10 @@ METHODS = {
 ENVIRONMENTS = {"ic": (r"\bic\b",), "dis": (r"\bdis\b", r"\bcephe\b")}
 THICKNESS = re.compile(r"\b(\d{1,4}(?:[.,]\d+)?)\s*(mm|cm)\b")
 DIMENSIONS = re.compile(r"\b(\d{1,4})\s*x\s*(\d{1,4})\b")
+# Parse explicit masonry properties in either Unicode- or ASCII-superscript units.
+# Do not infer a default density/strength when the metraj omits them.
+GAZBETON_STRENGTH = re.compile(r"(?<!\w)(\d+(?:[.,]\d+)?)\s*n\s*/\s*mm(?:2|²)(?!\w)")
+GAZBETON_DENSITY = re.compile(r"(?<!\w)(\d+(?:[.,]\d+)?)\s*kg\s*/\s*m(?:3|³)(?!\w)")
 
 
 def _attribute(text: str, dictionary: dict[str, tuple[str, ...]]) -> str | None:
@@ -57,6 +61,9 @@ def extract(description: str, unit: str | None = None) -> dict:
         value = float(match.group(1).replace(",", "."))
         thickness_mm = round(value * (10 if match.group(2) == "cm" else 1), 2)
     sizes = {tuple(sorted((int(a), int(b)))) for a, b in DIMENSIONS.findall(text)}
+    # Only expose gazbeton-specific attributes for gazbeton, not concrete or other works.
+    strength = GAZBETON_STRENGTH.search(text) if mat == "gazbeton" else None
+    density = GAZBETON_DENSITY.search(text) if mat == "gazbeton" else None
     return {
         "material": mat,
         "surface": surface,
@@ -65,6 +72,8 @@ def extract(description: str, unit: str | None = None) -> dict:
         "thickness_mm": thickness_mm,
         "dimensions": sorted([list(pair) for pair in sizes]),
         "unit": unit,
+        "gazbeton_strength_n_mm2": float(strength.group(1).replace(",", ".")) if strength else None,
+        "gazbeton_density_kg_m3": float(density.group(1).replace(",", ".")) if density else None,
     }
 
 
@@ -86,6 +95,8 @@ def compare(description: str, unit: str | None,
         ("surface", "Uygulama yüzeyi", False),
         ("method", "Uygulama yöntemi", False),
         ("environment", "İç/dış ortam", False),
+        ("gazbeton_strength_n_mm2", "Gazbeton dayanımı (N/mm²)", False),
+        ("gazbeton_density_kg_m3", "Gazbeton yoğunluğu (kg/m³)", False),
     ):
         a, b = left[key], right[key]
         missing_a = a is None or a == []
