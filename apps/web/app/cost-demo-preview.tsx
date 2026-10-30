@@ -102,13 +102,17 @@ function preview(row:WorkRow,candidate:Suggestion|undefined,pilot:PilotRow|undef
     result.reason="Metraj bilgisi eksik";return result;
   }
   if(option.unit!==row.unit){result.reason="Ölçü birimleri farklı";return result;}
+  if(!option.source_price_verified||!option.source_price){
+    result.reason="PDF fiyatı doğrulanamadı";return result;
+  }
+  // Display known source price even for pending pilot rows, but NEVER
+  // compute their amount or include them in the DEMO subtotal.
+  result.sourcePrice=option.source_price;
+  result.sourceDate=option.pdf_edition_date;
   if(!pilot?.pilot_confirmed||pilot.pilot_status!=="confirmed"||
     pilot.saved_candidate!==selected.code){
     result.reason=pilot?.pilot_status==="stale"?"Pilot kontrol güncelliğini kaybetti":"Pilot kontrol bekliyor";
     return result;
-  }
-  if(!option.source_price_verified||!option.source_price){
-    result.reason="PDF fiyatı doğrulanamadı";return result;
   }
   const cents=amount(row.quantity,option.source_price);
   if(cents===null){result.reason="Miktar veya fiyat okunamadı";return result;}
@@ -172,7 +176,7 @@ export default function CostDemoPreview({token,project,onReview}:{
       </p>}
       {rows.length===0?<p className="hint">Bu Excel'de gösterilecek imalat yok.</p>:
       <div className="table-scroll"><table className="cost-demo-table">
-        <thead><tr><th>İmalat / poz</th><th>Miktar</th><th>PDF birim fiyatı</th>
+        <thead><tr><th>İmalat / poz</th><th>Miktar</th><th>PDF birim fiyatı (bilgi)</th>
           <th>DEMO tutar</th><th>Durum</th></tr></thead>
         <tbody>{rows.map(item=><tr key={item.row.work_item_id}>
           <td><strong>{item.row.effective_description}</strong>
