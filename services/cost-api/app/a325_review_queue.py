@@ -89,6 +89,12 @@ def classify_row(
             "group": "needs_review", "reason": "Pozun teknik kapsamı ayrıca kontrol edilmeli",
             "missing_fields": [], "engineering_approved": False, "cost_allowed": False,
         }
+    if any(candidate.get("code") != saved_code and
+           candidate.get("technical_status") != "blocked" for candidate in candidates):
+        return {
+            "group": "needs_review", "reason": "Alternatif pozlar arasında teknik seçim kontrol edilmeli",
+            "missing_fields": [], "engineering_approved": False, "cost_allowed": False,
+        }
     if not selected.get("source_price_verified"):
         return {
             "group": "needs_review", "reason": "Kaynak fiyat doğrulaması eksik",
