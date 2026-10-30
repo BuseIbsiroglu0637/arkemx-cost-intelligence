@@ -18,6 +18,7 @@ from .a3_review_assessments import source_row
 from .a3_review_records import owned_record, view
 from .database import get_db
 from .excel import normalize_unit
+from .m2 import DEMO_INSTITUTION, DEMO_SCOPE
 from .m42 import _context, candidate_detail
 from .models import (
     CatalogPosition,
@@ -27,6 +28,13 @@ from .models import (
     User,
 )
 from .security import current_user
+from .technical_analysis.owned_synthetic_source import (
+    CODE,
+    VERSION,
+    YEAR,
+    fixture_sha256,
+    read_fixture,
+)
 from .technical_analysis.pdf_analysis_source import read_analysis
 
 router = APIRouter(prefix="/api/projects/{project_id}/a3/reviews/{record_id}",
@@ -64,7 +72,16 @@ def inspect_link(project_id: UUID, record_id: UUID, work_item_id: UUID, response
 
     check("A3_REVIEW_CURRENT", saved["currentness"]["status"] == "unchanged", identity=True)
     check("A3_FEATURES_MATCH", item["technical_status"] == "checked_features_match")
-    check("A3_PRICE_SOURCE_VERIFIED", item["price_source_status"] == "verified")
+    synthetic = item["candidate_code"] == CODE
+    result["source_kind"] = "synthetic_owned" if synthetic else "analysis_pdf"
+    result["source_verification_status"] = item.get("source_verification_status", item["price_source_status"])
+    result["source_rights_status"] = item.get("source_rights_status", "not_assessed")
+    if synthetic:
+        check("A3_SYNTHETIC_SOURCE_VERIFIED", item.get("source_verification_status") == "verified" and
+              (item.get("technical_source") or {}).get("sha256") == fixture_sha256(), identity=True)
+        check("SYNTHETIC_PRICE_ABSENT", item["source_price"] is None and item["price_source_status"] == "not_applicable")
+    else:
+        check("A3_PRICE_SOURCE_VERIFIED", item["price_source_status"] == "verified")
     check("CANDIDATE_SELECTED", bool(item["candidate_code"]), identity=True)
     context = _context(db, user, str(project_id))
     check("M4_RUN_FOUND", context is not None, identity=True)
@@ -73,6 +90,11 @@ def inspect_link(project_id: UUID, record_id: UUID, work_item_id: UUID, response
     run, version, source, rights_active, outdated = context
     check("M4_IMPORT_MATCH", run.import_id == record.import_id, identity=True)
     check("M4_CATALOG_RIGHTS_ACTIVE", rights_active)
+    result["catalog_usage_status"] = "active_for_internal_matching" if rights_active else "not_active"
+    if synthetic:
+        check("SYNTHETIC_CATALOG_DECLARED", source.institution == DEMO_INSTITUTION and
+              source.permission_scope == DEMO_SCOPE and version.period == VERSION and
+              version.sha256 == fixture_sha256(), identity=True)
     check("M4_IMPORT_CURRENT", not outdated)
     matches = db.execute(select(MatchCandidate, CatalogPosition).join(
         CatalogPosition, CatalogPosition.id == MatchCandidate.position_id).where(
@@ -106,24 +128,28 @@ def inspect_link(project_id: UUID, record_id: UUID, work_item_id: UUID, response
     # Same code is insufficient: require the verified PDF's full technical text.
     analysis = None
     try:
-        analysis = read_analysis(os.environ.get("ARKEMX_ANALYSIS_PDF", ""))
-        price = item["source_price"] or {}
-        if (analysis["source"]["sha256"] != price["source"]["sha256"] or
+        analysis = read_fixture() if synthetic else read_analysis(os.environ.get("ARKEMX_ANALYSIS_PDF", ""))
+        expected_sha = (item.get("technical_source") or {}).get("sha256") if synthetic else (item["source_price"] or {}).get("source", {}).get("sha256")
+        if (analysis["source"]["sha256"] != expected_sha or
             analysis["position_code"] != item["candidate_code"] or
             analysis["approval_allowed"] is not False or analysis["read_only"] is not True):
             analysis = None
     except (OSError, ValueError, RuntimeError, KeyError, TypeError):
         analysis = None
-    check("PDF_SOURCE_REVALIDATED", analysis is not None, identity=True)
+    check("SYNTHETIC_SOURCE_REVALIDATED" if synthetic else "PDF_SOURCE_REVALIDATED", analysis is not None, identity=True)
     if analysis:
-        check("CATALOG_PDF_TEXT_MATCH", position.description == analysis["technical_description"]["quote"], identity=True)
+        check("CATALOG_SYNTHETIC_TEXT_MATCH" if synthetic else "CATALOG_PDF_TEXT_MATCH", position.description == analysis["technical_description"]["quote"], identity=True)
         unit, issues = normalize_unit(position.unit)
-        check("CATALOG_PDF_UNIT_MATCH", not issues and unit == analysis["unit"], identity=True)
-        try:
-            source_year = date.fromisoformat(analysis["source"]["price_date"]).year
-        except (ValueError, KeyError, TypeError):
-            source_year = None
-        check("CATALOG_PDF_YEAR_MATCH", source_year == version.year, identity=True)
+        check("CATALOG_SYNTHETIC_UNIT_MATCH" if synthetic else "CATALOG_PDF_UNIT_MATCH", not issues and unit == analysis["unit"], identity=True)
+        if synthetic:
+            check("SYNTHETIC_PRICE_ABSENT_IN_CATALOG", position.price is None)
+            check("SYNTHETIC_VERSION_YEAR_MATCH", version.year == YEAR, identity=True)
+        else:
+            try:
+                source_year = date.fromisoformat(analysis["source"]["price_date"]).year
+            except (ValueError, KeyError, TypeError):
+                source_year = None
+            check("CATALOG_PDF_YEAR_MATCH", source_year == version.year, identity=True)
     check("M4_EVIDENCE_CURRENT", detail["stale"] is False)
     check("M4_EXISTING_GATES_PASS", detail["can_approve"] is True)
     decision = db.scalar(select(MatchDecision).where(MatchDecision.candidate_id == candidate.id)

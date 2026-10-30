@@ -31,6 +31,11 @@ from .models import (
 )
 from .revisions import effective_item
 from .security import current_user
+from .technical_analysis.owned_synthetic_source import (
+    CODE,
+    fixture_identity,
+    fixture_sha256,
+)
 
 router = APIRouter(prefix="/api/projects/{project_id}/a3", tags=["A3 Saved Reviews"])
 
@@ -46,7 +51,7 @@ def digest(value: object) -> str:
 def engine_digest() -> str:
     base = Path(__file__).parent / "technical_analysis"
     names = ("layers.py", "comparator.py", "critical_attributes.py", "layer_dosage.py",
-             "batch_technical_review.py", "support_registry.py", "pdf_analysis_source.py")
+             "batch_technical_review.py", "support_registry.py", "pdf_analysis_source.py", "owned_synthetic_source.py")
     h = hashlib.sha256(b"arkemx.saved_review.v1")
     for name in names:
         h.update(name.encode())
@@ -141,8 +146,18 @@ def view(row: TechnicalReviewRecord, db: Session) -> dict:
             changed.append("ENGINE_CHANGED")
     except OSError:
         unknown.append("ENGINE_UNVERIFIED")
-    hashes = {item["source_price"]["source"]["sha256"] for item in report["rows"] if item["source_price"]}
-    if len(hashes) == 1:
+    real_rows = []
+    for item in report["rows"]:
+        if item["candidate_code"] == CODE:
+            technical = item.get("technical_source") or {}
+            current = fixture_identity()
+            if (technical.get("kind") != "synthetic_owned" or technical.get("sha256") != fixture_sha256()
+                    or technical.get("description") != current["description"] or technical.get("unit") != current["unit"]):
+                changed.append("SYNTHETIC_SOURCE_CHANGED")
+        else:
+            real_rows.append(item)
+    hashes = {item["source_price"]["source"]["sha256"] for item in real_rows if item["source_price"]}
+    if real_rows and len(hashes) == 1:
         try:
             h = hashlib.sha256()
             with Path(os.environ.get("ARKEMX_ANALYSIS_PDF", "")).open("rb") as stream:
@@ -152,7 +167,7 @@ def view(row: TechnicalReviewRecord, db: Session) -> dict:
                 changed.append("PDF_CHANGED")
         except (OSError, ValueError):
             unknown.append("PDF_UNVERIFIED")
-    else:
+    elif real_rows:
         unknown.append("PDF_UNVERIFIED")
     return {
         "schema": "arkemx.saved_review.v1", "read_only": True, "approval_allowed": False,

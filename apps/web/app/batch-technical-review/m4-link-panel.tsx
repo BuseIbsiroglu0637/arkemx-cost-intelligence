@@ -4,9 +4,17 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 type Candidate = { run_id: string; candidate_id: string; position_id: string; code: string; catalog_version_id: string; catalog_year: number; catalog_period: string; catalog_institution: string; evidence_sha256: string | null; evidence_status: string | null; existing_gate_can_approve: boolean; latest_decision: string | null; latest_assessment: string | null };
-type Result = { schema: string; read_only: boolean; approval_allowed: boolean; engineering_approval: boolean; record_id: string; work_item_id: string; snapshot_sha256: string; candidate_code: string | null; link_status: string; ready_for_m4_review: boolean; flags: string[]; checks: { code: string; status: string }[]; m4_candidate: Candidate | null };
+type Result = { source_kind?: string; source_verification_status?: string; source_rights_status?: string; catalog_usage_status?: string; schema: string; read_only: boolean; approval_allowed: boolean; engineering_approval: boolean; record_id: string; work_item_id: string; snapshot_sha256: string; candidate_code: string | null; link_status: string; ready_for_m4_review: boolean; flags: string[]; checks: { code: string; status: string }[]; m4_candidate: Candidate | null };
 type Props = { api: string; projectId: string; recordId: string; itemId: string; snapshot: string; candidate: string | null; disabled: boolean; onExpired: () => void };
 const checks: Record<string, string> = {
+  A3_SYNTHETIC_SOURCE_VERIFIED: "ARKEMX test tarifinin kimliği doğrulanmalı.",
+  SYNTHETIC_PRICE_ABSENT: "Sentetik teknik inceleme fiyat içermemeli.",
+  SYNTHETIC_CATALOG_DECLARED: "Katalog sabit ARKEMX test alanına ve doğru sürüme ait olmalı.",
+  SYNTHETIC_SOURCE_REVALIDATED: "Sabit sentetik kaynak yeniden doğrulanmalı.",
+  CATALOG_SYNTHETIC_TEXT_MATCH: "Katalog tarifi sabit ARKEMX test tarifiyle eşleşmeli.",
+  CATALOG_SYNTHETIC_UNIT_MATCH: "Sentetik tarifin birimi eşleşmeli.",
+  SYNTHETIC_PRICE_ABSENT_IN_CATALOG: "Bu teknik test kataloğunda fiyat bulunmamalı.",
+  SYNTHETIC_VERSION_YEAR_MATCH: "Sentetik katalog sürümü sabit pilot yılıyla eşleşmeli.",
   A3_REVIEW_CURRENT: "Kayıtlı A3 incelemesi güncel olmalı.", A3_FEATURES_MATCH: "A3'te kontrol edilen özellikler eşleşmeli.",
   A3_PRICE_SOURCE_VERIFIED: "A3 fiyat kaynağı doğrulanmış olmalı.", CANDIDATE_SELECTED: "İncelenecek poz adayı seçilmiş olmalı.",
   M4_RUN_FOUND: "Bu proje için M4.1 veya M4.3 kanıtlı eşleştirme çalışması bulunmalı.", M4_IMPORT_MATCH: "M4 çalışması aynı Excel aktarımına ait olmalı.",
@@ -52,6 +60,8 @@ export default function M4LinkPanel({ api, projectId, recordId, itemId, snapshot
     <button type="button" className="secondary" disabled={busy || disabled} onClick={() => void inspect()}>{busy ? "Bağlantı kontrol ediliyor…" : "M4 aday bağlantısını kontrol et"}</button>
     {error && <p className="error" role="alert">{error}</p>}
     {result && <>
+      <p><strong>Kaynak türü:</strong> {result.source_kind === "synthetic_owned" ? "ARKEMX sentetik test tarifi · resmî fiyat yok" : "Gerçek PDF analizi"}</p>
+      <p><strong>Katalog kullanım kontrolü:</strong> {result.catalog_usage_status === "active_for_internal_matching" ? "Mevcut katalog kurallarına göre iç eşleştirmeye açık." : "Bu bağlantı kontrolünde kullanım izni doğrulanmadı."} Bu durum mühendis onayı değildir.</p>
       <p role="status"><strong>{result.link_status === "linked" ? "Aynı satır, poz ve teknik tarif bağlantısı doğrulandı." : "A3 kaydı ile M4 adayı arasındaki bağlantı henüz doğrulanamadı."}</strong></p>
       <p>{result.ready_for_m4_review ? "Kontrol anında incelemeye geçiş koşulları sağlandı. Karar sırasında tekrar doğrulanması gerekir." : "Mühendis kararına geçiş için aşağıdaki eksikler giderilmeli."}</p>
       {result.flags.length > 0 && <ul>{result.flags.map(flag => <li key={flag}>{checks[flag] ?? flag}</li>)}</ul>}
