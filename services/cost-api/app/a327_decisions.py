@@ -36,7 +36,7 @@ router = APIRouter(
 class HandoffRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["request_information", "reject_candidate", "submit_for_engineering_review"]
-    reason: str = Field(min_length=10, max_length=1000)
+    reason: str = Field(default="", max_length=1000)
     expected_source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_previous_id: UUID | None
     request_key: UUID
@@ -45,10 +45,7 @@ class HandoffRequest(BaseModel):
     @field_validator("reason")
     @classmethod
     def meaningful_reason(cls, value: str) -> str:
-        value = value.strip()
-        if len(value) < 10:
-            raise ValueError("At least ten characters required")
-        return value
+        return value.strip()
 
 
 def _latest(db: Session, project_id: str, work_item_id: str):
@@ -206,7 +203,7 @@ def record_decision(
         work_item_id=str(work_item_id), candidate_code=row["saved_candidate"],
         revision_id=row["revision_id"], document_sha256=row["document_sha256"],
         source_fingerprint=fingerprint, status_at_decision=row["status"],
-        action=payload.action, reason=payload.reason,
+        action=payload.action, reason=payload.reason or "Gerekçe belirtilmedi",
         created_by_id=user.id, previous_key=expected or "initial",
         request_key=str(payload.request_key), request_sha256=request_hash,
     )
