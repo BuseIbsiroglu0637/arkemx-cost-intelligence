@@ -232,7 +232,7 @@ def enrich_technical(description: str, position_description: str, check: dict,
 def issue_summary(description: str, suggestions: list[dict],
                   plaster_partner_rows: list[int] | None = None) -> str | None:
     if plaster_partner_rows:
-        return "Kaba ve ince sıva ayrı katmanlardır. Aynı yüzeyin çift fiyatlanmaması için poz kapsamı kontrol edilmeli."
+        return "Kaba ve ince sıva ayrı katmanlardır; birleşik poz varsa aynı yüzeyin çift fiyatlanmaması için kapsam kontrol edilmeli."
     if not suggestions:
         return "PDF'de doğrulanabilir aday bulunamadı. Teknik tarif kontrol edilmeli."
     checks = suggestions[0]
@@ -241,6 +241,12 @@ def issue_summary(description: str, suggestions: list[dict],
         "GAZBETON_DENSITY_KG_M3_UNVERIFIED" in issues
     ):
         return "Gazbeton dayanımı veya yoğunluğu metrajda eksik."
+    if "PLASTER_LAYER_UNVERIFIED" in issues:
+        return "Poz tarifinde kaba/ince sıva katmanı açık değil. Teknik şartname ve analiz kapsamı kontrol edilmeli."
+    if "PLASTER_BINDER_UNVERIFIED" in issues:
+        return "Sıva harcı türü (çimento/alçı/kireç) metraj ve poz arasında doğrulanmalı."
+    if "PLASTER_CEMENT_DOSAGE_UNVERIFIED" in issues:
+        return "Sıva çimento dozajı poz tarifinde doğrulanmalı."
     if "CONCRETE_CLASS_MISMATCH" in issues or "CONCRETE_CLASS_UNVERIFIED" in issues:
         return "Beton sınıfının poz tarifinde doğrulanması gerekiyor."
     if "PAINT_BASE_UNVERIFIED" in issues:
