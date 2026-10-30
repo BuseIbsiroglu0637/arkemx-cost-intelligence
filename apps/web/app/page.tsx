@@ -9,7 +9,8 @@ import metrajStyle from "./metraj-home.module.css";
 import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 
 import MatchPanel from "./match-panel";
-import ReviewWorkspace from "./batch-technical-review/review-workspace";
+import SimpleReviewWorkspace from "./batch-technical-review/simple-review-workspace";
+import CostScenarioPreview from "./cost-scenario-preview";
 
 import CorrectionPanel from "./correction-panel";
 
@@ -510,7 +511,7 @@ export default function Home() {
       </div>}
 
       {project && (reviewOpened || tab === "technical") && <section hidden={tab !== "technical"} style={{display: tab === "technical" ? "block" : "none"}} aria-label="Poz inceleme çalışma alanı">
-        <ReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
+        <SimpleReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
           onImportSelected={setActiveExcel} onSessionExpired={logout} />
         <details className="card"><summary>Gelişmiş işlemler · Katalogdan aday üretme ve mühendis kararı</summary>
           <p>PDF karşılaştırması onay vermez. Mevcut katalog taraması ve mühendis kararları bu proje altında sürdürülür; teknik engeller aynen uygulanır.</p>
@@ -711,7 +712,7 @@ export default function Home() {
 
        <div className="stack"><section className="card stack"><h2>Maliyet</h2><p>Yalnızca güncel mühendis onayı ve gerekli kaynak kontrolleri bulunan satırlar taslağa alınır. Onaysız veya kapsam dışı satırlar otomatik fiyatlandırılmaz.</p>
        <p className="hint">Bu adım mevcut mühendis kararlarının son Excel aktarımını kullanır. Poz incelemesindeki geçmiş bir Excel seçimi maliyet kapsamını değiştirmez. PDF kaynak fiyatı otomatik uygulanmaz; fiyat ve dayanağı aşağıda belirtilir.</p>
-       <button type="button" className="secondary" onClick={() => goTo("technical")}>← Poz incelemesine dön</button><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostPanel key={`${token}:${project}`} token={token} project={project}/></div>}
+       <button type="button" className="secondary" onClick={() => goTo("technical")}>← Poz incelemesine dön</button><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostScenarioPreview token={token} project={project}/><CostPanel key={`${token}:${project}`} token={token} project={project}/></div>}
 
       </div>
 
