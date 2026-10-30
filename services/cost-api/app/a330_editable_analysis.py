@@ -17,9 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .a3_batch_review import NO_STORE, _source
+from .a3_batch_review import NO_STORE, _source as tenant_source
 from .a318_pdf_api import _pdf_candidate_check, _read as read_analysis
-from .a318_pdf_engine import PdfPosition
 from .a327_decisions import _current
 from .a330_review_store import (
     EngineeringSignoff, ProposedAnalysisRevision, VerifiedEngineeringReviewer,
@@ -124,7 +123,7 @@ def _calculations(items: list[ProposedLine]) -> tuple[list[dict], str]:
 
 
 def _source(db, user, project_id, import_id, item_id):
-    batch = _source_batch(db, user, project_id, import_id)
+    batch = tenant_source(db, user, str(project_id), str(import_id))
     item = db.scalar(select(WorkItem).where(
         WorkItem.id == str(item_id), WorkItem.import_id == batch.id,
     ).with_for_update())
@@ -150,16 +149,6 @@ def _source(db, user, project_id, import_id, item_id):
     if row["saved_candidate"] != position.id:
         raise HTTPException(409, "Saved position not verified against current sources")
     return row, fingerprint, position, digest
-
-
-def _source_batch(db, user, project_id, import_id):
-    return _source_import(db, user, str(project_id), str(import_id))
-
-
-def _source_import(db, user, project_id, import_id):
-    # Local alias avoids shadowing the imported A3 tenant/source function.
-    from .a3_batch_review import _source as tenant_source
-    return tenant_source(db, user, project_id, import_id)
 
 
 def _latest_revision(db: Session, item_id: str):
