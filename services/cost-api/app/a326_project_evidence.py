@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from .a3_batch_review import NO_STORE, _source
 from .a318_pdf_api import _read as read_analysis_pdf
 from .a324_ceramic_features import ceramic_features
+from .a327_additional_evidence import additional_matches
 from .database import get_db
 from .excel import normalized
 from .matching import family
@@ -95,6 +96,8 @@ def _metadata(path: Path, raw: bytes, pages: int) -> dict:
 
 def _block_matches(description: str, blocks: list[tuple[int, str]]) -> list[dict]:
     kind = family(description)
+    if kind in {"siva", "beton", "boya"}:
+        return additional_matches(description, blocks)
     dims = extract(description)["dimensions"]
     matches = []
     for page, text in blocks:
