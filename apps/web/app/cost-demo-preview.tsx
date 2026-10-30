@@ -22,15 +22,15 @@ function fixed(value:string,scale:number):bigint|null{
   if(!/^\d{1,10}(?:\.\d{1,6})?$/.test(value))return null;
   const [whole,decimal=""]=value.split(".");
   if(decimal.length>scale && /[1-9]/.test(decimal.slice(scale)))return null;
-  return BigInt(whole)*10n**BigInt(scale)+BigInt(decimal.slice(0,scale).padEnd(scale,"0")||"0");
+  return BigInt(whole)*BigInt(10)**BigInt(scale)+BigInt(decimal.slice(0,scale).padEnd(scale,"0")||"0");
 }
 function amount(quantity:string,price:string):bigint|null{
   const q=fixed(quantity,4),p=fixed(price,4);
-  return q===null||p===null||q<=0n||p<=0n?null:(q*p+500000n)/1000000n;
+  return q===null||p===null||q<=BigInt(0)||p<=BigInt(0)?null:(q*p+BigInt(500000))/BigInt(1000000);
 }
 function money(cents:bigint):string{
-  const integer=new Intl.NumberFormat("tr-TR").format(cents/100n);
-  return integer+","+String(cents%100n).padStart(2,"0")+" TL";
+  const integer=new Intl.NumberFormat("tr-TR").format(cents/BigInt(100));
+  return integer+","+String(cents%BigInt(100)).padStart(2,"0")+" TL";
 }
 async function get<T>(path:string,token:string):Promise<T>{
   const response=await fetch(API+path,{cache:"no-store",headers:{Authorization:"Bearer "+token}});
@@ -129,7 +129,7 @@ export default function CostDemoPreview({token,project,onReview}:{
   },[token,project,refresh]);
 
   const counted=useMemo(()=>rows.filter(r=>r.amountCents!==null),[rows]);
-  const total=useMemo(()=>counted.reduce((sum,r)=>sum+(r.amountCents??0n),0n),[counted]);
+  const total=useMemo(()=>counted.reduce((sum,r)=>sum+(r.amountCents??BigInt(0)),BigInt(0)),[counted]);
 
   return <section className="card cost-demo" aria-label="DEMO ön maliyet">
     <div className="flex between cost-demo-head">
