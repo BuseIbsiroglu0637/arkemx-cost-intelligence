@@ -881,7 +881,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     needsReview || rowTriage?.group === "needs_review" ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
-                {isSaved && <small className={styles.queueReason}>Teknik onay bekliyor · Maliyete aktarılmaz.</small>}
+                {isSaved && <small className={styles.queueReason}>Mühendis kararını detayda kontrol et · Maliyete aktarılmaz.</small>}
                 {validatedEvidence ? <small className={styles.queueReason}>
                   Şartname–poz temel özellikleri uyumlu (PDF s. {validatedEvidence.evidence_page ?? "—"}).
                   Kapsam ve mühendis onayı bekliyor.
@@ -971,11 +971,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     ) : expandedEvidence.candidate_consistency === "conflicts" ? (
                       <p>Belge ve kayıtlı pozun açık teknik özellikleri uyuşmuyor. İnceleme gerekli.</p>
                     ) : currentEvidenceMatch ? (
-                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; teknik onay hâlâ bekliyor.</p>
+                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; mühendis kararını aşağıdaki bölümden kontrol et.</p>
                     ) : (
                       <p>Belgede ilgili bilgiler bulundu ancak pozla gereken tüm özellikler karşılaştırılamadı. Eksikler incelemede kalır.</p>
                     )}
-                    <small>Bu karşılaştırma yalnızca kaynaklı ön kontroldür; mühendis onayı ve maliyet hesabı kapalıdır.</small>
+                    <small>Bu karşılaştırma tek başına mühendis onayı veya maliyet yetkisi vermez.</small>
                   </div>
                 )}
                 {expandedEvidence.evidence.map((record, index) => (
@@ -1019,7 +1019,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           </section>}
           {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
             {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "Poz seçimi onaylandı" : "Henüz kaydedilmedi"}:
-            <strong> {expandedSelectedCode}</strong> · Teknik inceleme ve mühendis onayı bekliyor.
+            <strong> {expandedSelectedCode}</strong> · Mühendis kararını aşağıdaki bölümden kontrol et.
             {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
               <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
           </div>}
