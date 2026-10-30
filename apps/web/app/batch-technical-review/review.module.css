@@ -295,6 +295,10 @@
 
 .reviewReason {display:grid;gap:5px;border-radius:10px;padding:12px 15px;background:#fff7e7;border:1px solid #f0dab0;color:#7e5411;font-size:13px;font-weight:650;line-height:1.55}
 .reviewReason small {font-size:11px;color:#826637;font-weight:500}
+.evidenceConfirmed {display:grid;gap:6px;padding:12px 14px;border-radius:9px;background:#eff8f3;border:1px solid #a9d9bb;color:#215e41;font-size:12px;line-height:1.55}
+.evidenceConfirmed strong {font-size:13px}
+.evidenceConfirmed small {font-size:11px;color:#43745a}
+.priceReconciliation {background:#f4f7fb;border:1px solid #dbe5ef;border-radius:7px;padding:10px 12px;font-size:11px;line-height:1.6;color:#40546d;margin:8px 0 0}
 
 /* Candidate selection must be visible but never confused with approval. */
 .chosenCandidateNotice {padding:10px 13px;border:1px solid #c6d8f5;background:#eff6ff;color:#204779;border-radius:9px;font-size:12px;line-height:1.5}
