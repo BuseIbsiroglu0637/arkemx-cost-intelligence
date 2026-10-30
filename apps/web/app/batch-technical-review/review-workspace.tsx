@@ -29,7 +29,7 @@ type Row = {
 type Report = { schema: string; read_only: boolean; approval_allowed: boolean; row_count: number; rows: Row[]; import_source: Source };
 type PdfSource = { present: boolean; read_only: boolean; sha256?: string; year?: number; volume?: number; position_count?: number; verified_price_count?: number; uncertain_price_count?: number };
 type CandidateCatalog = { version_id: string; institution: string; period: string; year: number; position_count: number; synthetic: boolean };
-type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean };
+type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean; source_page?: number; source_price?: string | null; source_price_verified?: boolean; analysis_inputs?: {code:string;description:string;unit:string;quantity:string;unit_price:string;amount:string}[]; scope_excerpt?: string };
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[] }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
@@ -543,40 +543,44 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <div className={styles.simpleMatchSummary} role="status">
             {busy === "auto" ? "Pozlar eşleştiriliyor…" :
               autoCandidates ? `${selection.rows.length} imalat tarandı · ${countSuggested} aday bulundu · ${countMissing} aday bulunamadı` :
-              catalogs.length ? "Eşleştirme hazırlanıyor…" : "Katalog bekleniyor"}
+              pdfSource?.present ? "PDF ile eşleştirme hazırlanıyor…" : "PDF kaynağı bekleniyor"}
           </div>
         </div>
-        {catalogs.length > 0 ? <div className={styles.simpleCatalog}>
-          <span>Kaynak: <strong>{catalogs.find(c => c.version_id === catalogVersion)?.institution ?? "Katalog"}</strong>
-            {" · "}{catalogs.find(c => c.version_id === catalogVersion)?.year ?? ""}
-            {catalogs.find(c => c.version_id === catalogVersion)?.synthetic ? " · SENTETİK TEST" : ""}
+        {pdfSource?.present ? <div className={styles.simpleCatalog}>
+          <span>Kaynak: <strong>2026 İnşaat Birim Fiyat Analizleri · Cilt 1</strong>
+            {" · "}{pdfSource.position_count} poz · {pdfSource.verified_price_count} fiyat kontrolü geçti
+            {pdfSource.uncertain_price_count ? " · " + pdfSource.uncertain_price_count + " fiyat inceleme bekliyor" : ""}
           </span>
-          <details><summary>Kaynağı değiştir</summary>
-            <label>Poz kataloğu<select value={catalogVersion} disabled={Boolean(busy)}
-              onChange={event => {
-                setCatalogVersion(event.target.value);
-                setAutoCandidates(null); setAutoMessage("");
-                setCandidateDetailId(null); clearResult();
-              }}>
-              {catalogs.map(c => <option key={c.version_id} value={c.version_id}>
-                {c.institution} · {c.year} · {c.position_count} poz{c.synthetic ? " · DENEME" : ""}
-              </option>)}
-            </select></label>
+          <details><summary>PDF kaynağını güncelle</summary>
+            <p>Yeni PDF bağlanırsa otomatik öneriler yeniden hesaplanır.</p>
+            <input type="file" accept=".pdf,application/pdf" aria-label="2026 analiz PDF dosyası"
+              onChange={event => setPdfFile(event.target.files?.[0] ?? null)} />
+            <label className={styles.pdfRights}><input type="checkbox" checked={pdfRightsConfirmed}
+              onChange={event => setPdfRightsConfirmed(event.target.checked)} />
+              PDF dosyasını işlemek için gerekli hak ve izne sahibim.</label>
+            <button type="button" disabled={Boolean(busy) || !pdfFile || !pdfRightsConfirmed} onClick={attachPdf}>PDF kaynağını güncelle</button>
           </details>
         </div> : <div className={styles.simpleMissingSource}>
-          <strong>Eşleştirme için onaylı poz kataloğu gerekli.</strong>
-          <p>Bu projeye bağlı kullanılabilir gerçek katalog bulunamadı. Katalog ve kullanım izni tanımlanınca pozlar otomatik aranacak.</p>
-          <details><summary>Yalnızca deneme için sentetik katalog kullan</summary>
-            <button type="button" className="secondary" disabled={Boolean(busy)} onClick={seedDemoCatalog}>Test kataloğunu oluştur</button>
-          </details>
+          <strong>Gerçek pozlar doğrudan 2026 analiz PDF dosyasından okunacak.</strong>
+          <p>PDF dosyasını bir kez bağla. Sonra Excel satırları bu belgeden otomatik eşleştirilir.</p>
+          <label>2026 İnşaat Birim Fiyat Analizleri · Cilt 1 PDF
+            <input type="file" accept=".pdf,application/pdf" aria-label="2026 analiz PDF dosyası"
+              onChange={event => setPdfFile(event.target.files?.[0] ?? null)} />
+          </label>
+          <label className={styles.pdfRights}><input type="checkbox" checked={pdfRightsConfirmed}
+            onChange={event => setPdfRightsConfirmed(event.target.checked)} />
+            Bu PDF dosyasını işlemek için gerekli hak ve izne sahibim.</label>
+          <button type="button" disabled={Boolean(busy) || !pdfFile || !pdfRightsConfirmed} onClick={attachPdf}>PDF dosyasını bağla</button>
+          <p className={styles.legalNote}>Belgenin ikinci sayfası işleme ve çoğaltma için yazılı izin şartı içeriyor. Yetkin yoksa onaylama. Bu işlem yalnızca yerel kullanım içindir.</p>
         </div>}
-        {autoCandidates?.catalog.synthetic && <div className={styles.demoLabel} role="note">
-          DENEME KATALOĞU · Gösterilen poz kodları resmî fiyatlandırma için kullanılamaz.
+        {autoCandidates && <div className={styles.simpleSourceCitation}>
+          Kaynak PDF: {pdfSource?.sha256?.slice(0,12)}… · Teknik onay verilmedi
         </div>}
         {error && <div role="alert" className="error">{error}
-          {catalogVersion && <button type="button" className="secondary" disabled={Boolean(busy)}
+          {pdfSource?.present && <button type="button" className="secondary" disabled={Boolean(busy)}
             onClick={() => { automaticRunKeyRef.current = ""; findAutomaticCandidates(); }}>Yeniden dene</button>}
         </div>}
+
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
@@ -602,6 +606,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <td>
                 {top && !blocked ? <div className={styles.simpleMatchPosition}>
                   <strong>{top.code}</strong><small>{top.description}</small>
+                  <small>PDF sayfa {top.source_page ?? "—"}{top.source_price_verified && top.source_price ? " · Kaynak fiyat: " + top.source_price + " TL/" + top.unit : " · Fiyat hesabı incelenmeli"}</small>
                   {selectedCode === top.code && <em>Ön seçildi · onaylanmadı</em>}
                 </div> :
                   <span className={styles.simpleNoCandidate}>{blocked ? "Uygun aday doğrulanamadı" :
@@ -637,6 +642,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 <small>{option.technical_status === "blocked" ? "Teknik çelişki" :
                   option.technical_status === "review" ? "Teknik kontrol gerekli" : "İlk kontrol olumlu · mühendis onayı değil"}</small>
                 {option.possible_shared_scope && <small>Aynı poz başka satırda da önerilmiş olabilir. Çift maliyet hesabı yapılmamalı.</small>}
+                <small>PDF sayfa {option.source_page ?? "—"}{option.source_price_verified && option.source_price ? " · " + option.source_price + " TL/" + option.unit : " · Fiyat doğrulaması gerekli"}</small>
+                {option.scope_excerpt && <details><summary>PDF teknik kapsamı ve ölçü tarifi</summary><p>{option.scope_excerpt}</p></details>}
+                {option.analysis_inputs && option.analysis_inputs.length > 0 && <details><summary>Analiz girdileri ({option.analysis_inputs.length})</summary><ul>{option.analysis_inputs.map((input,i) => <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul></details>}
                 {[...option.blockers, ...option.review_flags].length > 0 &&
                   <p className={styles.issues}>{[...option.blockers, ...option.review_flags].map(v => label(v)).join(" · ")}</p>}
               </div>
