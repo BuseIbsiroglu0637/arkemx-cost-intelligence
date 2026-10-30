@@ -405,3 +405,19 @@
 .a330SourceDetails>p{font-size:11px;line-height:1.6}
 .a330SourceDetails>ul{font-size:11px;line-height:1.6}
 @media(max-width:570px){.simpleStepTitle{align-items:flex-start}.simpleStepTitle>small{flex-basis:100%;padding-left:34px}}
+
+/* A3.38 — evidence at a glance inside existing step 1; not a new workflow. */
+.a338Comparison{border:1px solid #d6e2f1;background:#f8fbff;border-radius:9px;padding:12px;margin:10px 0;min-width:0}
+.a338Comparison>strong{display:block;margin-bottom:8px;font-size:12px;color:#173c75}
+.a338Table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+.a338Table th,.a338Table td{padding:7px 6px;text-align:left;vertical-align:top;border-bottom:1px solid #e1e9f4;overflow-wrap:anywhere}
+.a338Table thead th{color:#476385;background:#f0f5fc}
+.a338Table tbody th{font-weight:650}
+.a338Table small{font-size:10px;color:#667c95}
+.a338Table details>summary{cursor:pointer;color:#24549c;font-size:10px;margin-top:4px}
+.a338Table details>p{max-width:100%;font-size:10px;line-height:1.55}
+.a338Warning{color:#8b510f;background:#fff4df;border:1px solid #f2d3a4;border-radius:7px;padding:9px;font-size:11px}
+.a338Hint{font-size:11px;color:#617895}
+.a338Conflict{color:#a63d26!important;font-weight:700}
+.a338Comparison>small{display:block;margin-top:8px;color:#617895;font-size:10px}
+@media(max-width:610px){.a338Comparison{overflow-x:auto}.a338Table{min-width:470px}}
