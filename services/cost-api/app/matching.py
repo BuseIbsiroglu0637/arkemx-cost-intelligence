@@ -12,6 +12,7 @@ import unicodedata
 from collections import Counter
 from urllib.request import Request, urlopen
 from .excel import normalized
+from .measurement_context import extract_measurements
 
 ALGORITHM = "lexical-gated-v0.2"
 MAX_MATCH_ROWS = 100
@@ -23,8 +24,6 @@ POLYURETHANE_TERMS = re.compile(r"\bpoliuretan\w*\b")
 EPOXY_TERMS = re.compile(r"\bepoksi\w*\b")
 STOP = {"ve", "ile", "dahil", "olan", "isleri", "imalati", "uygulanmasi", "yapilmasi", "is", "malzeme"}
 WORD = re.compile(r"[a-z0-9]+")
-SIZE2D = re.compile(r"(?<!\d)(\d{1,4})\s*[x×]\s*(\d{1,4})(?!\d)")
-THICKNESS = re.compile(r"(?<!\d)(\d{1,3})\s*(cm|mm)\b")
 PUNCT = re.compile(r"[^a-z0-9×]+")
 
 
@@ -51,11 +50,9 @@ def family(value: str) -> str | None:
 
 
 def dimensions(value: str):
-    value = lexical_text(value)
-    # Keep dimension pairs in normalized sorted order (60x60 / 60 x 60).
-    pairs = {tuple(sorted((int(a), int(b)))) for a, b in SIZE2D.findall(value)}
-    thickness = {int(v) * (10 if unit == "cm" else 1) for v, unit in THICKNESS.findall(value)}
-    return pairs, thickness
+    """Return sizes and *actual* thickness, excluding dimensions and grout."""
+    context = extract_measurements(value, ceramic=family(value) == "seramik")
+    return context["sizes"], context["thickness_mm"]
 
 
 def similarity(left: str, right: str) -> float:
