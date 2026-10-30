@@ -1,0 +1,84 @@
+
+.content { display:grid; gap:17px; }
+.hero {display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;padding:7px 0 2px}
+.hero h1 {font-size:27px;margin:1px 0 4px;letter-spacing:-.04em;color:#172846}
+.hero p {margin:0;font-size:13px;color:#718098}
+.kicker {color:#6b7c96;font-size:10px;font-weight:800;letter-spacing:.12em}
+.projectActions {display:flex;align-items:end;gap:9px;flex-wrap:wrap}
+.projectSelect {border:1px solid #dce4f0;background:#fff;border-radius:10px;padding:9px 13px;min-width:240px;max-width:330px}
+.projectSelect span {font-size:10px;color:#76859c;font-weight:500}
+.projectSelect select {border:0;padding:2px 0;background:transparent;font-size:13px;font-weight:700;outline-offset:3px}
+.newProject {position:relative}
+.newProject summary {border:1px solid #d5e2fa;background:#fff;color:#2858bd;cursor:pointer;border-radius:9px;padding:12px;font-size:12px;font-weight:750;list-style:none}
+.newProject summary::-webkit-details-marker {display:none}
+.newProject form {position:absolute;right:0;top:calc(100% + 8px);width:310px;max-width:85vw;background:#fff;border:1px solid #dce4f0;padding:17px;border-radius:11px;box-shadow:0 14px 35px #11264b28;z-index:7}
+.steps {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.steps button {border:1px solid #dfe7f2;border-radius:11px;background:#fff;padding:12px 14px;display:flex;align-items:center;gap:11px;color:#172846;text-align:left;min-width:0}
+.steps button:not(:disabled):hover {border-color:#99b5e9}
+.steps button:disabled {color:#6e7d90}
+.steps button.stepActive {background:#edf4ff;border-color:#8bb2f4;box-shadow:inset 0 0 0 1px #cfdefb}
+.stepNumber {width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:9px;background:#e9eef6;color:#71819b;font-weight:800}
+.stepActive .stepNumber {background:#2458c7;color:#fff}
+.steps strong,.steps small {display:block}
+.steps strong {font-size:12px}
+.steps small {margin-top:2px;font-size:10px;font-weight:400;color:#8190a5}
+.panel {background:#fff;border:1px solid #dfe6f0;border-radius:13px;padding:21px;display:grid;gap:15px;min-width:0;box-shadow:0 3px 10px #17284605}
+.panel h2 {font-size:16px;margin:0;color:#172a48}
+.sectionHead {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sectionHead p {margin:4px 0 0;color:#718198;font-size:12px}
+.savedTag,.neutralTag,.reviewTag {border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+.savedTag {background:#e8f6ef;color:#177851}
+.neutralTag {background:#eef2f7;color:#56677e}
+.reviewTag {background:#fff2d9;color:#875810}
+.stats {display:flex;flex-wrap:wrap;gap:10px}
+.stats>div {background:#f8fafd;border:1px solid #e4ebf5;border-radius:9px;padding:11px 15px;min-width:132px}
+.stats small {display:block;font-size:11px;color:#7b8ba1}
+.stats strong {display:block;font-size:18px;color:#243b5b;margin-top:2px}
+.sourceNote {font-size:12px;margin:0;color:#657289;overflow-wrap:anywhere}
+.tableFrame {border:1px solid #e4eaf3;border-radius:9px;overflow:auto;min-width:0}
+.tableFrame table {min-width:580px}
+.tableFrame th {color:#718198;background:#f6f8fc;font-size:11px;text-transform:uppercase;letter-spacing:.02em}
+.tableFrame td {font-size:12px}
+.tableFrame td:last-child {white-space:nowrap}
+.description {max-width:600px;overflow-wrap:anywhere}
+.sectionFooter {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.sectionFooter span {font-size:11px;color:#7d899b;flex:1}
+.sectionFooter button {background:#2054c5;font-size:12px}
+.emptyState {padding:25px;text-align:center;color:#718198;background:#f8faff;border:1px dashed #bdcce4;border-radius:10px}
+.templateLink {font-size:12px;color:#2858bd;background:#f4f8ff;border:1px solid #d5e2fa;border-radius:8px;padding:9px 11px;text-decoration:none;font-weight:700}
+.templateLink:hover {background:#e6f0ff}
+.templateLink:focus-visible,.newProject summary:focus-visible {outline:3px solid #90b2fb;outline-offset:2px}
+.uploadZone {border:1.5px dashed #b9c9e3;background:#f8faff;border-radius:10px;min-height:123px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;padding:15px}
+.uploadIcon {font-size:29px;line-height:1;color:#4775d5}
+.filePicker {position:relative;cursor:pointer;color:#172846;font-weight:750;font-size:13px;max-width:100%}
+.filePicker input {position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.filePicker:focus-within {outline:3px solid #9ab8f8;border-radius:5px}
+.uploadZone small,.uploadActions span {font-size:11px;color:#8493a7}
+.selectedFile {font-size:12px;color:#28619c;overflow-wrap:anywhere}
+.uploadActions {display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.uploadActions button {font-size:12px}
+.importConfig {border-top:1px solid #e4ebf5;padding-top:15px;display:grid;gap:12px}
+.importConfig :global(.fields) {align-items:end}
+.advanced {background:#fff;border:1px solid #e0e8f3;border-radius:11px;padding:0;min-width:0}
+.advanced>summary {list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:17px 19px;cursor:pointer;font-size:13px;font-weight:750;color:#283e5c}
+.advanced>summary::-webkit-details-marker {display:none}
+.advanced>summary small {font-size:11px;font-weight:400;color:#8a97aa}
+.advanced>summary:after {content:"⌄";color:#718198}
+.advanced[open]>summary:after {content:"⌃"}
+.advancedBody {display:grid;gap:16px;padding:5px 19px 19px}
+.advancedLinks {display:flex;flex-wrap:wrap;gap:10px}
+.jobNote {display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-top:1px solid #e4ebf5;padding-top:13px;color:#687b96;font-size:12px}
+@media (max-width:720px) {
+ .hero {align-items:stretch}
+ .hero h1 {font-size:22px}
+ .projectActions,.projectSelect {width:100%;max-width:none}
+ .steps {gap:6px}
+ .steps button {gap:6px;padding:10px 8px}
+ .stepNumber {width:25px;height:25px}
+ .steps strong {font-size:11px}
+ .steps small {font-size:9px}
+ .panel {padding:15px}
+ .sectionFooter {align-items:stretch}
+ .sectionFooter button {width:100%}
+ .advanced>summary small {flex-basis:100%}
+}
