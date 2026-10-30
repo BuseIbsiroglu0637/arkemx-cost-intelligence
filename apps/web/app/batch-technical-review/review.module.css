@@ -80,3 +80,6 @@
 .featureCard blockquote { margin:10px 0; }
 .featureCard small { display:block; overflow-wrap:anywhere; }
 @media(max-width:450px) { .page dl.values { grid-template-columns:1fr; } }
+
+.scopedFields { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; align-items:end; }
+@media(max-width:850px) { .scopedFields { grid-template-columns:1fr; } }

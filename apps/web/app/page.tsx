@@ -8,6 +8,7 @@ import workflow from "./workflow-nav.module.css";
 import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 
 import MatchPanel from "./match-panel";
+import ReviewWorkspace from "./batch-technical-review/review-workspace";
 
 import CorrectionPanel from "./correction-panel";
 
@@ -32,7 +33,7 @@ type JobSummary = {status:string;total_rows:number;processed_rows:number;candida
 type QueueSummary = {run:null|{row_count:number;candidate_count:number};summary?:{decisions?:Record<string,number>}};
 
 const sectionTitles: Record<WorkflowSection, string> = {
-  overview: "Proje özeti", metraj: "Metraj", technical: "Teknik inceleme",
+  overview: "Proje özeti", metraj: "Metraj", technical: "Pozları incele",
   cost: "Maliyet", catalog: "Kaynaklar",
 };
 const validTabs: Tab[] = ["overview", "metraj", "technical", "catalog", "bulk", "review", "cost"];
@@ -93,7 +94,8 @@ export default function Home() {
 
   const [showLegacy,setShowLegacy] = useState(false);
 
-  const [tab,setTab] = useState<Tab>("overview");
+  const [tab,setTab] = useState<Tab>("metraj");
+  const [reviewOpened, setReviewOpened] = useState(false);
 
   const [showAllItems,setShowAllItems] = useState(false);
 
@@ -116,7 +118,7 @@ export default function Home() {
   useEffect(() => {
     const readSection = () => {
       const hash = window.location.hash.slice(1) as Tab;
-      if (validTabs.includes(hash)) setTab(hash);
+      if (validTabs.includes(hash)) { setTab(hash); if (hash === "technical") setReviewOpened(true); }
     };
     readSection();
     window.addEventListener("hashchange", readSection);
@@ -148,7 +150,7 @@ export default function Home() {
       else rememberImport(token, project, null);
     }).catch(() => { if (active) setActiveExcel("Excel seçimi doğrulanamadı; teknik incelemede yeniden seç."); });
     return () => { active = false; };
-  }, [token, project]);
+  }, [token, project, revisionTick]);
   const activeSection: WorkflowSection = tab === "bulk" || tab === "review" ? "technical" : tab;
 
   const handleError = (e:unknown)=>setError(e instanceof Error?e.message:"Beklenmeyen hata");
@@ -156,6 +158,7 @@ export default function Home() {
   const goTo=(next:Tab)=>{
 
     setTab(next);
+    if (next === "technical") setReviewOpened(true);
     window.history.pushState(null, "", `#${next}`);
 
     document.getElementById("workspace-main")?.scrollIntoView({behavior:"smooth",block:"start"});
@@ -205,19 +208,20 @@ export default function Home() {
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
-  function logout(){projectRequestRef.current += 1; clearWorkspace();sessionStorage.removeItem("arkemx_dev_token");setToken(null);setProjects([]);setProject("");setItems([]);setPreview(null);setTab("overview");}
+  function logout(){projectRequestRef.current += 1; clearWorkspace();sessionStorage.removeItem("arkemx_dev_token");setToken(null);setProjects([]);setProject("");setItems([]);setPreview(null);setTab("metraj");}
 
   async function createProject(e:FormEvent){e.preventDefault();if(!token)return;setBusy(true);setError("");try{
 
     const p = await request<Project>("/api/projects",token,"POST",{name:projectName});
 
-    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("overview");setShowRevisions(false);setMessage("Proje oluşturuldu.");
+    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("metraj");setShowRevisions(false);setMessage("Proje oluşturuldu.");
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
   async function chooseProject(id:string) {
     const generation = ++projectRequestRef.current;
     if (token) rememberProject(token, id);
+    setReviewOpened(false);
     setProject(id); setInspection(null); setPreview(null); setFile(null); setItems([]);
     setShowAllItems(false); setShowRevisions(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
     if (!token || !id) return;
@@ -255,8 +259,9 @@ export default function Home() {
 
   async function importRows(){if(!token||!file||!project)return;setBusy(true);setError("");try{
 
-    const result = await request<{row_count:number;review_count:number}>(`/api/projects/${project}/imports`,token,"POST",uploadForm());
+    const result = await request<{id:string;row_count:number;review_count:number}>(`/api/projects/${project}/imports`,token,"POST",uploadForm());
 
+    rememberImport(token, project, result.id);
     setItems(await request<Row[]>(`/api/projects/${project}/items`,token));setPreview(null);setInspection(null);setFile(null);
 
     setMessage(`${result.row_count} metraj kalemi kaydedildi. ${result.review_count} kalem kontrol gerektiriyor.`);
@@ -304,14 +309,14 @@ export default function Home() {
         <div className="workspace-project">
 
           <div className="workspace-context-heading">
-            <h1>ARKEMX çalışma alanı</h1>
-            <p className="hint">Metrajdan teknik incelemeye tek proje üzerinden ilerleyin.</p>
+            <h1>Proje çalışma alanı</h1>
+            <p className="hint">Metrajı yükleyin, pozları inceleyin ve maliyeti aynı projede hazırlayın.</p>
 
           </div>
 
           <label className="workspace-project-select">Aktif proje
 
-            <select aria-label="Aktif proje seç" value={project} onChange={e=>chooseProject(e.target.value)}>
+            <select aria-label="Aktif proje seç" disabled={busy} value={project} onChange={e=>chooseProject(e.target.value)}>
 
               <option value="">Proje seçin</option>
 
@@ -337,7 +342,7 @@ export default function Home() {
 
         </div>
 
-        <div className="workspace-status" aria-label="Proje durum özeti">
+        <details><summary>Proje durum ayrıntıları</summary><div className="workspace-status" aria-label="Proje durum özeti">
 
           <span>En yeni toplu iş: <strong>{project?jobStatusText:"Proje seçilmedi"}</strong></span>
 
@@ -349,7 +354,7 @@ export default function Home() {
 
           {project&&<button type="button" className="ghost workspace-refresh" onClick={()=>setSummaryRefresh(v=>v+1)}>Durumu yenile</button>}
 
-        </div>
+        </div></details>
 
       </section>
 
@@ -359,15 +364,31 @@ export default function Home() {
 
       {summaryError&&<p role="status" className="hint">{summaryError}</p>}
 
-      {project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Teknik incelemede bir Excel aktarımı seç."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
+      {project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Metraj yükleyin veya Pozları incele adımından Excel seçin."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
       <WorkflowNav active={activeSection} onSelect={goTo} />
-      <div className={workflow.steps}>Metrajı yükle → adayları ve teknik farkları incele → mühendis kararından sonra maliyet çalışmasına geç.</div>
+      <details className="card"><summary>Proje özeti ve kaynak yönetimi</summary>
+        <div className="flex"><button type="button" className="secondary" onClick={() => goTo("overview")}>Proje özeti</button>
+        <button type="button" className="secondary" onClick={() => goTo("catalog")}>Katalog ve PDF kaynakları</button></div>
+      </details>
+      <div className={workflow.steps}>Metraj → Pozları incele → Maliyet. Teknik farklar ve kaynak kanıtları satırın ayrıntısında gösterilir.</div>
       <div className="workspace-main" id="workspace-main" aria-label={sectionTitles[activeSection]}>
       {(tab === "bulk" || tab === "review") && <div className="card stack">
         <button type="button" className="secondary" onClick={() => goTo("technical")}>← Teknik inceleme seçeneklerine dön</button>
         <h2>{tab === "bulk" ? "Katalogdan aday bulma" : "Mühendis kararları"}</h2>
-        <p>{tab === "bulk" ? "Bu işlem aday üretir. Kanıtlı teknik uygunluk kontrolü veya mühendis onayı yerine geçmez." : "Bu bölüm kayıtlı karar akışıdır. Salt okunur teknik karşılaştırmanın sonuçları buraya otomatik aktarılmaz."}</p>
+        <p>{tab === "bulk" ? "Bu işlem aday üretir. Kanıtlı teknik uygunluk kontrolü veya mühendis onayı yerine geçmez." : "Bu bölüm kayıtlı karar akışıdır. PDF teknik karşılaştırmasının sonuçları burada otomatik onaylanmaz."}</p>
       </div>}
+
+      {project && (reviewOpened || tab === "technical") && <section hidden={tab !== "technical"} style={{display: tab === "technical" ? "block" : "none"}} aria-label="Poz inceleme çalışma alanı">
+        <ReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
+          onImportSelected={setActiveExcel} onSessionExpired={logout} />
+        <details className="card"><summary>Katalogdan aday üretme ve mühendis kararı</summary>
+          <p>PDF karşılaştırması onay vermez. Mevcut katalog taraması ve mühendis kararları bu proje altında sürdürülür; teknik engeller aynen uygulanır.</p>
+          <BulkPanel token={token} project={project} onCompleted={() => setSummaryRefresh(v => v + 1)} />
+          <EngineerReviewPanel token={token} project={project} refreshKey={summaryRefresh} onGoToBulk={() => goTo("bulk")} />
+        </details>
+        <div className="card flex between"><button type="button" className="secondary" onClick={() => goTo("metraj")}>← Metraja dön</button>
+          <button type="button" onClick={() => goTo("cost")}>Maliyete geç →</button></div>
+      </section>}
 
       {!project?<section className="card empty">Yukarıdan bir proje seçin veya yeni proje oluşturun.</section>:
 
@@ -429,29 +450,7 @@ export default function Home() {
 
        </div>:
 
-       tab==="technical"?<section className="card stack">
-         <div><h2>Teknik inceleme</h2><p>Excel satırlarını karşılaştırmak için ilk seçeneği kullan. Aday üretme ve mühendis kararı ayrı işlemlerdir.</p></div>
-         <div className={workflow.cards}>
-           <article className={`${workflow.card} ${workflow.primary}`}>
-             <h3>Excel satırlarını karşılaştır</h3>
-             <p>İçe aktardığın satırlarda kalınlık, malzeme ve dozaj farklarını kaynak ifadeleriyle gör.</p>
-             <p><strong>Salt okunur · Ana poz desteği: 15.275.1111</strong></p>
-             <Link href="/batch-technical-review">Excel teknik incelemesini aç →</Link>
-           </article>
-           <article className={workflow.card}>
-             <h3>Katalogdan aday bul</h3><p>Katalog ile metrajı tarayıp incelenecek poz adaylarını oluştur.</p>
-             <button type="button" className="secondary" onClick={() => goTo("bulk")}>Aday bulma ekranını aç</button>
-           </article>
-           <article className={workflow.card}>
-             <h3>Mühendis kararları</h3><p>Kayıtlı adayların inceleme ve onay sürecini yönet.</p>
-             <button type="button" className="secondary" onClick={() => goTo("review")}>Karar ekranını aç</button>
-           </article>
-         </div>
-         <details><summary>Gelişmiş araçlar · Tek tarif ve maliyet senaryosu</summary>
-           <p>Excel satırlarından bağımsız bir tarif denemek veya desteklenen alternatif harç senaryosunu incelemek için kullan.</p>
-           <Link href="/technical-review">Tek tarif denemesini aç →</Link>
-         </details>
-       </section>:
+       tab==="technical"?null:
        tab==="metraj"?<div className="stack">
 
                 <section className="card stack"><div className="flex between"><h2>Excel metraj yükle</h2><span className="tag">.xlsx · en fazla 10 MB</span></div>
@@ -476,6 +475,7 @@ export default function Home() {
 
           </button>}</>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
 
+        <div className="card flex between"><p>Metrajı kontrol ettikten sonra aynı projenin pozlarını inceleyin.</p><button type="button" disabled={!items.length} onClick={() => goTo("technical")}>Pozları incele →</button></div>
         <RevisedMetrajPanel token={token} project={project}
 
           onApplied={async()=>{if(token){setItems(await request<Row[]>(`/api/projects/${project}/items`,token));}setRevisionTick(v=>v+1);setSummaryRefresh(v=>v+1);}}/>
@@ -498,7 +498,9 @@ export default function Home() {
 
        tab==="review"?<EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>:
 
-       <div className="stack"><section className="card stack"><h2>Maliyet</h2><p>Kayıtlı maliyet taslaklarını ve karşılaştırmalarını yönet. PDF kaynak fiyatı, metrajına otomatik uygulanmış fiyat değildir.</p><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostPanel token={token} project={project}/></div>}
+       <div className="stack"><section className="card stack"><h2>Maliyet</h2><p>Yalnızca güncel mühendis onayı ve gerekli kaynak kontrolleri bulunan satırlar taslağa alınır. Onaysız veya kapsam dışı satırlar otomatik fiyatlandırılmaz.</p>
+       <p className="hint">Bu adım mevcut mühendis kararlarının son Excel aktarımını kullanır. Poz incelemesindeki geçmiş bir Excel seçimi maliyet kapsamını değiştirmez. PDF kaynak fiyatı otomatik uygulanmaz; fiyat ve dayanağı aşağıda belirtilir.</p>
+       <button type="button" className="secondary" onClick={() => goTo("technical")}>← Poz incelemesine dön</button><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostPanel key={`${token}:${project}`} token={token} project={project}/></div>}
 
       </div>
 
