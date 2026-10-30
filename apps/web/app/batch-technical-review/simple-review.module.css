@@ -1,0 +1,56 @@
+.root{display:grid;gap:16px;max-width:1180px;margin:0 auto;color:#243750}
+.header{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.header h2{font-size:24px;margin:4px 0;color:#172b4d;letter-spacing:-.03em}
+.header p{font-size:13px;margin:0;color:#65768e}
+.kicker{font-size:10px;font-weight:800;letter-spacing:.09em;color:#667f9e}
+.headerActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.headerActions button,.headerActions a{font-size:12px}
+.costLink{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:#1c52bc;color:#fff;border-radius:9px;padding:11px 15px;font-weight:700}
+.costLink:hover{background:#16499f;color:#fff}
+.sourceBar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:16px;background:#fff;border:1px solid #e0e7f2;border-radius:13px}
+.sourceBar label{display:grid;gap:5px;color:#61718a;font-size:11px;flex:1;min-width:210px}
+.sourceBar select{margin:0;background:#f8fafc;border:1px solid #d5e0ee;border-radius:8px;font-size:12px;max-width:100%}
+.sourceBar button{font-size:12px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.stats>div{display:grid;gap:4px;padding:16px;background:#f6f8fc;border:1px solid #e3eaf4;border-radius:12px}
+.stats strong{font-size:27px;color:#16335a}
+.stats span{font-size:11px;color:#62758d}
+.tabs{display:flex;gap:4px;border-bottom:1px solid #dbe3f0}
+.tabs button{border:0;border-radius:8px 8px 0 0;background:transparent;color:#5d708c;padding:12px 22px;font-weight:650;font-size:13px}
+.tabs button[aria-current="page"]{color:#1849a7;background:#ebf2ff;border-bottom:3px solid #2a61c2}
+.list,.detail{background:#fff;border:1px solid #e0e7f0;border-radius:12px;padding:16px 20px;display:grid;gap:0;min-width:0}
+.listRow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 3px;border-bottom:1px solid #edf1f6}
+.listRow:last-child{border-bottom:0}
+.listRow button{white-space:nowrap;flex:none;font-size:12px}
+.rowText{display:grid;gap:5px;min-width:0;flex:1}
+.rowText strong{font-size:13px;overflow-wrap:anywhere}
+.rowText small,.muted{font-size:12px;color:#687b92;line-height:1.6}
+.rowText p{margin:4px 0}
+.good,.pending{display:inline-block;width:fit-content;font-size:11px;font-weight:700;border-radius:7px;padding:5px 8px}
+.good{color:#22674b;background:#e8f6ee}
+.pending{color:#875f1c;background:#fff5e5}
+.detail{gap:16px;padding:22px}
+.detailHeading{display:flex;gap:12px;align-items:start;justify-content:space-between;flex-wrap:wrap}
+.detailHeading h3{font-size:19px;margin:6px 0 4px;overflow-wrap:anywhere}
+.detailHeading p{margin:0;color:#6d7c92;font-size:13px}
+.back{border:0;background:transparent;color:#1f58b3;font-size:12px;font-weight:700;text-align:left;padding:4px 0;width:fit-content}
+.infoSection{border-top:1px solid #e8edf5;padding-top:16px}
+.infoSection h4{font-size:14px;margin:0 0 12px}
+.infoSection p,.infoSection li{font-size:13px;line-height:1.6}
+.infoSection ul{padding-left:21px;margin:10px 0}
+.factList{display:grid;gap:0;margin:0}
+.factList>div{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eef2f7}
+.factList dt{color:#64738c;font-size:12px}
+.factList dd{margin:0;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.evidence{border:1px solid #dce5f3;background:#f9fbff;padding:13px 15px;border-radius:10px}
+.evidence summary{cursor:pointer;font-size:13px;font-weight:700;color:#2a4c79}
+.evidence p,.evidence blockquote,.evidence small{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.evidence blockquote{border-left:3px solid #9db9e0;margin:8px 0;padding:10px;background:#fff}
+.locked{border-radius:9px;background:#f1f4f8;padding:12px 14px;color:#57667c;font-size:12px;font-weight:650}
+.empty{padding:22px;text-align:center;color:#6a7a91;background:#f8fafc;border:1px dashed #cfdae9;border-radius:10px;font-size:13px}
+.error{padding:12px 14px;border-radius:9px;background:#fff0ee;color:#99352d;font-size:13px}
+.footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;color:#75839a;font-size:11px}
+.pager{display:flex;align-items:center;gap:8px;font-size:11px}
+.pager button{font-size:11px}
+.root button:focus-visible,.root a:focus-visible,.root select:focus-visible{outline:3px solid #92b2ee;outline-offset:2px}
+@media(max-width:700px){.stats{gap:7px}.stats>div{padding:10px}.stats strong{font-size:21px}.list,.detail{padding:13px}.listRow{gap:8px}.header h2{font-size:21px}.tabs button{flex:1;padding:12px 8px}}
