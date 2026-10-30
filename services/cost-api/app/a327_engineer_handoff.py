@@ -125,7 +125,7 @@ def _row_status(
         if ready:
             row.update(
                 status="documented_for_review",
-                reason="DEMO şartname kalınlık ve dozajı seçili pozla uyumlu. "
+                reason="Şartnamede incelenen kalınlık ve dozaj seçili pozla uyumlu. "
                        "Kapsam ve teknik karar insan incelemesi gerektirir.",
             )
         else:
