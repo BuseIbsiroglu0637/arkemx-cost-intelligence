@@ -112,3 +112,13 @@ def test_only_fully_source_checked_saved_candidate_enters_precheck_bucket():
 def test_shared_scope_never_enters_prechecked():
     result = state(candidates=[option(shared=True)], saved_selection=selected())
     assert result["group"] == "needs_review"
+
+
+def test_two_plausible_saved_positions_still_need_engineering_review():
+    result = state(
+        candidates=[option(), option(code="15.225.1054")],
+        saved_selection=selected(),
+    )
+    assert result["group"] == "needs_review"
+    assert "Alternatif" in result["reason"]
+    assert result["engineering_approved"] is False
