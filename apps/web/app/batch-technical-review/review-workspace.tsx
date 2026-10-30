@@ -512,7 +512,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
-        setSaveNotice(`${targetCode} inceleme için kaydedildi. Mühendis onayı verilmedi.`);
+        setSaveNotice(`${targetCode} poz seçimi onaylandı. Teknik kontrol ve mühendis onayı bekliyor.`);
         automaticRunKeyRef.current = ""; // Read current triage from the server after saving.
       }, "candidate-save", {
         method: "POST", body: JSON.stringify({
@@ -769,7 +769,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 {manuallyEntered ? <div className={styles.simpleMatchPosition}>
                   <strong>{selectedCode}</strong>
                   <small>Elle girilen poz · PDF adayları arasında doğrulanmadı</small>
-                  <em role="status">{isSaved ? "İnceleme için kaydedildi · onaylanmadı" :
+                  <em role="status">{isSaved ? "Poz seçimi onaylandı · Teknik onay bekliyor" :
                     "Seçildi · henüz kaydedilmedi"}</em>
                 </div> : visibleCandidate ? <div className={styles.simpleMatchPosition}>
                   {needsCeramicChoice && !selectedCode ? <>
@@ -791,11 +791,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <td>
                 <span className={`${styles.simpleStatus} ${
                   blocked ? styles.simpleStatusBlocked :
+                  isSaved ? styles.simpleStatusSuggested :
                   rowTriage?.group === "prechecked" ? styles.simpleStatusSuggested :
                   rowTriage ? styles.simpleStatusReview :
                   missing || needsReview ? styles.simpleStatusReview :
                   top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
-                  {rowTriage?.group === "prechecked" ? "Ön kontrol tamam" :
+                  {isSaved && !blocked ? "Poz seçimi onaylandı" :
+                    rowTriage?.group === "prechecked" ? "Ön kontrol tamam" :
                     rowTriage?.group === "needs_info" ? "Bilgi eksik" :
                     blocked ? "Teknik uyumsuzluk" :
                     manuallyEntered ? "Poz doğrulanmalı" :
@@ -807,6 +809,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     needsReview || rowTriage?.group === "needs_review" ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
+                {isSaved && <small className={styles.queueReason}>Teknik onay bekliyor · Maliyete aktarılmaz.</small>}
                 {rowTriage && <small className={styles.queueReason}>{rowTriage.reason}</small>}
               </td>
               <td><button type="button" className={styles.showCandidates}
@@ -922,14 +925,14 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
                 <span>{option.label}</span>
                 <small>{option.code} · PDF sayfa {option.source_page ?? "—"}</small>
-                {savedCandidates[expandedRow.work_item_id] === option.code && <em>İnceleme için kaydedildi</em>}
+                {savedCandidates[expandedRow.work_item_id] === option.code && <em>Poz seçimi onaylandı · Teknik onay bekliyor</em>}
               </button>)}
             </div>
             <small>Projede özellik belirtilmemişse hiçbirini seçme. Poz kaydı teknik onay değildir.</small>
           </section>}
           {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
-            {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "İnceleme için kaydedildi" : "Henüz kaydedilmedi"}:
-            <strong> {expandedSelectedCode}</strong> · Teknik onay verilmedi.
+            {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "Poz seçimi onaylandı" : "Henüz kaydedilmedi"}:
+            <strong> {expandedSelectedCode}</strong> · Teknik inceleme ve mühendis onayı bekliyor.
             {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
               <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
           </div>}
@@ -967,7 +970,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 </details>
                 <button type="button" disabled={Boolean(busy)}
                   onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
-                  {savedCandidates[expandedRow.work_item_id] === option.code ? "İnceleme için kaydedildi" : "Bu adayı kaydet"}
+                  {savedCandidates[expandedRow.work_item_id] === option.code ? "Poz seçimi onaylandı" : "Bu adayı kaydet"}
                 </button>
               </div>)}
             {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
