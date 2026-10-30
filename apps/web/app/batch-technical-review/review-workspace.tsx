@@ -32,7 +32,12 @@ type CandidateCatalog = { version_id: string; institution: string; period: strin
 type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean; source_page?: number; source_price?: string | null; source_price_verified?: boolean; analysis_inputs?: {code:string;description:string;unit:string;quantity:string;unit_price:string;amount:string}[]; scope_excerpt?: string };
 type SavedCandidate = { code: string | null; current: boolean; stale: boolean; revision_id: string | null; pdf_sha256: string | null; saved_at: string | null; engineering_approved: false; cost_allowed: false };
 type CandidateSaveResponse = { saved: true; approval_allowed: false; engineering_approved: false; cost_allowed: false; work_item_id: string; import_id: string; selection: SavedCandidate };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type CeramicClarification = {
+  key: "ceramic_finish"; prompt: string; hint: string;
+  options: { code: string; label: string; source_page?: number | null }[];
+  approval_allowed: false; cost_allowed: false;
+};
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -331,7 +336,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         // Rows with technical unknowns remain visible but are never approved.
         const selectedCandidates = data.rows.flatMap(row => {
           const [top, second] = row.suggestions;
-          return top && top.technical_status === "compatible" &&
+          return !row.clarification && top && top.technical_status === "compatible" &&
             !top.possible_shared_scope && top.similarity >= 0.5 &&
             (!second || top.similarity - second.similarity >= 0.12)
             ? [{ id: row.work_item_id, code: top.code }] : [];
@@ -513,6 +518,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const countSuggested = selection?.rows.filter(row => suggestionsFor(row.work_item_id).some(item => item.technical_status !== 'blocked')).length ?? 0;
   const countMissing = autoCandidates ? (selection?.rows.length ?? 0) - countSuggested : 0;
   const expandedRow = selection?.rows.find(row => row.work_item_id === candidateDetailId);
+  const expandedClarification = expandedRow
+    ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.clarification
+    : null;
   const expandedSelectedCode = expandedRow ? (candidates[expandedRow.work_item_id] ?? "").trim() : "";
   const expandedSuggestions = expandedRow
     ? [...suggestionsFor(expandedRow.work_item_id)].sort((a, b) =>
@@ -644,6 +652,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const proposed = suggestionsFor(row.work_item_id);
             const reviewRow = autoCandidates?.rows.find(item => item.work_item_id === row.work_item_id);
             const paired = Boolean(reviewRow?.related_excel_rows?.length);
+            const needsCeramicChoice = Boolean(reviewRow?.clarification && !savedCandidates[row.work_item_id]);
             const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
             const top = suitable ?? proposed[0] ?? null;
             const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
@@ -678,7 +687,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <em role="status">{isSaved ? "İnceleme için kaydedildi · onaylanmadı" :
                     "Seçildi · henüz kaydedilmedi"}</em>
                 </div> : visibleCandidate ? <div className={styles.simpleMatchPosition}>
-                  {ambiguous ? <>
+                  {needsCeramicChoice && !selectedCode ? <>
+                    <strong>{proposed.length} olası seramik pozu</strong>
+                    <small>Seramik türü projeden doğrulanmalı.</small>
+                  </> : ambiguous ? <>
                     <strong>{proposed.filter(item => item.technical_status !== "blocked").length} olası poz</strong>
                     <small>Dayanım ve yoğunluk belirtilmediği için doğru kod kesinleştirilemez.</small>
                   </> : <>
@@ -702,6 +714,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     shared ? "Çift fiyatlama riski" :
                     missing ? "İnceleme gerekli" :
                     gasbetonDetailsMissing ? "Teknik bilgi eksik" :
+                    needsCeramicChoice ? "Seramik türü sorulmalı" :
                     needsReview ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
@@ -725,6 +738,21 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
             <p>{expandedRow.effective_description}</p></div>
             <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
+          {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
+            <strong>{expandedClarification.prompt}</strong>
+            <p>{expandedClarification.hint}</p>
+            <div className={styles.simpleCeramicChoices}>
+              {expandedClarification.options.map(option => <button type="button"
+                key={option.code} disabled={Boolean(busy)}
+                aria-pressed={savedCandidates[expandedRow.work_item_id] === option.code}
+                onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
+                <span>{option.label}</span>
+                <small>{option.code} · PDF sayfa {option.source_page ?? "—"}</small>
+                {savedCandidates[expandedRow.work_item_id] === option.code && <em>İnceleme için kaydedildi</em>}
+              </button>)}
+            </div>
+            <small>Projede özellik belirtilmemişse hiçbirini seçme. Poz kaydı teknik onay değildir.</small>
+          </section>}
           {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
             {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "İnceleme için kaydedildi" : "Henüz kaydedilmedi"}:
             <strong> {expandedSelectedCode}</strong> · Teknik onay verilmedi.
