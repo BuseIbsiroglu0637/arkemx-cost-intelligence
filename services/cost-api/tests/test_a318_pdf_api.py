@@ -181,4 +181,6 @@ def test_combined_plaster_warning_keeps_two_original_rows(client, auth, monkeypa
     # One two-layer PDF poz cannot be offered as the payable item for
     # either separately measured plaster stage.
     assert all(not row["suggestions"] for row in rows)
-    assert all(row["rejected_candidate_count"] == 1 for row in rows)
+    # Combined entries are eliminated at retrieval, *before* the API's
+    # post-retrieval rejected_candidate_count counter is incremented.
+    assert all(row["rejected_candidate_count"] == 0 for row in rows)
