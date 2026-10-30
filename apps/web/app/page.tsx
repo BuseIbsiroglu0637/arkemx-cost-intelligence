@@ -280,7 +280,18 @@ export default function Home() {
 
   return <>
 
-    <header><div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div><div className="flex"><span className="tag">Cost Intelligence · Yerel Pilot</span>{token&&<button onClick={logout}>Çıkış</button>}</div></header>
+    <header className={tab === "metraj" ? metrajStyle.brandHeader : undefined}>
+      <div className={tab === "metraj" ? metrajStyle.brandIdentity : undefined}>
+        {tab === "metraj" && <span className={metrajStyle.brandSymbol} aria-hidden="true">A</span>}
+        <div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div>
+      </div>
+      <div className="flex">
+        <span className={tab === "metraj" ? metrajStyle.headerTitle : "tag"}>
+          {tab === "metraj" ? "Proje çalışma alanı" : "Cost Intelligence · Yerel Pilot"}
+        </span>
+        {token && <button type="button" onClick={logout}>Çıkış</button>}
+      </div>
+    </header>
 
     {!token ? <main className="page"><div className="auth card stack"><div><h1>Akıllı maliyetin temeli</h1><p>Metraj dosyanızı güvenli biçimde projeye alın, kaynağını ve kontrol gerektiren satırları görün.</p></div>
 

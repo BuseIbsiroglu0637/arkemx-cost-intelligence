@@ -82,3 +82,9 @@
  .sectionFooter button {width:100%}
  .advanced>summary small {flex-basis:100%}
 }
+
+.brandHeader {background:#112747;padding:17px 26px}
+.brandIdentity {display:flex;align-items:center;gap:11px}
+.brandSymbol {width:35px;height:35px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,#80afff,#3974e4);color:white;font-size:20px;font-weight:800}
+.headerTitle {font-size:12px;color:#d5e4fb}
+@media(max-width:560px){.brandHeader{padding:14px 16px}.headerTitle{display:none}}
