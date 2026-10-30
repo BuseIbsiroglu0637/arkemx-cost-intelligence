@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 
 from .a3_batch_review import NO_STORE, _source
 from .a327_additional_evidence import conflicts_with_metraj
-from .a318_pdf_api import _read as read_analysis_pdf
+from .a318_pdf_api import _pdf_candidate_check, _read as read_analysis_pdf
 from .a326_project_evidence import (
     _block_matches, _evidence_status, _file_path, _position_consistency,
     _read_file, _scan,
 )
+from .a335_plaster_matching import plaster_stages
+from .a338_plaster_evidence import compare_plaster_sources
 from .database import get_db
 from .matching import family
 from .models import PdfCandidateSelection, User, WorkItem
@@ -68,6 +70,72 @@ def _row_status(
     if current.quantity is None or not current.normalized_unit or current.review_required:
         row.update(status="input_review", reason="Metraj miktarı, birimi veya giriş açıklaması kontrol edilmeli.")
         return row
+    if kind == "siva":
+        # A3.40: proposals for a saved single-layer plaster poz were
+        # unreachable because the generic partial-evidence branch never
+        # populated saved_candidate. Never equate "has a PDF" with approval.
+        if document_state != "available":
+            row.update(status="needs_document", reason="Proje teknik şartnamesi okunamıyor.")
+            return row
+        matches = _block_matches(description, blocks)
+        if not matches:
+            row.update(status="needs_document",
+                       reason="Şartnamede bu sıva katmanının teknik bilgisi bulunamadı.")
+            return row
+        row["evidence_page"] = matches[0]["page"]
+        row["evidence_quote"] = matches[0]["quote"]
+        row["evidence_facts"] = {
+            key: value for match in matches for key, value in match["facts"].items()
+            if value is not None
+        }
+        if _evidence_status(matches) == "conflicting" or conflicts_with_metraj(description, matches):
+            row.update(status="conflicting",
+                       reason="Şartnamedeki sıva kalınlığı veya dozaj bilgisi çelişkili.")
+            return row
+        if saved is None:
+            row.update(status="needs_candidate", reason="Şartname var; kayıtlı sıva pozu yok.")
+            return row
+        if not positions or saved.pdf_sha256 != positions[0] or saved.revision_id != current.revision_id:
+            row.update(status="stale_candidate",
+                       reason="Pozun PDF kaynağı veya metraj revizyonu değişmiş.")
+            return row
+        position = next((p for p in positions[1] if p.id == saved.position_code), None)
+        if position is None:
+            row.update(status="stale_candidate", reason="Poz güncel analiz PDF'sinde bulunamadı.")
+            return row
+        if (_pdf_candidate_check(current, position)["status"] == "blocked"
+                or position.unit != current.normalized_unit
+                or plaster_stages(position.description) != plaster_stages(description)):
+            row.update(status="conflicting", reason="Pozun katmanı veya uygulama kapsamı metrajla uyuşmuyor.")
+            return row
+        row["saved_candidate"] = position.id
+        facts = {
+            field["key"]: field
+            for field in compare_plaster_sources(description, position, blocks)
+        }
+        # The actual project PDF must explicitly support BOTH the stated
+        # metraj thickness and the selected poz's cement dosage. A generic
+        # mention or shared kaba+ince paragraph is never sufficient.
+        required = ("thickness_mm", "cement_dosage_kg")
+        ready = all(
+            facts.get(key, {}).get("status") == "evidence_found"
+            and facts[key].get("project") is not None
+            for key in required
+        )
+        if ready:
+            row.update(
+                status="documented_for_review",
+                reason="DEMO şartname kalınlık ve dozajı seçili pozla uyumlu. "
+                       "Kapsam ve teknik karar insan incelemesi gerektirir.",
+            )
+        else:
+            row.update(
+                status="document_evidence_for_review",
+                reason="Poz kayıtlı; teknik bilgiler eksik veya çelişkili. "
+                       "Analiz taslağı düzenlenebilir, pilot onay bekler.",
+            )
+        return row
+
     if kind not in SUPPORTED:
         if document_state != "available":
             return row
