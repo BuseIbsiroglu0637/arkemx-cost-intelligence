@@ -341,6 +341,8 @@ def suggestions_from_pdf(
             "related_excel_rows": partners,
             "rejected_candidate_count": rejected,
             "review_summary": (
+                issue_summary(current.raw_description, scored, partners)
+                if partners else
                 "Teknik olarak uyumsuz adaylar elendi; doğrulanabilir poz bulunamadı."
                 if not scored and rejected else
                 issue_summary(current.raw_description, scored, partners)
