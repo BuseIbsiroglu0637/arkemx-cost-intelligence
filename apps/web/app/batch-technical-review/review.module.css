@@ -80,3 +80,344 @@
 .featureCard blockquote { margin:10px 0; }
 .featureCard small { display:block; overflow-wrap:anywhere; }
 @media(max-width:450px) { .page dl.values { grid-template-columns:1fr; } }
+
+.scopedFields { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; align-items:end; }
+@media(max-width:850px) { .scopedFields { grid-template-columns:1fr; } }
+
+.autoCandidatePanel {display:grid;gap:12px;padding:16px;border:1px solid #b8cdf4;border-radius:12px;background:#f3f7ff}
+.autoCandidatePanel p {margin:4px 0;font-size:13px;color:#52627b;line-height:1.45}
+.autoCandidateControls {display:flex;flex-wrap:wrap;align-items:end;gap:12px}
+.autoCandidateControls label {display:grid;gap:6px;flex:1;min-width:220px;font-size:13px}
+.autoCandidateControls select {width:100%;min-width:0}
+.autoCandidateMessage {font-weight:650;color:#173e79 !important}
+.candidateChoice {display:block;width:100%;margin-top:6px;padding:6px 8px;text-align:left;font-size:11px;line-height:1.3;border-radius:7px;border:1px solid #d6e0f0;background:#f2f6fd;color:#214470;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
+.candidateChoice:hover {border-color:#3164ac}
+
+
+/* A3.17 redesigned candidate-first working area */
+.sourceCards {display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:14px;align-items:start}
+.sourceCards > [role="alert"],.sourceCards > [role="status"] {grid-column:1/-1}
+.sourceMini {padding:18px 20px;min-height:124px;box-shadow:0 4px 14px #1d2a4a06}
+.sourceMini h3 {margin:0 0 10px !important;font-size:15px}
+.sourceMini p {font-size:12px}
+.sourceMini .scopedFields,.sourceMini .fields {grid-template-columns:minmax(0,1fr) auto}
+.sourceLine {font-size:12px;line-height:1.6;margin:8px 0;color:#536b8f;overflow-wrap:anywhere}
+.infoStrip {padding:14px 18px;background:#ecf4ff;border:1px solid #c7d9fc;border-radius:11px;color:#204e9e;font-size:13px;line-height:1.55}
+.suggestionPanel {padding:24px;display:grid;gap:16px}
+.suggestionTop {display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.suggestionTop h2 {font-size:22px;letter-spacing:-.03em;margin:3px 0}
+.suggestionTop h3 {margin:0 0 5px}
+.suggestionTop p {font-size:13px;margin:4px 0;line-height:1.5}
+.suggestionActions {display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.suggestionActions button {white-space:nowrap}
+.searchLabel {min-width:220px;flex:1}
+.searchLabel input {background:#fff;border-radius:9px;height:43px}
+.catalogBar {display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;padding:13px 16px;background:#f6f9ff;border:1px solid #e1e9f6;border-radius:10px}
+.catalogBar > label {flex:1;min-width:240px;max-width:510px}
+.catalogBar select {background:white}
+.noCatalog {display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:13px;color:#475569}
+.noCatalog span {flex:1;min-width:220px}
+.humanReview {display:block;font-size:12px;font-weight:600;color:#45638e;white-space:nowrap;padding:9px 11px;background:#e7f0ff;border-radius:8px}
+.inlineResult {font-size:13px;color:#1f557c;background:#eff9f5;padding:10px 14px;border-radius:9px}
+.demoLabel {background:#fff6e4;color:#855108;border:1px solid #f0dcb1;padding:10px 13px;border-radius:8px;font-size:12px;font-weight:700}
+.suggestionFilters {display:flex;flex-wrap:wrap;gap:8px}
+.suggestionFilters button {font-size:12px;font-weight:650;padding:8px 14px;background:#f1f5fb;color:#405677;border:1px solid #dbe5f3;border-radius:100px}
+.suggestionFilters button[aria-pressed="true"] {background:#1551ca;border-color:#1551ca;color:white}
+.suggestionFilters strong {display:inline-block;padding:2px 7px;background:#ffffff99;border-radius:20px;margin-left:4px}
+.summaryLine {display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#f4f7fb;color:#58708d;border-radius:8px;padding:10px 14px;font-size:12px}
+.summaryLine span {font-weight:650}
+.suggestionPanel .tableScroll {margin:0}
+.suggestionTable {min-width:920px;table-layout:fixed}
+.suggestionTable th {font-size:12px;color:#526585;white-space:normal;padding:12px;background:#f4f7fc}
+.suggestionTable td {padding:12px 10px;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}
+.suggestionTable tr:hover td {background:#fbfdff}
+.suggestionTable th:nth-child(1) {width:40px}
+.suggestionTable th:nth-child(2) {width:78px}
+.suggestionTable th:nth-child(3) {width:25%}
+.suggestionTable th:nth-child(4) {width:110px}
+.suggestionTable th:nth-child(5) {width:auto}
+.suggestionTable th:nth-child(6) {width:118px}
+.suggestionTable td input[type="checkbox"] {width:17px;height:17px;accent-color:#1650c4}
+.rowNumber {font-variant-numeric:tabular-nums;color:#34537f;font-weight:650}
+.rowNumber small {display:block;font-size:10px;font-weight:500;color:#a16b22}
+.itemDescription strong {font-weight:600;line-height:1.5;display:block}
+.itemDescription small {font-size:11px;color:#a96e1f}
+.itemQuantity {font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap;color:#253f6c}
+.itemQuantity span {color:#58708d}
+.candidateChips {display:flex;gap:6px;align-items:stretch;max-width:100%}
+.proposalChip {flex:1;min-width:0;max-width:180px;display:grid;align-content:start;gap:3px;text-align:left;padding:9px 8px;border:1px solid #d8e4f4;border-radius:9px;background:#eff3f9;color:#2b486b;font-size:11px;line-height:1.3;font-weight:500}
+.proposalChip strong {font-size:12px;color:#153c72;font-variant-numeric:tabular-nums}
+.proposalChip span {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:10px;opacity:.8}
+.proposalChip em {font-size:10px;font-style:normal;font-weight:600;color:#95600c}
+.proposalChip[aria-pressed="true"] {outline:2px solid #265bcc;outline-offset:1px}
+.proposalCompatible {background:#eaf7f1;border-color:#d3eadb}
+.proposalReview {background:#fff6e4;border-color:#eed9a9}
+.proposalBlocked {background:#fff0f0;border-color:#ecc9c9}
+.noSuggestion {color:#6b7d98;font-size:12px;margin:0}
+.selectedCode {display:block;margin-top:5px;color:#13539c;font-weight:600}
+.manualCode {display:block;margin-top:3px;color:#9b5d16}
+.showCandidates {display:inline-block;background:#fff;border:1px solid #b7cff7;color:#1551bd;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:650;white-space:nowrap}
+.showCandidates:hover {background:#eef5ff}
+.emptyRows {padding:20px;text-align:center;font-size:13px}
+.candidateDetail {padding:16px 18px;background:#f8fbff;border:1px solid #cbdcf5;border-radius:12px;display:grid;gap:12px}
+.candidateDetail .suggestionTop h3 {font-size:15px}
+.candidateDetailLine {padding:12px;background:#fff;border:1px solid #dbe3ef;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.candidateDetailLine strong {font-size:13px;display:block}
+.candidateDetailLine small {display:block;color:#6e7c8e;margin-top:4px;font-size:11px}
+.candidateDetailLine button {white-space:nowrap;font-size:12px}
+.issues {font-size:11px;color:#995828;line-height:1.5}
+.manualEntry {max-width:430px}
+.tableFooter {display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;gap:10px;font-size:12px;color:#657289}
+.pager {display:flex;align-items:center;gap:9px}
+.pager button {font-size:12px}
+.advancedReview {padding:12px 16px;border:1px solid #dae4f1;border-radius:10px;background:#fcfdff}
+.advancedReview > summary {font-size:13px;color:#42618e}
+.helpCard {padding:16px 18px;border:1px solid #dfe7f2;border-radius:10px;background:#fcfdff}
+.helpCard > summary {font-size:14px}
+.helpCard p {font-size:12px;line-height:1.6}
+.primaryAction {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.primaryAction span {font-size:12px;color:#627795}
+.primaryAction button {padding:12px 16px}
+@media(max-width:1050px){
+  .sourceCards {grid-template-columns:1fr}
+  .suggestionTable {min-width:840px}
+  .sourceMini .scopedFields {grid-template-columns:minmax(0,1fr) auto}
+}
+@media(max-width:640px){
+  .suggestionPanel {padding:15px}
+  .suggestionTop,.suggestionActions {align-items:stretch}
+  .suggestionActions,.suggestionActions button,.searchLabel {width:100%}
+  .sourceMini .scopedFields {grid-template-columns:1fr}
+  .humanReview {white-space:normal}
+  .candidateDetailLine {flex-direction:column;align-items:stretch}
+}
+
+
+/* A3.17 automatic matching: simple default, detail only on demand */
+.simpleMatch {display:grid;gap:14px;padding:22px 24px}
+.simpleMatchHead {display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.simpleMatchHead h2 {margin:0;font-size:20px;letter-spacing:-.03em}
+.simpleMatchHead p {margin:4px 0 0;font-size:13px}
+.simpleMatchSummary {border-radius:9px;background:#eef4ff;border:1px solid #d8e6ff;padding:10px 13px;color:#244d8b;font-size:13px;font-weight:650}
+.simpleCatalog {display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:9px 13px;background:#f7f9fe;border:1px solid #e5ebf5;border-radius:9px;font-size:12px;color:#61748c}
+.simpleCatalog strong {color:#2b4a77}
+.simpleCatalog details {margin:0}
+.simpleCatalog summary {color:#2253a3;cursor:pointer}
+.simpleCatalog label {margin-top:10px;min-width:220px}
+.simpleMissingSource {padding:16px 18px;border:1px solid #e5d6a9;background:#fffbef;border-radius:10px;display:grid;gap:8px}
+.simpleMissingSource strong {font-size:14px;color:#805712}
+.simpleMissingSource p {margin:0;font-size:12px}
+.simpleMissingSource details {font-size:12px}
+.simpleMissingSource button {margin-top:8px}
+.simpleMatchTable {width:100%;table-layout:fixed;min-width:790px}
+.simpleMatchTable th {font-size:12px;color:#526586;white-space:normal;padding:12px}
+.simpleMatchTable td {vertical-align:middle;padding:14px 12px;font-size:12px;overflow-wrap:anywhere}
+.simpleMatchTable th:nth-child(1) {width:94px}
+.simpleMatchTable th:nth-child(2) {width:33%}
+.simpleMatchTable th:nth-child(3) {width:35%}
+.simpleMatchTable th:nth-child(4) {width:185px}
+.simpleMatchTable th:nth-child(5) {width:92px}
+.simpleMatchDescription strong {font-weight:650;display:block}
+.simpleMatchDescription small {font-size:11px;color:#6b7b92;display:block;margin-top:4px}
+.simpleMatchPosition strong {display:block;color:#194f9a;font-variant-numeric:tabular-nums}
+.simpleMatchPosition small {display:block;color:#506782;line-height:1.45;margin-top:3px;max-height:48px;overflow:hidden}
+.simpleMatchPosition em {display:block;font-style:normal;font-size:10px;color:#49769a;margin-top:4px}
+.simpleStatus {display:inline-block;padding:6px 9px;border-radius:8px;font-weight:650;font-size:11px;line-height:1.3}
+.simpleStatusSuggested {background:#eaf6ef;color:#1c7752}
+.simpleStatusReview {background:#fff3dc;color:#96600b}
+.simpleStatusBlocked {background:#ffebea;color:#a92d2b}
+.simpleStatusPending {background:#edf1f7;color:#60738b}
+.simpleNoCandidate {color:#7b899e;font-size:12px}
+.simpleMatchDetail {display:grid;gap:12px;border:1px solid #cbdcf5;border-radius:12px;padding:15px;background:#f9fbff}
+.simpleMatchDetail h3 {font-size:15px;margin:0}
+.simpleMatchDetail p {font-size:12px}
+.simpleMatchDetail details {border:1px solid #e0e7f3;border-radius:9px;padding:10px 12px}
+.simpleMatchDetail details label {margin-top:10px}
+.simpleMatchDetail > button {justify-self:start}
+.simpleFootnote {font-size:12px;color:#577089;padding:0 4px;margin:0}
+@media(max-width:800px) {
+  .simpleMatch {padding:15px}
+  .simpleMatchHead {align-items:flex-start}
+  .simpleMatchTable {min-width:770px}
+}
+
+
+.simpleSource {display:flex;align-items:center;justify-content:space-between;gap:14px;background:#fff;border:1px solid #dbe3ef;border-radius:12px;padding:13px 18px;flex-wrap:wrap}
+.simpleSourceIdentity {display:grid;gap:3px;min-width:0}
+.simpleSourceIdentity strong {font-size:13px;overflow-wrap:anywhere}
+.simpleSourceIdentity span {font-size:12px;color:#667a98}
+.simpleSourceSettings {position:relative;margin:0 !important}
+.simpleSourceSettings > summary {border:1px solid #d2def0;border-radius:8px;padding:9px 12px;color:#2456a1;font-size:12px;white-space:nowrap}
+.simpleSourceSettings[open] {width:min(100%,430px)}
+.simpleSourceSettings[open] > summary {white-space:normal}
+.simpleSourceSettings > label,.simpleSourceSettings > button,.simpleSourceSettings > section {margin-top:12px}
+.simpleSourceSettings > section {border-top:1px solid #e3ebf6;padding-top:12px}
+.simpleSourceSettings h3 {margin:3px 0 8px}
+.simpleSourceSettings .resultList li {font-size:12px;line-height:1.6}
+@media(max-width:650px) {.simpleSource {align-items:stretch}.simpleSourceSettings {width:100%}.simpleSourceSettings > summary {text-align:center}}
+
+.pdfRights {display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:#475569}
+.pdfRights input[type="checkbox"] {width:18px;min-width:18px;height:18px;margin-top:1px;accent-color:#1348c4}
+.simpleMissingSource input[type="file"],.simpleCatalog input[type="file"] {font-size:12px;padding:9px}
+.simpleMissingSource > button {justify-self:start}
+.simpleCatalog details p {font-size:12px;margin:8px 0}
+.simpleCatalog details input[type="file"] {display:block;width:100%;margin:10px 0}
+.simpleCatalog details button {margin-top:10px}
+.legalNote {font-size:11px !important;color:#9b6217 !important;line-height:1.55}
+.simpleSourceCitation {font-size:11px;color:#476b8d;padding:7px 11px;background:#eef6fc;border:1px solid #dbeaf3;border-radius:8px}
+.simpleMatchDetail details {font-size:12px;line-height:1.5}
+.simpleMatchDetail details ul {margin:10px 0;padding-left:20px}
+
+
+/* Simplified technical matching: one primary recommendation, alternatives on demand. */
+.simpleMatchTable th:nth-child(1) {width:36%}
+.simpleMatchTable th:nth-child(2) {width:38%}
+.simpleMatchTable th:nth-child(3) {width:19%}
+.simpleMatchTable th:nth-child(4) {width:80px}
+.simpleMatchPosition small {display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.simpleMatchDescription strong {font-size:13px}
+.simpleMatchDetail {gap:12px}
+.simplePrimaryCandidate {display:grid;gap:10px;background:white;border:1px solid #dee6f2;border-radius:10px;padding:15px}
+.simplePrimaryCandidate > div > strong {display:block;color:#17488e;font-size:14px}
+.simplePrimaryCandidate > div > p {margin:5px 0 8px;line-height:1.55}
+.simplePrimaryCandidate > div > small {display:block;color:#677f99;margin-top:7px}
+.simplePrimaryCandidate > details {font-size:12px}
+.simplePrimaryCandidate > button {justify-self:start}
+.otherCandidates {padding:12px 14px;background:#f7f9fc;border:1px solid #dbe4f0;border-radius:9px}
+.otherCandidates > summary {font-size:13px;font-weight:650;color:#2d567f}
+.otherCandidateRow {display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #e3e9f1;margin-top:12px;padding-top:12px;font-size:12px}
+.otherCandidateRow small {display:block;color:#627790;margin-top:5px}
+.otherCandidateRow button {white-space:nowrap}
+@media(max-width:720px){
+  .simpleMatchTable {min-width:680px}
+  .otherCandidateRow {align-items:stretch;flex-direction:column}
+}
+
+.reviewReason {display:grid;gap:5px;border-radius:10px;padding:12px 15px;background:#fff7e7;border:1px solid #f0dab0;color:#7e5411;font-size:13px;font-weight:650;line-height:1.55}
+.reviewReason small {font-size:11px;color:#826637;font-weight:500}
+.evidenceConfirmed {display:grid;gap:6px;padding:12px 14px;border-radius:9px;background:#eff8f3;border:1px solid #a9d9bb;color:#215e41;font-size:12px;line-height:1.55}
+.evidenceConfirmed strong {font-size:13px}
+.evidenceConfirmed small {font-size:11px;color:#43745a}
+.priceReconciliation {background:#f4f7fb;border:1px solid #dbe5ef;border-radius:7px;padding:10px 12px;font-size:11px;line-height:1.6;color:#40546d;margin:8px 0 0}
+
+/* Candidate selection must be visible but never confused with approval. */
+.chosenCandidateNotice {padding:10px 13px;border:1px solid #c6d8f5;background:#eff6ff;color:#204779;border-radius:9px;font-size:12px;line-height:1.5}
+.chosenCandidateNotice strong {color:#12449b}
+.chosenCandidateNotice small {display:block;margin-top:4px;color:#8d5516}
+.simpleMatchPosition em {font-weight:700}
+
+
+/* A3.24: one short, evidence-grounded ceramic clarification in row details. */
+.simpleCeramicQuestion {display:grid;gap:9px;padding:14px 16px;border-radius:11px;border:1px solid #ccdbf4;background:#f4f8ff}
+.simpleCeramicQuestion > strong {font-size:14px;color:#173c79}
+.simpleCeramicQuestion > p {font-size:12px;line-height:1.5;margin:0;color:#5c6d83}
+.simpleCeramicQuestion > small {font-size:11px;color:#8d561d}
+.simpleCeramicChoices {display:flex;gap:9px;flex-wrap:wrap}
+.simpleCeramicChoices button {display:flex;flex:1 1 170px;align-items:flex-start;flex-direction:column;gap:4px;border-radius:9px;padding:11px 12px;background:white;color:#244b80;text-align:left;border:1px solid #bdcfea;min-width:150px}
+.simpleCeramicChoices button:hover {border-color:#3168d3;background:#f9fcff}
+.simpleCeramicChoices button[aria-pressed="true"] {border:2px solid #2f68c9;background:#ebf3ff}
+.simpleCeramicChoices button span {font-size:12px;font-weight:700}
+.simpleCeramicChoices button small {font-size:11px;color:#607594}
+.simpleCeramicChoices button em {font-size:11px;color:#28734f;font-weight:700;font-style:normal}
+@media(max-width:650px){.simpleCeramicChoices {display:grid;grid-template-columns:1fr}.simpleCeramicChoices button{width:100%}}
+
+
+/* A3.25: one compact, filterable control list. No second duplicate results table. */
+.reviewQueue {margin:14px 0 12px;padding:14px 16px;border:1px solid #d9e4f2;border-radius:11px;background:#f8fbff;display:grid;gap:12px}
+.queueHeading {display:flex;justify-content:space-between;align-items:center;gap:10px}
+.queueHeading h3 {font-size:14px;color:#173d76;margin:0 0 4px}
+.queueHeading p {font-size:11px;color:#64748b;margin:0;line-height:1.5}
+.queueHeading > small {white-space:nowrap;color:#667c96;font-size:11px}
+.queueFilters {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.queueFilters button {border:1px solid #d4e0ef;border-radius:9px;background:#fff;padding:10px 12px;text-align:left;display:grid;gap:3px;color:#254e7e;align-content:start}
+.queueFilters button[aria-pressed="true"] {border-color:#3a74de;background:#eef5ff;box-shadow:inset 0 0 0 1px #3a74de}
+.queueFilters button strong {font-size:19px;color:#153d82;line-height:1.2;font-variant-numeric:tabular-nums}
+.queueFilters button span {font-size:12px;font-weight:700}
+.queueFilters button small {font-size:10px;color:#657b96}
+.queueReason {display:block;color:#718196;line-height:1.5;margin-top:5px;font-size:11px;max-width:260px}
+.queueEmpty {font-size:12px;color:#61718a;padding:13px 18px;border-radius:8px;background:#f7f9fd;margin:10px 0}
+.missingFacts {display:grid;gap:6px;padding:12px 14px;border-radius:9px;background:#fffbf3;border:1px solid #f3dcad;color:#875b15;font-size:12px}
+.missingFacts strong {font-size:13px}
+.missingFacts small {font-size:11px;color:#907342}
+@media(max-width:650px){.queueHeading{align-items:flex-start;flex-direction:column}.queueFilters{grid-template-columns:1fr}.queueFilters button{grid-template-columns:40px 1fr;align-items:center}.queueFilters button small{grid-column:2}}
+
+
+/* A3.26 local project-spec evidence: one optional panel in existing details. */
+.projectEvidence {border:1px solid #d5e2f4;border-radius:10px;background:#fbfdff;padding:12px 14px;font-size:12px}
+.projectEvidence > summary {cursor:pointer;font-size:13px;font-weight:700;color:#214d89}
+.projectEvidence > p {font-size:12px;line-height:1.6;color:#687b96;margin:9px 0}
+.projectEvidence > small {display:block;color:#718299;font-size:11px;margin-top:8px}
+.projectEvidenceActions {display:flex;gap:9px;flex-wrap:wrap;align-items:end}
+.projectEvidenceActions label {flex:1 1 240px;display:grid;gap:5px;color:#455f85;font-size:11px}
+.projectEvidenceActions input {width:100%;padding:7px;font-size:11px}
+.projectEvidenceActions button {min-height:36px;white-space:nowrap}
+.projectEvidenceResult {display:grid;gap:8px;margin-top:12px;border:1px solid #d8e4f3;background:#f4f8ff;border-radius:9px;padding:11px}
+.projectEvidenceResult > strong {font-size:12px;color:#1a5385}
+.projectEvidenceResult > p {color:#9a4d13;font-size:12px;margin:0}
+.projectEvidenceResult > small {font-size:11px;color:#6e7890}
+.projectPositionComparison {display:grid;gap:5px;border:1px solid #cad8e8;border-radius:8px;background:#fff;padding:10px 12px}
+.projectPositionComparison strong {font-size:12px;color:#214d75}
+.projectPositionComparison p {margin:0;font-size:12px;color:#40536c;line-height:1.55}
+.projectPositionComparison small {font-size:11px;color:#6d7a91}
+.projectEvidenceQuote {border:1px solid #e0e8f2;background:#fff;padding:9px 11px;border-radius:8px}
+.projectEvidenceQuote strong {font-size:11px;color:#475f87}
+.projectEvidenceQuote p {font-size:12px;line-height:1.5;color:#344760;overflow-wrap:anywhere;white-space:normal;margin:4px 0 0}
+@media(max-width:650px){.projectEvidenceActions{display:grid}.projectEvidenceActions label{min-width:0}.projectEvidenceActions button{width:100%}}
+
+/* A3.27 engineering handoff: compact, evidence-only checklist. */
+.handoffSummary {display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid #d5e2f4;border-radius:9px;background:#f7faff}
+.handoffSummary > strong {font-size:12px;color:#244c75}
+.handoffSummary > small {font-size:11px;color:#596f85}
+.handoffRows {display:grid;gap:7px}
+.handoffRow {display:grid;gap:4px;padding:10px 11px;border:1px solid #e0e7ef;border-radius:8px;background:#fff}
+.handoffRow strong {font-size:12px;color:#203e62}
+.handoffRow p {margin:0;font-size:12px;color:#496078}
+.handoffRow small {display:block;margin-top:3px;font-size:11px;color:#657990;line-height:1.45}
+
+/* A3.30: local-only, source-preserving analysis proposal and engineer review. */
+.a330Edit{border-top:1px solid #dbe5f0;display:grid;gap:12px;margin-top:14px;padding-top:13px}
+.a330Edit strong{font-size:13px;color:#2b4872}
+.a330Edit>small,.a330Approval>small{font-size:11px;color:#657992;line-height:1.6}
+.a330Line{display:grid;grid-template-columns:minmax(90px,1fr) minmax(160px,2.4fr) minmax(65px,.55fr) minmax(95px,.8fr) minmax(108px,1fr) auto;gap:8px;align-items:end;border-top:1px solid #e8edf5;padding:10px 0}
+.a330Line label,.a330Label{font-size:11px;color:#536b85;display:grid;gap:5px}
+.a330Line input,.a330Label textarea{width:100%;min-width:0;border:1px solid #cbd9e8;border-radius:7px;background:#fff;padding:9px;font-size:12px;color:#253e5a}
+.a330Line>button{padding:9px 11px;font-size:11px}
+.a330Actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.a330Actions button,.a330Edit>button{font-size:12px}
+.a330Approval{border:1px solid #cbdcee;background:#f8fbff;border-radius:10px;padding:13px 15px;font-size:12px;line-height:1.6}
+.a330Approval>summary{cursor:pointer;font-size:13px;font-weight:700;color:#1c4779}
+.a330Approval>p,.a330Approval>label,.a330Approval>.a330Actions{margin-top:12px}
+.a330Label:has(input[type="checkbox"]){display:flex;align-items:flex-start;gap:9px}
+.a330Label input[type="checkbox"]{width:16px;height:16px;flex:none;margin-top:1px}
+.a330Warning{background:#fff4e5;color:#895817;border:1px solid #f0d5a3;border-radius:8px;padding:9px 12px;font-size:11px;line-height:1.5}
+.a330Note{background:#eff5fd;color:#31547b;border-radius:8px;padding:9px 12px;font-size:11px;line-height:1.5}
+@media(max-width:900px){.a330Line{grid-template-columns:repeat(3,minmax(0,1fr))}.a330Line label:nth-child(2){grid-column:span 2}}
+@media(max-width:540px){.a330Line{grid-template-columns:repeat(2,minmax(0,1fr))}.a330Line label:nth-child(2){grid-column:span 2}}
+
+/* A3.34 — one clear poz-list status and three progressive review steps. */
+.simpleStepTitle{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:10px 12px;border:1px solid #d9e4f0;border-radius:9px;background:#f1f6fc;color:#24466d}
+.simpleStepTitle>span{display:inline-flex;align-items:center;justify-content:center;flex:none;width:25px;height:25px;border-radius:7px;background:#2156b5;color:#fff;font-weight:750;font-size:12px}
+.simpleStepTitle>strong{font-size:13px;font-weight:700}
+.simpleStepTitle>small{font-size:11px;color:#65809a}
+.selectedCandidateLabel{font-size:11px;font-weight:700;color:#1c7752;background:#eaf6ef;padding:5px 8px;border-radius:7px}
+.a330SourceDetails{background:#f8fbff;border:1px solid #d9e5f2;border-radius:8px;padding:9px 11px;margin:10px 0}
+.a330SourceDetails>summary{font-size:11px;color:#355b86;cursor:pointer;font-weight:650}
+.a330SourceDetails>p{font-size:11px;line-height:1.6}
+.a330SourceDetails>ul{font-size:11px;line-height:1.6}
+@media(max-width:570px){.simpleStepTitle{align-items:flex-start}.simpleStepTitle>small{flex-basis:100%;padding-left:34px}}
+
+/* A3.38 — evidence at a glance inside existing step 1; not a new workflow. */
+.a338Comparison{border:1px solid #d6e2f1;background:#f8fbff;border-radius:9px;padding:12px;margin:10px 0;min-width:0}
+.a338Comparison>strong{display:block;margin-bottom:8px;font-size:12px;color:#173c75}
+.a338Table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+.a338Table th,.a338Table td{padding:7px 6px;text-align:left;vertical-align:top;border-bottom:1px solid #e1e9f4;overflow-wrap:anywhere}
+.a338Table thead th{color:#476385;background:#f0f5fc}
+.a338Table tbody th{font-weight:650}
+.a338Table small{font-size:10px;color:#667c95}
+.a338Table details>summary{cursor:pointer;color:#24549c;font-size:10px;margin-top:4px}
+.a338Table details>p{max-width:100%;font-size:10px;line-height:1.55}
+.a338Warning{color:#8b510f;background:#fff4df;border:1px solid #f2d3a4;border-radius:7px;padding:9px;font-size:11px}
+.a338Hint{font-size:11px;color:#617895}
+.a338Conflict{color:#a63d26!important;font-weight:700}
+.a338Comparison>small{display:block;margin-top:8px;color:#617895;font-size:10px}
+@media(max-width:610px){.a338Comparison{overflow-x:auto}.a338Table{min-width:470px}}

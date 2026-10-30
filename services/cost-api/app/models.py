@@ -358,3 +358,21 @@ class M43QueueControlEvent(Base):
     reason: Mapped[str] = mapped_column(String(500), nullable=False)
     actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class PdfCandidateSelection(Base):
+    """Saved PDF-derived candidate choice; NOT a technical approval or a cost input."""
+    __tablename__ = "pdf_candidate_selections"
+    __table_args__ = (
+        UniqueConstraint("work_item_id", name="uq_pdf_candidate_work_item"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), index=True, nullable=False)
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True, nullable=False)
+    revision_id: Mapped[str | None] = mapped_column(ForeignKey("work_item_revisions.id"), nullable=True)
+    pdf_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    position_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    selected_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)

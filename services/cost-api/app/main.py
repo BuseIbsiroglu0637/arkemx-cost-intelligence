@@ -25,7 +25,7 @@ if os.getenv("ENVIRONMENT", "development") != "development":
 app = FastAPI(title="ARKEMX Cost Intelligence API", version="0.1.0")
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in origins],
-                   allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+                   allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 
 class RegisterRequest(BaseModel):
@@ -111,6 +111,10 @@ def create_project(payload: ProjectRequest, user: User = Depends(current_user), 
     db.add(project)
     db.commit()
     return {"id": project.id, "name": project.name, "created_at": project.created_at}
+
+
+from .project_deletion import router as project_deletion_router
+app.include_router(project_deletion_router)
 
 
 @app.get("/api/projects")
@@ -341,3 +345,34 @@ app.include_router(a3_review_assessments_router)
 
 from .a3_m4_bridge import router as a3_m4_bridge_router
 app.include_router(a3_m4_bridge_router)
+
+# A3.17 read-only authorized catalog suggestions; no approval or pricing.
+from .a317_suggestions import router as a317_suggestions_router
+app.include_router(a317_suggestions_router)
+
+# A3.18 direct local analysis-PDF source (no synthetic catalog or automatic approval).
+from .a318_pdf_api import router as a318_pdf_router
+app.include_router(a318_pdf_router)
+
+# A3.26 project technical specification evidence (local-only, not engineering approval).
+from .a326_project_evidence import router as a326_project_evidence_router
+app.include_router(a326_project_evidence_router)
+
+# A3.27.1 read-only engineer handoff queue; never issues approvals.
+from .a327_engineer_handoff import router as a327_engineer_handoff_router
+app.include_router(a327_engineer_handoff_router)
+
+# A3.27.2 append-only review handoff notes; no certified engineer approval.
+from .a327_decisions import router as a327_decisions_router
+app.include_router(a327_decisions_router)
+
+from .a330_editable_analysis import router as a330_editable_analysis_router
+app.include_router(a330_editable_analysis_router)
+
+from .a331_pilot_review_api import router as a331_pilot_review_router
+app.include_router(a331_pilot_review_router)
+
+# A3.38 source-cited plaster facts; never a signed technical or priced decision.
+from .a338_plaster_evidence import router as a338_plaster_evidence_router
+app.include_router(a338_plaster_evidence_router)
+

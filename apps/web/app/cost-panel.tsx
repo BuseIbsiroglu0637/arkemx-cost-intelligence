@@ -106,11 +106,13 @@ export default function CostPanel({token,project}:{token:string|null;project:str
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  }
- return <section className="cost-panel" aria-label="M5 taslak maliyet hesaplama">
+ return <details className="card cost-advanced" aria-label="Resmî maliyet işlemleri">
+  <summary>Resmî maliyet taslakları ve gelişmiş işlemler</summary>
+  <div className="cost-panel">
   <div className="card stack">
-   <div className="flex between"><div><h2>M5 · Taslak maliyet hesabı</h2>
+   <div className="flex between"><div><h2>Taslak maliyet hesabı</h2>
     <p className="hint">Onaylı poz × elle girilen birim fiyat · kaynaklı hesap geçmişi</p></div>
-    <span className="tag">M5.0 · Yerel pilot</span></div>
+    <span className="tag">Yerel pilot</span></div>
    <p className="cost-note">Resmî birim fiyat otomatik kullanılmaz. Kullanıcı fiyat kaynağını açıklayarak TRY tutarı girer.
     Sonuç nihai teklif veya onaylanmış maliyet değildir.</p>
    {loading&&<p role="status">Pozlar ve taslaklar yükleniyor...</p>}
@@ -123,6 +125,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
      <button type="button" className="secondary" disabled={busy||loading} onClick={()=>setRefresh(v=>v+1)}>Yenile</button>
    </div>
    {eligible&&<div className="stack">
+     <p className="hint">İncelenen çalışmada {eligible.row_count} metraj satırı var; {eligible.eligible_count} aday maliyet hesabına alınabilir. Taslak aşağıda seçtiğiniz satırları kapsar. İncelemesi tamamlanmayan satırlar fiyatlandırılmaz.</p>
      <label>Taslak başlığı<input maxLength={160} value={title}
        onChange={e=>setTitle(e.target.value)} placeholder="Örn. Kaba inşaat maliyeti"/></label>
      <label>Fiyat kaynağı (tüm seçili satırlar için; en az 10 karakter)
@@ -135,7 +138,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
      </div>
      {eligible.items.length===0?<div className="empty">
        <strong>Henüz fiyatlandırılabilir poz yok.</strong>
-       <p className="hint">M4.2'de teknik olarak uygun bir adayı gerekçeyle onayladığında burada görünecek.</p>
+       <p className="hint">Pozları incele adımında, mühendis kararı ve gerekli kontrolleri tamamlanan adaylar burada görünür.</p>
       </div>:<div className="table-scroll"><table className="cost-table"><thead><tr>
        <th>Seç</th><th>Metraj / Poz</th><th>Miktar</th><th>Birim fiyat (₺)</th></tr></thead>
        <tbody>{shown.map(item=><tr key={item.candidate_id}>
@@ -188,5 +191,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
    </div>}
   </div>
   <CostAnalysisPanel token={token} project={project} history={history}/>
- </section>;
+  </div>
+ </details>;
 }
+

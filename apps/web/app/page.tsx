@@ -4,12 +4,13 @@ import Link from "next/link";
 import { clearWorkspace, readWorkspace, rememberImport, rememberProject } from "./workspace-context";
 import WorkflowNav, { type WorkflowSection } from "./workflow-nav";
 import workflow from "./workflow-nav.module.css";
+import metrajStyle from "./metraj-home.module.css";
 
 import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 
 import MatchPanel from "./match-panel";
+import ReviewWorkspace from "./batch-technical-review/review-workspace";
 
-import CorrectionPanel from "./correction-panel";
 
 import CatalogPanel from "./catalog-panel";
 
@@ -20,8 +21,8 @@ import EngineerReviewPanel from "./engineer-review-panel";
 import BulkPanel from "./bulk-panel";
 
 import CostPanel from "./cost-panel";
+import CostDemoPreview from "./cost-demo-preview";
 
-import RevisedMetrajPanel from "./revised-metraj-panel";
 
 type Project = {id: string; name: string; created_at: string};
 
@@ -32,7 +33,7 @@ type JobSummary = {status:string;total_rows:number;processed_rows:number;candida
 type QueueSummary = {run:null|{row_count:number;candidate_count:number};summary?:{decisions?:Record<string,number>}};
 
 const sectionTitles: Record<WorkflowSection, string> = {
-  overview: "Proje özeti", metraj: "Metraj", technical: "Teknik inceleme",
+  overview: "Proje özeti", metraj: "Metraj", technical: "Pozları incele",
   cost: "Maliyet", catalog: "Kaynaklar",
 };
 const validTabs: Tab[] = ["overview", "metraj", "technical", "catalog", "bulk", "review", "cost"];
@@ -80,6 +81,7 @@ export default function Home() {
   const [projects,setProjects] = useState<Project[]>([]); const [project,setProject] = useState<string>("");
 
   const [projectName,setProjectName] = useState(""); const [file,setFile] = useState<File|null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
 
   const [inspection,setInspection] = useState<Inspection|null>(null); const [selectedSheet,setSelectedSheet] = useState(""); const [headerRow,setHeaderRow] = useState(1); const [preview,setPreview] = useState<Preview|null>(null);
 
@@ -93,11 +95,11 @@ export default function Home() {
 
   const [showLegacy,setShowLegacy] = useState(false);
 
-  const [tab,setTab] = useState<Tab>("overview");
+  const [tab,setTab] = useState<Tab>("metraj");
+  const [reviewOpened, setReviewOpened] = useState(false);
 
   const [showAllItems,setShowAllItems] = useState(false);
 
-  const [showRevisions,setShowRevisions] = useState(false);
 
   const [summaryRefresh,setSummaryRefresh] = useState(0);
 
@@ -116,7 +118,7 @@ export default function Home() {
   useEffect(() => {
     const readSection = () => {
       const hash = window.location.hash.slice(1) as Tab;
-      if (validTabs.includes(hash)) setTab(hash);
+      if (validTabs.includes(hash)) { setTab(hash); if (hash === "technical") setReviewOpened(true); }
     };
     readSection();
     window.addEventListener("hashchange", readSection);
@@ -148,7 +150,7 @@ export default function Home() {
       else rememberImport(token, project, null);
     }).catch(() => { if (active) setActiveExcel("Excel seçimi doğrulanamadı; teknik incelemede yeniden seç."); });
     return () => { active = false; };
-  }, [token, project]);
+  }, [token, project, revisionTick]);
   const activeSection: WorkflowSection = tab === "bulk" || tab === "review" ? "technical" : tab;
 
   const handleError = (e:unknown)=>setError(e instanceof Error?e.message:"Beklenmeyen hata");
@@ -156,6 +158,7 @@ export default function Home() {
   const goTo=(next:Tab)=>{
 
     setTab(next);
+    if (next === "technical") setReviewOpened(true);
     window.history.pushState(null, "", `#${next}`);
 
     document.getElementById("workspace-main")?.scrollIntoView({behavior:"smooth",block:"start"});
@@ -205,21 +208,48 @@ export default function Home() {
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
-  function logout(){projectRequestRef.current += 1; clearWorkspace();sessionStorage.removeItem("arkemx_dev_token");setToken(null);setProjects([]);setProject("");setItems([]);setPreview(null);setTab("overview");}
+  function logout(){projectRequestRef.current += 1; clearWorkspace();sessionStorage.removeItem("arkemx_dev_token");setToken(null);setProjects([]);setProject("");setItems([]);setPreview(null);setTab("metraj");}
 
   async function createProject(e:FormEvent){e.preventDefault();if(!token)return;setBusy(true);setError("");try{
 
     const p = await request<Project>("/api/projects",token,"POST",{name:projectName});
 
-    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("overview");setShowRevisions(false);setMessage("Proje oluşturuldu.");
+    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("metraj");setMessage("Proje oluşturuldu.");
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
+
+  async function deleteSelectedProject(e: FormEvent) {
+    e.preventDefault();
+    if (!token || !project || busy) return;
+    const selected = projects.find(item => item.id === project);
+    if (!selected || deleteConfirmName !== selected.name) return;
+    setBusy(true); setError("");
+    try {
+      const result = await request<{deleted_project_id: string; cleanup_pending: boolean}>(
+        `/api/projects/${encodeURIComponent(project)}`, token, "DELETE",
+        {confirm_project_id: project, confirm_name: deleteConfirmName}
+      );
+      if (result.deleted_project_id !== project) throw new Error("Silme yanıtı eşleşmiyor.");
+      projectRequestRef.current += 1;
+      clearWorkspace();
+      setProject(""); setItems([]); setPreview(null); setInspection(null);
+      setFile(null); setActiveExcel(""); setReviewOpened(false);
+      setDeleteConfirmName("");
+      setProjects(await request<Project[]>("/api/projects", token));
+      setTab("metraj");
+      setMessage(result.cleanup_pending
+        ? "Proje kayıtları silindi; bazı yükleme dosyaları için temizlik gerekiyor."
+        : "Proje ve ilişkili verileri silindi.");
+    } catch (e) { handleError(e); }
+    finally { setBusy(false); }
+  }
 
   async function chooseProject(id:string) {
     const generation = ++projectRequestRef.current;
     if (token) rememberProject(token, id);
+    setReviewOpened(false); setDeleteConfirmName("");
     setProject(id); setInspection(null); setPreview(null); setFile(null); setItems([]);
-    setShowAllItems(false); setShowRevisions(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
+    setShowAllItems(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
     if (!token || !id) return;
     try {
       const rows = await request<Row[]>(`/api/projects/${id}/items`, token);
@@ -255,8 +285,9 @@ export default function Home() {
 
   async function importRows(){if(!token||!file||!project)return;setBusy(true);setError("");try{
 
-    const result = await request<{row_count:number;review_count:number}>(`/api/projects/${project}/imports`,token,"POST",uploadForm());
+    const result = await request<{id:string;row_count:number;review_count:number}>(`/api/projects/${project}/imports`,token,"POST",uploadForm());
 
+    rememberImport(token, project, result.id);
     setItems(await request<Row[]>(`/api/projects/${project}/items`,token));setPreview(null);setInspection(null);setFile(null);
 
     setMessage(`${result.row_count} metraj kalemi kaydedildi. ${result.review_count} kalem kontrol gerektiriyor.`);
@@ -279,7 +310,18 @@ export default function Home() {
 
   return <>
 
-    <header><div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div><div className="flex"><span className="tag">Cost Intelligence · Yerel Pilot</span>{token&&<button onClick={logout}>Çıkış</button>}</div></header>
+    <header className={tab === "metraj" ? metrajStyle.brandHeader : undefined}>
+      <div className={tab === "metraj" ? metrajStyle.brandIdentity : undefined}>
+        {tab === "metraj" && <span className={metrajStyle.brandSymbol} aria-hidden="true">A</span>}
+        <div><div className="brand">ARKEMX</div><div className="subbrand">COST INTELLIGENCE</div></div>
+      </div>
+      <div className="flex">
+        <span className={tab === "metraj" ? metrajStyle.headerTitle : "tag"}>
+          {tab === "metraj" ? "Proje çalışma alanı" : "Cost Intelligence · Yerel Pilot"}
+        </span>
+        {token && <button type="button" onClick={logout}>Çıkış</button>}
+      </div>
+    </header>
 
     {!token ? <main className="page"><div className="auth card stack"><div><h1>Akıllı maliyetin temeli</h1><p>Metraj dosyanızı güvenli biçimde projeye alın, kaynağını ve kontrol gerektiren satırları görün.</p></div>
 
@@ -299,19 +341,19 @@ export default function Home() {
 
     <main className="page workspace-page">
 
-      <section className="workspace-context card" aria-label="Proje seçimi ve çalışma özeti">
+      {tab !== "metraj" && tab !== "technical" && <section className="workspace-context card" aria-label="Proje seçimi ve çalışma özeti">
 
         <div className="workspace-project">
 
           <div className="workspace-context-heading">
-            <h1>ARKEMX çalışma alanı</h1>
-            <p className="hint">Metrajdan teknik incelemeye tek proje üzerinden ilerleyin.</p>
+            <h1>Proje çalışma alanı</h1>
+            <p className="hint">Metrajı yükleyin, pozları inceleyin ve maliyeti aynı projede hazırlayın.</p>
 
           </div>
 
           <label className="workspace-project-select">Aktif proje
 
-            <select aria-label="Aktif proje seç" value={project} onChange={e=>chooseProject(e.target.value)}>
+            <select aria-label="Aktif proje seç" disabled={busy} value={project} onChange={e=>chooseProject(e.target.value)}>
 
               <option value="">Proje seçin</option>
 
@@ -337,7 +379,7 @@ export default function Home() {
 
         </div>
 
-        <div className="workspace-status" aria-label="Proje durum özeti">
+        <details><summary>Proje durum ayrıntıları</summary><div className="workspace-status" aria-label="Proje durum özeti">
 
           <span>En yeni toplu iş: <strong>{project?jobStatusText:"Proje seçilmedi"}</strong></span>
 
@@ -349,9 +391,9 @@ export default function Home() {
 
           {project&&<button type="button" className="ghost workspace-refresh" onClick={()=>setSummaryRefresh(v=>v+1)}>Durumu yenile</button>}
 
-        </div>
+        </div></details>
 
-      </section>
+      </section>}
 
       {message&&<div role="status" className="success">{message}</div>}
 
@@ -359,15 +401,116 @@ export default function Home() {
 
       {summaryError&&<p role="status" className="hint">{summaryError}</p>}
 
-      {project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Teknik incelemede bir Excel aktarımı seç."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
-      <WorkflowNav active={activeSection} onSelect={goTo} />
-      <div className={workflow.steps}>Metrajı yükle → adayları ve teknik farkları incele → mühendis kararından sonra maliyet çalışmasına geç.</div>
+      {tab === "metraj" && <>
+        <section className={metrajStyle.hero} aria-label="Metraj çalışma alanı">
+          <div>
+            <span className={metrajStyle.kicker}>ÇALIŞMA ALANI / METRAJ</span>
+            <h1>Metraj yönetimi</h1>
+            <p>Metrajını yükle, kayıtlarını görüntüle ve teknik incelemeye geç.</p>
+          </div>
+          <div className={metrajStyle.projectActions}>
+            <label className={metrajStyle.projectSelect}>
+              <span>Aktif proje</span>
+              <select aria-label="Aktif proje seç" value={project} onChange={e => chooseProject(e.target.value)}>
+                <option value="">Proje seçin</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <details className={metrajStyle.newProject}>
+              <summary>+ Yeni proje</summary>
+              <form className="stack" onSubmit={createProject}>
+                <label>Proje adı<input required minLength={2} value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Yeni proje adı" /></label>
+                <button type="submit" disabled={busy}>Proje oluştur</button>
+              </form>
+            </details>
+            {project && <details className={metrajStyle.deleteProject}>
+              <summary>Projeyi sil</summary>
+              <form onSubmit={deleteSelectedProject} className="stack">
+                <strong>Proje kalıcı olarak silinecek.</strong>
+                <p>Bu projeye ait Excel aktarımları, inceleme kayıtları, revizyonlar ve maliyet taslakları da silinir. Diğer projeler ve paylaşılan kataloglar korunur.</p>
+                <p>Onaylamak için proje adını aynen yaz:</p>
+                <code>{projects.find(item => item.id === project)?.name}</code>
+                <label>
+                  Proje adını doğrula
+                  <input type="text" value={deleteConfirmName} onChange={e => setDeleteConfirmName(e.target.value)} autoComplete="off" />
+                </label>
+                <button type="submit" disabled={busy || deleteConfirmName !== projects.find(item => item.id === project)?.name}>Projeyi kalıcı sil</button>
+              </form>
+            </details>}
+          </div>
+        </section>
+        <nav className={metrajStyle.steps} aria-label="Çalışma aşamaları">
+          <button type="button" className={metrajStyle.stepActive} aria-current="step">
+            <span className={metrajStyle.stepNumber}>1</span>
+            <span><strong>Metraj</strong><small>Aktif aşama</small></span>
+          </button>
+          <button type="button" disabled={!project} onClick={() => goTo("technical")}>
+            <span className={metrajStyle.stepNumber}>2</span>
+            <span><strong>Poz inceleme</strong><small>Adaylar ve kanıtlar</small></span>
+          </button>
+          <button type="button" disabled={!project} onClick={() => goTo("cost")}>
+            <span className={metrajStyle.stepNumber}>3</span>
+            <span><strong>Maliyet</strong><small>Taslak ve farklar</small></span>
+          </button>
+        </nav>
+      </>}
+      {tab === "technical" && <>
+        <section className={metrajStyle.hero} aria-label="Poz inceleme çalışma alanı">
+          <div>
+            <span className={metrajStyle.kicker}>ÇALIŞMA ALANI / METRAJ / POZ İNCELEME</span>
+            <h1>Poz inceleme</h1>
+            <p>Excel metrajın için poz adaylarını otomatik bul, teknik farkları kontrol et.</p>
+          </div>
+          <div className={metrajStyle.projectActions}>
+            <label className={metrajStyle.projectSelect}>
+              <span>Aktif proje</span>
+              <select aria-label="Aktif proje seç" value={project} onChange={e => chooseProject(e.target.value)}>
+                <option value="">Proje seçin</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <details className={metrajStyle.newProject}>
+              <summary>+ Yeni proje</summary>
+              <form className="stack" onSubmit={createProject}>
+                <label>Proje adı<input required minLength={2} value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Yeni proje adı" /></label>
+                <button type="submit" disabled={busy}>Proje oluştur</button>
+              </form>
+            </details>
+          </div>
+        </section>
+        <nav className={metrajStyle.steps} aria-label="Çalışma aşamaları">
+          <button type="button" onClick={() => goTo("metraj")}>
+            <span className={metrajStyle.stepNumber}>1</span>
+            <span><strong>Metraj</strong><small>Excel ve kayıtlar</small></span>
+          </button>
+          <button type="button" className={metrajStyle.stepActive} aria-current="step">
+            <span className={metrajStyle.stepNumber}>2</span>
+            <span><strong>Poz inceleme</strong><small>Adaylar ve kanıtlar</small></span>
+          </button>
+          <button type="button" disabled={!project} onClick={() => goTo("cost")}>
+            <span className={metrajStyle.stepNumber}>3</span>
+            <span><strong>Maliyet</strong><small>Taslak ve farklar</small></span>
+          </button>
+        </nav>
+      </>}
+      {tab !== "metraj" && tab !== "technical" && tab !== "cost" && project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Metraj yükleyin veya Pozları incele adımından Excel seçin."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
+      {tab !== "metraj" && tab !== "technical" && <WorkflowNav active={activeSection} onSelect={goTo} />}
+      {tab !== "metraj" && tab !== "technical" && tab !== "cost" && <details className="card"><summary>Proje özeti ve kaynak yönetimi</summary>
+        <div className="flex"><button type="button" className="secondary" onClick={() => goTo("overview")}>Proje özeti</button>
+        <button type="button" className="secondary" onClick={() => goTo("catalog")}>Katalog ve PDF kaynakları</button></div>
+      </details>}
+      {tab !== "metraj" && tab !== "technical" && tab !== "cost" && <div className={workflow.steps}>Metraj → Pozları incele → Maliyet. Teknik farklar ve kaynak kanıtları satırın ayrıntısında gösterilir.</div>}
       <div className="workspace-main" id="workspace-main" aria-label={sectionTitles[activeSection]}>
       {(tab === "bulk" || tab === "review") && <div className="card stack">
         <button type="button" className="secondary" onClick={() => goTo("technical")}>← Teknik inceleme seçeneklerine dön</button>
         <h2>{tab === "bulk" ? "Katalogdan aday bulma" : "Mühendis kararları"}</h2>
-        <p>{tab === "bulk" ? "Bu işlem aday üretir. Kanıtlı teknik uygunluk kontrolü veya mühendis onayı yerine geçmez." : "Bu bölüm kayıtlı karar akışıdır. Salt okunur teknik karşılaştırmanın sonuçları buraya otomatik aktarılmaz."}</p>
+        <p>{tab === "bulk" ? "Bu işlem aday üretir. Kanıtlı teknik uygunluk kontrolü veya mühendis onayı yerine geçmez." : "Bu bölüm kayıtlı karar akışıdır. PDF teknik karşılaştırmasının sonuçları burada otomatik onaylanmaz."}</p>
       </div>}
+
+      {project && (reviewOpened || tab === "technical") && <section hidden={tab !== "technical"} style={{display: tab === "technical" ? "block" : "none"}} aria-label="Poz inceleme çalışma alanı">
+        <ReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
+          onImportSelected={setActiveExcel} onSessionExpired={logout} />
+      </section>}
 
       {!project?<section className="card empty">Yukarıdan bir proje seçin veya yeni proje oluşturun.</section>:
 
@@ -429,66 +572,101 @@ export default function Home() {
 
        </div>:
 
-       tab==="technical"?<section className="card stack">
-         <div><h2>Teknik inceleme</h2><p>Excel satırlarını karşılaştırmak için ilk seçeneği kullan. Aday üretme ve mühendis kararı ayrı işlemlerdir.</p></div>
-         <div className={workflow.cards}>
-           <article className={`${workflow.card} ${workflow.primary}`}>
-             <h3>Excel satırlarını karşılaştır</h3>
-             <p>İçe aktardığın satırlarda kalınlık, malzeme ve dozaj farklarını kaynak ifadeleriyle gör.</p>
-             <p><strong>Salt okunur · Ana poz desteği: 15.275.1111</strong></p>
-             <Link href="/batch-technical-review">Excel teknik incelemesini aç →</Link>
-           </article>
-           <article className={workflow.card}>
-             <h3>Katalogdan aday bul</h3><p>Katalog ile metrajı tarayıp incelenecek poz adaylarını oluştur.</p>
-             <button type="button" className="secondary" onClick={() => goTo("bulk")}>Aday bulma ekranını aç</button>
-           </article>
-           <article className={workflow.card}>
-             <h3>Mühendis kararları</h3><p>Kayıtlı adayların inceleme ve onay sürecini yönet.</p>
-             <button type="button" className="secondary" onClick={() => goTo("review")}>Karar ekranını aç</button>
-           </article>
-         </div>
-         <details><summary>Gelişmiş araçlar · Tek tarif ve maliyet senaryosu</summary>
-           <p>Excel satırlarından bağımsız bir tarif denemek veya desteklenen alternatif harç senaryosunu incelemek için kullan.</p>
-           <Link href="/technical-review">Tek tarif denemesini aç →</Link>
-         </details>
-       </section>:
-       tab==="metraj"?<div className="stack">
+       tab==="technical"?null:
+       tab==="metraj"?<div className={metrajStyle.content}>
+         <section className={metrajStyle.panel} aria-labelledby="saved-metraj-heading">
+           <div className={metrajStyle.sectionHead}>
+             <div>
+               <h2 id="saved-metraj-heading">Kaydedilmiş metraj</h2>
+               <p>Bu projede daha önce yüklenen, özgün hâli korunan metraj kayıtları.</p>
+             </div>
+             <span className={items.length ? metrajStyle.savedTag : metrajStyle.neutralTag}>{items.length ? "✓ Kayıt mevcut" : "Henüz kayıt yok"}</span>
+           </div>
+           {items.length > 0 ? <>
+             <div className={metrajStyle.stats}>
+               <div><small>Görüntülenen kayıt</small><strong>{items.length}</strong></div>
+               <div><small>Girdi incelemesi gerekli</small><strong>{items.filter(row => row.review_required).length}</strong></div>
+               <div><small>Kaynak kayıt</small><strong>Korunuyor</strong></div>
+             </div>
+             {activeExcel && <p className={metrajStyle.sourceNote}>Seçili Excel / çalışma sayfası: <strong>{activeExcel}</strong></p>}
+             <div className={metrajStyle.tableFrame}>
+               <table>
+                 <thead><tr><th>Excel satırı</th><th>İmalat açıklaması</th><th>Miktar / birim</th><th>Durum</th></tr></thead>
+                 <tbody>{(showAllItems ? items : items.slice(0, 20)).map((row, index) =>
+                   <tr key={row.source_row + "-" + index}>
+                     <td>{row.source_row}</td>
+                     <td className={metrajStyle.description}>{row.description || "Açıklama yok"}</td>
+                     <td>{row.quantity ?? "Eksik"} {row.unit ?? ""}</td>
+                     <td><span className={row.review_required ? metrajStyle.reviewTag : metrajStyle.savedTag}>{row.review_required ? "Girdi incelemesi gerekli" : "Kaydedildi"}</span></td>
+                   </tr>
+                 )}</tbody>
+               </table>
+             </div>
+             {items.length > 20 && <button type="button" className="secondary" onClick={() => setShowAllItems(v => !v)}>{showAllItems ? "İlk 20 satırı göster" : "Tüm görüntülenebilir kayıtları göster"}</button>}
+             <div className={metrajStyle.sectionFooter}>
+               <span>Kaynak Excel kaydı değiştirilmez. Teknik uygunluk ayrıca değerlendirilir.</span>
+               <button type="button" onClick={() => goTo("technical")}>Pozları incele →</button>
+             </div>
+           </> : <div className={metrajStyle.emptyState}>Bu projede henüz kaydedilmiş metraj bulunmuyor. Aşağıdan Excel yükleyerek başlayabilirsin.</div>}
+         </section>
 
-                <section className="card stack"><div className="flex between"><h2>Excel metraj yükle</h2><span className="tag">.xlsx · en fazla 10 MB</span></div>
+         <section className={metrajStyle.panel} aria-labelledby="upload-heading">
+           <div className={metrajStyle.sectionHead}>
+             <div><h2 id="upload-heading">Yeni Excel metrajı yükle</h2><p>İmalat açıklaması, miktar ve birim sütunlarını kontrol ederek içe aktar.</p></div>
+             <a className={metrajStyle.templateLink} href="/templates/arkemx-metraj-ornek.xlsx" download>Örnek Excel şablonu ↓</a>
+           </div>
+           <div className={metrajStyle.uploadZone}
+             onDragOver={event => event.preventDefault()}
+             onDrop={event => {
+               event.preventDefault();
+               const dropped = event.dataTransfer.files[0];
+               if (!dropped) return;
+               if (!dropped.name.toLowerCase().endsWith(".xlsx") || dropped.size > 10 * 1024 * 1024) {
+                 setError("Yalnızca en fazla 10 MB büyüklüğünde .xlsx dosyası seçilebilir.");
+                 return;
+               }
+               setFile(dropped); setInspection(null); setPreview(null); setError("");
+             }}>
+             <span className={metrajStyle.uploadIcon} aria-hidden="true">⇧</span>
+             <label className={metrajStyle.filePicker}>
+               <span>Excel dosyanı buraya sürükle veya dosya seç</span>
+               <input type="file" accept=".xlsx" aria-label="Excel metraj dosyası seç"
+                 onChange={event => { setFile(event.target.files?.[0] ?? null); setInspection(null); setPreview(null); }} />
+             </label>
+             <small>.xlsx formatı · En fazla 10 MB</small>
+             {file && <strong className={metrajStyle.selectedFile}>Seçilen dosya: {file.name}</strong>}
+           </div>
+           <div className={metrajStyle.uploadActions}>
+             <button type="button" disabled={!file || busy} onClick={() => inspect()}>1. Sütunları incele</button>
+             <span>Excel, sütun eşleştirmesi ve önizleme onayından sonra kaydedilir.</span>
+           </div>
+           {inspection && <div className={metrajStyle.importConfig}>
+             <div className="fields">
+               <label>Çalışma sayfası<select value={selectedSheet} onChange={e => inspect(e.target.value)}>{inspection.sheets.map(sh => <option key={sh} value={sh}>{sh}</option>)}</select></label>
+               <label>Başlık satırı (1–30)<input type="number" min={1} max={30} value={headerRow} onChange={e => setHeaderRow(Number(e.target.value))}/></label>
+               <button type="button" className="secondary" disabled={busy || headerRow < 1 || headerRow > 30} onClick={() => inspect(selectedSheet, headerRow)}>Başlıkları yenile</button>
+             </div>
+             <p className="hint">Excel sütunlarını doğrula; otomatik önerileri gerekiyorsa değiştir.</p>
+             <div className="fields">{(["description", "quantity", "unit"] as const).map(field =>
+               <label key={field}>{({description:"İmalat açıklaması", quantity:"Miktar", unit:"Birim"})[field]}
+                 <select value={mapping[field] || ""} onChange={e => { setMapping({...mapping, [field]:e.target.value}); setPreview(null); }}>
+                   <option value="">Sütun seçin</option>{inspection.headers.map(h => <option key={h} value={h}>{h}</option>)}
+                 </select>
+               </label>)}</div>
+             <div className="flex">
+               <button type="button" className="secondary" disabled={busy || !mapping.description || !mapping.quantity || !mapping.unit} onClick={previewRows}>2. Satırları önizle</button>
+               <button type="button" disabled={busy || !preview} onClick={importRows}>3. Metrajı kaydet</button>
+             </div>
+           </div>}
+         </section>
 
-          <label>Metraj dosyası<input type="file" accept=".xlsx" onChange={e=>{setFile(e.target.files?.[0]||null);setInspection(null);setPreview(null);}}/></label>
+         {preview && <section className={metrajStyle.panel}>
+           <h2>Dosya önizleme</h2>
+           <div className="flex"><div className="kpi"><b>{preview.row_count}</b><span>Toplam iş kalemi</span></div><div className="kpi"><b>{preview.review_count}</b><span>İnceleme gerektiren</span></div></div>
+           <Rows rows={preview.items}/>
+           <p className="hint">İlk 30 satır gösteriliyor. Tüm satırlar kaydetme sırasında yeniden doğrulanır.</p>
+         </section>}
 
-          <button disabled={!file||busy} className="secondary" onClick={()=>inspect()}>1. Sütunları incele</button>
-
-          {inspection&&<><div className="fields"><label>Çalışma sayfası<select value={selectedSheet} onChange={e=>inspect(e.target.value)}>{inspection.sheets.map(sh=><option key={sh} value={sh}>{sh}</option>)}</select></label><label>Başlık satırı (1-30)<input type="number" min={1} max={30} value={headerRow} onChange={e=>setHeaderRow(Number(e.target.value))}/></label><button className="secondary" disabled={busy||headerRow<1||headerRow>30} onClick={()=>inspect(selectedSheet,headerRow)}>Başlıkları yenile</button></div><p className="hint">Sütun önerilerini kontrol edebilir, değiştirebilirsiniz.</p><div className="fields">{(["description","quantity","unit"] as const).map(field=><label key={field}>{({description:"İmalat açıklaması",quantity:"Miktar",unit:"Birim"})[field]}<select value={mapping[field]||""} onChange={e=>{setMapping({...mapping,[field]:e.target.value});setPreview(null);}}><option value="">Sütun seçin</option>{inspection.headers.map(h=><option key={h} value={h}>{h}</option>)}</select></label>)}</div><div className="flex"><button className="secondary" disabled={busy||!mapping.description||!mapping.quantity||!mapping.unit} onClick={previewRows}>2. Satırları önizle</button><button disabled={busy||!preview} onClick={importRows}>3. Metrajı kaydet</button></div></>}
-
-        </section>
-
-        {preview&&<section className="card stack"><h2>Dosya önizleme</h2><div className="flex"><div className="kpi"><b>{preview.row_count}</b><span>Toplam iş kalemi</span></div><div className="kpi"><b>{preview.review_count}</b><span>İnceleme gerektiren</span></div></div><Rows rows={preview.items}/><p className="hint">İlk 30 satır gösteriliyor. Tüm satırlar kaydetme sırasında yeniden doğrulanır.</p></section>}
-
-        <section className="card stack"><div className="flex between"><h2>Kaydedilmiş metraj (değiştirilemez)</h2><span className="tag">{items.length} kayıt görüntülenebilir</span></div><p className="hint">Kaynak kayıtları değişmez; eski içe aktarımlar da bu listede bulunabilir. Teknik düzeltmeler ayrı revizyon olarak saklanır.</p>
-
-          {items.length?<><Rows rows={showAllItems?items:items.slice(0,20)}/>{items.length>20&&
-
-          <button className="secondary" type="button" onClick={()=>setShowAllItems(v=>!v)}>
-
-            {showAllItems?"İlk 20 satıra daralt":`Tüm ${items.length} kaydı göster`}
-
-          </button>}</>:<div className="empty">Henüz kaydedilmiş metraj yok.</div>}</section>
-
-        <RevisedMetrajPanel token={token} project={project}
-
-          onApplied={async()=>{if(token){setItems(await request<Row[]>(`/api/projects/${project}/items`,token));}setRevisionTick(v=>v+1);setSummaryRefresh(v=>v+1);}}/>
-
-        <section className="workspace-collapsible">
-
-          <button type="button" className="secondary" aria-expanded={showRevisions} onClick={()=>setShowRevisions(v=>!v)}>
-
-            {showRevisions?"Düzeltme geçmişini kapat":"Metraj düzeltme ve revizyon geçmişini aç"}</button>
-
-          {showRevisions&&<CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={()=>setRevisionTick(v=>v+1)}/>}
-
-        </section>
 
        </div>:
 
@@ -498,7 +676,11 @@ export default function Home() {
 
        tab==="review"?<EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>:
 
-       <div className="stack"><section className="card stack"><h2>Maliyet</h2><p>Kayıtlı maliyet taslaklarını ve karşılaştırmalarını yönet. PDF kaynak fiyatı, metrajına otomatik uygulanmış fiyat değildir.</p><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostPanel token={token} project={project}/></div>}
+       <div className="stack">
+         <CostDemoPreview key={`${token}:${project}`} token={token} project={project}
+           onReview={() => goTo("technical")} />
+         <CostPanel key={`${token}:${project}`} token={token} project={project}/>
+       </div>}
 
       </div>
 
