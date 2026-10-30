@@ -58,6 +58,18 @@ def _technical_status(current, position: PdfPosition) -> str:
     )["status"]
 
 
+def _saved_choice_blocked(current, row: PdfCandidateSelection,
+                         by_code: dict[str, PdfPosition]) -> bool:
+    position = by_code.get(row.position_code)
+    if position is None:
+        return True
+    if _technical_status(current, position) == "blocked":
+        return True
+    # The material class must be positively grounded for ceramic finishes.
+    return (family(current.raw_description) == "seramik"
+            and family(position.description) != "seramik")
+
+
 def _selected_view(row: PdfCandidateSelection, *, current_revision: str | None,
                    current_pdf_sha: str, technically_blocked: bool = False) -> dict:
     valid = (
@@ -272,6 +284,7 @@ def suggestions_from_pdf(
         partners = partner_rows.get(str(current.id), [])
         candidates = find_pdf_candidates(current, positions)
         scored = []
+        rejected = 0
         for result in candidates:
             position = by_code[result["position_id"]]
             check = compare(
@@ -284,6 +297,15 @@ def suggestions_from_pdf(
                 current.raw_description, position.description, check,
                 plaster_partner_rows=partners,
             )
+            # Technical contradictions are not suggestions. The actual PDF
+            # record remains available as source evidence but cannot be
+            # presented as a recommended or saveable candidate.
+            if check["status"] == "blocked" or (
+                family(current.raw_description) == "seramik" and
+                family(position.description) != "seramik"
+            ):
+                rejected += 1
+                continue
             scored.append({
                 "code": position.id,
                 "description": position.description,
@@ -311,19 +333,18 @@ def suggestions_from_pdf(
                     saved[str(current.id)],
                     current_revision=current.revision_id,
                     current_pdf_sha=digest,
-                    technically_blocked=(
-                        saved[str(current.id)].position_code not in by_code or
-                        _technical_status(
-                            current, by_code[saved[str(current.id)].position_code],
-                        ) == "blocked" or
-                        (family(current.raw_description) == "seramik" and
-                         family(by_code[saved[str(current.id)].position_code].description) != "seramik"
-                         if saved[str(current.id)].position_code in by_code else True)
+                    technically_blocked=_saved_choice_blocked(
+                        current, saved[str(current.id)], by_code,
                     ),
                 ) if str(current.id) in saved else None
             ),
             "related_excel_rows": partners,
-            "review_summary": issue_summary(current.raw_description, scored, partners),
+            "rejected_candidate_count": rejected,
+            "review_summary": (
+                "Teknik olarak uyumsuz adaylar elendi; doğrulanabilir poz bulunamadı."
+                if not scored and rejected else
+                issue_summary(current.raw_description, scored, partners)
+            ),
         })
     top_codes = Counter(
         row["suggestions"][0]["code"]
