@@ -1,4 +1,5 @@
 """A3.21 persistent choices: save/refresh/switch, tenant isolation and source safety."""
+from dataclasses import replace
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -42,7 +43,12 @@ def test_saved_choice_survives_new_get_and_may_be_replaced(client, auth, monkeyp
     choice = current.json()["rows"][0]["saved_selection"]
     assert choice["current"] is True
     assert choice["code"] == "15.999.1001"
-    # Change the selection to another actual code in exactly the same PDF.
+    # Another *technically compatible* gazbeton poz can be saved, even
+    # though its remaining attributes still require engineering review.
+    alternative = replace(
+        positions()[1], description="10 cm gazbeton duvar yapılması", unit="m²",
+    )
+    monkeypatch.setattr(a318_pdf_api, "_parse", lambda *args: (positions()[0], alternative))
     swapped = _pick(client, auth, path, item, sha, "15.999.1002")
     assert swapped.status_code == 200, swapped.text
     refreshed = client.get(f"{path}/suggestions", headers=auth).json()
