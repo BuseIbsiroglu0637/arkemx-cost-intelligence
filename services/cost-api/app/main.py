@@ -369,3 +369,6 @@ app.include_router(a327_decisions_router)
 from .a330_editable_analysis import router as a330_editable_analysis_router
 app.include_router(a330_editable_analysis_router)
 
+from .a331_pilot_review_api import router as a331_pilot_review_router
+app.include_router(a331_pilot_review_router)
+

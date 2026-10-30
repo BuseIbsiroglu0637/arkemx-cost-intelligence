@@ -6,6 +6,11 @@ import styles from "./review.module.css";
 type InputLine = {code:string;description:string;unit:string;quantity:string;unit_price:string;amount?:string;entry_type?:string};
 type Revision = {id:string;version:number;items:InputLine[];reason:string;proposed_amount:string;source_current:boolean;created_at:string};
 type Approval = {id:string;action:"approve"|"reject";reason:string;source_current:boolean;created_at:string};
+type PilotState = {
+  source_fingerprint:string;analysis_revision_id:string|null;evidence_ready:boolean;
+  pilot_confirmed:boolean;engineering_approved:false;cost_allowed:false;
+  last_event:{id:string;action:"accept"|"reopen";reason:string;source_current:boolean;created_at:string;recorded_by_id:string}|null;
+};
 type State = {
   work_item_id:string;candidate_code:string;source_fingerprint:string;pdf_sha256:string;
   pdf_page:number;pdf_price:string;pdf_price_verified:boolean;read_only_source:true;
@@ -27,6 +32,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   projectId:string;importId:string;rowId:string;position:Position;
 }){
   const [data,setData]=useState<State|null>(null);
+  const [pilot,setPilot]=useState<PilotState|null>(null);
   const [lines,setLines]=useState<InputLine[]>([]);
   const [editOpen,setEditOpen]=useState(false);
   const [reviewOpen,setReviewOpen]=useState(false);
@@ -38,7 +44,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   const [notice,setNotice]=useState("");
   const path="/api/projects/"+encodeURIComponent(projectId)+"/a330/imports/"+
     encodeURIComponent(importId)+"/items/"+encodeURIComponent(rowId);
-  const reviewPath="/api/projects/"+encodeURIComponent(projectId)+"/a327/imports/"+
+  const pilotPath="/api/projects/"+encodeURIComponent(projectId)+"/a331/imports/"+
     encodeURIComponent(importId)+"/items/"+encodeURIComponent(rowId);
   async function call<T>(suffix:string,body?:unknown,root=path):Promise<T>{
     const token=sessionStorage.getItem("arkemx_dev_token");
@@ -57,11 +63,17 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     return res.json() as Promise<T>;
   }
   async function reload(keepEditing=false){
-    const state=await call<State>("/analysis");
+    const [state,pilotState]=await Promise.all([
+      call<State>("/analysis"),call<PilotState>("/pilot/state",undefined,pilotPath),
+    ]);
     if(state.work_item_id!==rowId||state.candidate_code!==position.code||
-      state.read_only_source!==true||state.engineering.cost_allowed!==false)
-      throw Error("Poz veya yetki bilgisi uyuşmuyor.");
+      state.read_only_source!==true||state.engineering.cost_allowed!==false||
+      pilotState.cost_allowed!==false||pilotState.engineering_approved!==false||
+      pilotState.source_fingerprint!==state.source_fingerprint||
+      pilotState.analysis_revision_id!==(state.latest_revision?.id??null))
+      throw Error("Poz, kanıt veya yetki bilgisi uyuşmuyor.");
     setData(state);
+    setPilot(pilotState);
     if(!keepEditing){
       const existing=state.latest_revision?.source_current?state.latest_revision.items:
         state.source_inputs;
@@ -71,13 +83,19 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   }
   useEffect(()=>{
     let current=true;
-    setBusy(true);setError("");setData(null);
-    void call<State>("/analysis").then(result=>{
+    setBusy(true);setError("");setData(null);setPilot(null);
+    void Promise.all([
+      call<State>("/analysis"),call<PilotState>("/pilot/state",undefined,pilotPath),
+    ]).then(([result,pilotResult])=>{
       if(!current)return;
       if(result.work_item_id!==rowId||result.candidate_code!==position.code||
-        result.read_only_source!==true||result.engineering.cost_allowed!==false)
+        result.read_only_source!==true||result.engineering.cost_allowed!==false||
+        pilotResult.cost_allowed!==false||pilotResult.engineering_approved!==false||
+        pilotResult.source_fingerprint!==result.source_fingerprint||
+        pilotResult.analysis_revision_id!==(result.latest_revision?.id??null))
         throw Error("Kaynak ve kayıt uyuşmuyor.");
       setData(result);
+      setPilot(pilotResult);
       const rows=result.latest_revision?.source_current?result.latest_revision.items:
         result.source_inputs;
       setLines(rows.map(x=>({...x,quantity:x.quantity??"",unit_price:x.unit_price??""})));
@@ -108,41 +126,28 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     }catch(e){setError(e instanceof Error?e.message:"Taslak kaydedilemedi.");}
     finally{setBusy(false)}
   }
-  async function sendForReview(){
-    if(!data||busy||!data.latest_revision?.source_current||!data.engineering.evidence_ready||
-      !ack)return;
+  async function savePilotDecision(action:"accept"|"reopen"){
+    if(!data||!pilot||busy||!ack||!data.latest_revision?.source_current||
+      pilot.source_fingerprint!==data.source_fingerprint||
+      pilot.analysis_revision_id!==data.latest_revision.id||
+      (action==="accept"&&(!pilot.evidence_ready||pilot.pilot_confirmed))||
+      (action==="reopen"&&!pilot.pilot_confirmed))return;
     setBusy(true);setError("");setNotice("");
     try{
-      const state=await call<{source_fingerprint:string;latest_id:string|null;allowed_actions:string[]}>(
-        "/decision-state",undefined,reviewPath);
-      if(!state.allowed_actions.includes("submit_for_engineering_review"))
-        throw Error("Teknik belge henüz mühendis incelemesine uygun değil.");
-      await call("/decisions",{
-        action:"submit_for_engineering_review",reason:reviewReason.trim(),
-        expected_source_fingerprint:state.source_fingerprint,
-        expected_previous_id:state.latest_id,
-        request_key:uuid(),confirmation:"I_REVIEWED_SOURCE_EVIDENCE",
-      },reviewPath);
-      setNotice("Mühendis incelemesine gönderildi. Henüz mühendis onayı verilmedi.");
-      setReviewReason("");setAck(false);
-    }catch(e){setError(e instanceof Error?e.message:"Mühendis incelemesine iletilemedi.");}
-    finally{setBusy(false)}
-  }
-  async function sign(action:"approve"|"reject"){
-    if(!data||busy||!data.engineering.reviewer_eligible||
-      !data.latest_revision?.source_current||!ack)return;
-    setBusy(true);setError("");setNotice("");
-    try{
-      await call("/engineering/signoff",{
-        action,reason:reviewReason.trim(),expected_source_fingerprint:data.source_fingerprint,
+      await call("/pilot/decisions",{
+        action,reason:reviewReason.trim(),
+        expected_source_fingerprint:pilot.source_fingerprint,
         expected_analysis_revision_id:data.latest_revision.id,
-        expected_previous_signoff_id:data.engineering.review?.id??null,
-        request_key:uuid(),attestation:"I_AM_VERIFIED_ENGINEER_AND_REVIEWED_EVIDENCE",
-      });
+        expected_previous_event_id:pilot.last_event?.id??null,
+        request_key:uuid(),
+        acknowledgement:"I_REVIEWED_SOURCE_AND_THIS_IS_NOT_ENGINEER_SIGNOFF",
+      },pilotPath);
       await reload(true);
-      setNotice(action==="approve"?"Yetkili mühendis onayı kaydedildi; kesin maliyet izni ayrıca gerekir.":"Yetkili mühendis ret kararı kaydedildi.");
+      setNotice(action==="accept"
+        ?"Pilot teknik inceleme onaylandı. Mühendis imzası veya maliyet izni oluşturulmadı."
+        :"Pilot teknik onayı geri alındı; önceki kayıt geçmişte korunuyor.");
       setAck(false);setReviewReason("");
-    }catch(e){setError(e instanceof Error?e.message:"Mühendis kararı kaydedilemedi.");}
+    }catch(e){setError(e instanceof Error?e.message:"Pilot teknik karar kaydedilemedi.");}
     finally{setBusy(false)}
   }
   return <>
@@ -197,51 +202,45 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     </details>
     <details className={styles.a330Approval} open={reviewOpen}
       onToggle={e=>setReviewOpen(e.currentTarget.open)}>
-      <summary>Mühendis onayı · Kaynaklı teknik inceleme</summary>
-      {error&&<p role="alert">{error}</p>}
-      {notice&&<p role="status">{notice}</p>}
-      {!data&&<p>Mühendis karar bilgisi yüklenemedi veya güncel kayıt bulunmuyor.</p>}
-      {data&&<>
-        <p><strong>Durum:</strong> {data.engineering.engineering_approved?
-          "Yetkili mühendis onayı var":"Mühendis onayı bekliyor"}.
-          {" "}Maliyet hesabına aktarma yetkisi bu onaydan bağımsızdır.</p>
-        {data.engineering.review&&<p className={styles.a330Note}>Son karar:
-          {" "}{data.engineering.review.action==="approve"?"Onay":"Ret"}
-          {" "}· {data.engineering.review.source_current?"Güncel kaynak":"Eski kaynak"}
-          {" "}· {data.engineering.review.reason}
+      <summary>Teknik inceleme onayı · Pilot</summary>
+      {!data||!pilot ? <p>Teknik karar bilgisi yükleniyor veya kaynak okunamıyor.</p> : <>
+        <p><strong>Durum:</strong> {pilot.pilot_confirmed?
+          "Pilot teknik inceleme onaylandı":"Pilot teknik inceleme onayı bekliyor"}.</p>
+        {pilot.last_event&&<p className={styles.a330Note}>
+          Son işlem: {pilot.last_event.action==="accept"?"Pilot onay":"Yeniden incelemeye açıldı"}
+          {" "}· {pilot.last_event.source_current?"Güncel belge/taslak":"Kaynak veya analiz değişmiş"}
+          {" "}· {pilot.last_event.reason}
         </p>}
-        {!data.engineering.evidence_ready&&
-          <p className={styles.a330Warning}>Şartname–poz teknik ön karşılaştırması tamamlanmadı. Mühendis incelemesine sevk/olumlu onay engellendi.</p>}
-        {!data.latest_revision?.source_current&&
-          <p className={styles.a330Warning}>Önce yukarıdaki analiz girdilerinin güncel bir taslağını kaydet.</p>}
-        <label className={styles.a330Label}>Mühendis inceleme gerekçesi (isteğe bağlı)
+        {!pilot.evidence_ready&&<p className={styles.a330Warning}>
+          Önce teknik şartname ile kaydedilmiş pozun uyumu belgelenmeli. Onay verilemez.
+        </p>}
+        {!data.latest_revision?.source_current&&<p className={styles.a330Warning}>
+          Önce yukarıdaki analiz girdilerinin güncel bir taslağını kaydet.
+        </p>}
+        <label className={styles.a330Label}>İnceleme notu (isteğe bağlı)
           <textarea rows={2} maxLength={1000} disabled={busy} value={reviewReason}
-            placeholder="Kontrol edilen kapsam, eksikler ve teknik gerekçeyi belirt"
-            onChange={e=>setReviewReason(e.target.value)}/></label>
-        <label className={styles.a330Label}><input type="checkbox" checked={ack}
-          disabled={busy} onChange={e=>setAck(e.target.checked)}/>
-          Kaynak PDF'yi, analiz taslağını ve teknik şartnameyi inceledim.
+            placeholder="İstersen bir açıklama ekleyebilirsin."
+            onChange={e=>setReviewReason(e.target.value)}/>
+        </label>
+        <label className={styles.a330Label}>
+          <input type="checkbox" checked={ack} disabled={busy}
+            onChange={e=>setAck(e.target.checked)}/>
+          Pozun kaynak PDF'sini, teknik şartnameyi ve analiz taslağını kontrol ettim.
+          Bu işlemin doğrulanmış mühendis imzası olmadığını biliyorum.
         </label>
         <div className={styles.a330Actions}>
-          <button type="button" className="secondary" disabled={busy||!ack||
-            !data.engineering.evidence_ready||!data.latest_revision?.source_current} onClick={()=>void sendForReview()}>
-            Mühendis incelemesine gönder
-          </button>
-          <button type="button" disabled={busy||!ack||!data.engineering.reviewer_eligible||
-            !data.engineering.evidence_ready||!data.latest_revision?.source_current} onClick={()=>void sign("approve")}>
-            Mühendis onayı ver
-          </button>
-          <button type="button" className="secondary" disabled={busy||!ack||
-            !data.engineering.reviewer_eligible||!data.latest_revision?.source_current} onClick={()=>void sign("reject")}>
-            Mühendis reddi
-          </button>
+          {!pilot.pilot_confirmed ? <button type="button"
+            disabled={busy||!ack||!pilot.evidence_ready||
+              !data.latest_revision?.source_current}
+            onClick={()=>void savePilotDecision("accept")}>Pilot teknik incelemeyi onayla</button> :
+          <button type="button" className="secondary"
+            disabled={busy||!ack||!data.latest_revision?.source_current}
+            onClick={()=>void savePilotDecision("reopen")}>Onayı geri al / yeniden incele</button>}
           <button type="button" className="secondary" disabled={busy}
             onClick={()=>void reload().catch(e=>setError(String(e)))}>Yenile</button>
         </div>
-        {!data.engineering.reviewer_eligible&&<small>
-          Bu oturumda mühendis onayı verme yetkisi yok. Onay, bağımsız olarak yetkisi doğrulanmış
-          mühendis hesabıyla verilmelidir; proje yöneticisi yetkisi yeterli değildir.
-        </small>}
+        <small>Bu pilot kayıt, kullanıcı veya meslek yetkisi doğrulaması gerektirmez; ancak
+          resmî mühendis onayı, nihai teklif veya maliyet hesabına otomatik izin değildir.</small>
       </>}
     </details>
     {(error||notice)&&<p role={error?"alert":"status"} className={error?styles.a330Warning:styles.a330Note}>{error||notice}</p>}
