@@ -5,6 +5,7 @@ Do not assign mixed-stage dosage to either row without an explicit stage.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from uuid import UUID
 
@@ -29,8 +30,15 @@ router = APIRouter(
 )
 
 
+def _canonical(value):
+    try:
+        return str(Decimal(str(value)).normalize())
+    except (ValueError, InvalidOperation):
+        return str(value)
+
+
 def _one(values):
-    unique = set(values)
+    unique = {_canonical(v) for v in values}
     return next(iter(unique)) if len(unique) == 1 else None
 
 
@@ -58,13 +66,13 @@ def _spec_facts(description: str, blocks: list[tuple[int, str]]) -> tuple[list[d
 
 
 def _fact(name, excel, position, spec_rows, expected):
-    values = {str(record["value"]) for record in spec_rows}
+    values = {_canonical(record["value"]) for record in spec_rows}
     value = _one(values)
     if len(values) > 1:
         status = "conflict"
     elif value is None:
         status = "missing_project"
-    elif expected is not None and str(expected) != value:
+    elif expected is not None and _canonical(expected) != value:
         status = "conflict"
     else:
         status = "evidence_found"
