@@ -79,6 +79,8 @@ type EngineerHandoff = {
     evidence_facts?: Record<string, string | number>;
     evidence_quote?: string | null;
     saved_candidate: string | null;
+    pilot_confirmed: boolean;
+    pilot_status: "none" | "confirmed" | "reopened" | "stale";
     engineering_approved: false;
     cost_allowed: false;
   }[];
@@ -206,6 +208,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
   const [specEvidence, setSpecEvidence] = useState<{ rowId: string; data: DocumentEvidence } | null>(null);
   const [engineerHandoff, setEngineerHandoff] = useState<EngineerHandoff | null>(null);
+  const [pilotRefreshTick, setPilotRefreshTick] = useState(0);
   const [pdfRightsConfirmed, setPdfRightsConfirmed] = useState(false);
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
@@ -503,7 +506,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           (projectSpec?.sha256 && data.source_sha256 !== projectSpec.sha256) ||
           data.rows.length !== expected.length ||
           data.rows.some((row, i) => row.work_item_id !== expected[i].work_item_id ||
-            row.engineering_approved !== false || row.cost_allowed !== false)) {
+            row.engineering_approved !== false || row.cost_allowed !== false ||
+            typeof row.pilot_confirmed !== "boolean" ||
+            !["none","confirmed","reopened","stale"].includes(row.pilot_status) ||
+            (row.pilot_confirmed !== (row.pilot_status === "confirmed")))) {
         return;
       }
       setEngineerHandoff(data);
@@ -512,7 +518,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       if (!controller.signal.aborted) setEngineerHandoff(null);
     });
     return () => controller.abort();
-  }, [selection, autoCandidates, projectId, importId, offset, pdfSource?.sha256, projectSpec?.sha256]);
+  }, [selection, autoCandidates, projectId, importId, offset, pdfSource?.sha256, projectSpec?.sha256, pilotRefreshTick]);
 
   // Run automatically once per Excel import, page, source revision and catalog.
   // Never create a synthetic catalog or accept a cost decision automatically.
@@ -815,6 +821,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
           const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
             evidenceProofFor(row.work_item_id, selectedCode) : null;
+          const pilotRow = engineerHandoff?.rows.find(item => item.work_item_id === row.work_item_id);
+          const pilotConfirmed = Boolean(isSaved && !hasStaleChoice && !(
+            proposed.find(item => item.code === selectedCode)?.technical_status === "blocked"
+          ) && validatedEvidence && pilotRow?.pilot_confirmed === true &&
+            pilotRow?.pilot_status === "confirmed");
+          const pilotReopened = Boolean(isSaved && validatedEvidence && pilotRow?.pilot_status === "reopened");
+          const pilotStale = Boolean(isSaved && pilotRow?.pilot_status === "stale");
             const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
             // Once the user selects a code, show that choice rather than the original
             // top lexical suggestion. A manually typed, unverified code stays unverified.
@@ -854,7 +867,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     <strong>{visibleCandidate.code}</strong>
                     <small title={visibleCandidate.description}>{visibleCandidate.description}</small>
                   </>}
-                  {isSaved ? <em role="status">İnceleme için kaydedildi · onaylanmadı</em> :
+                  {isSaved ? <em role="status">{pilotConfirmed ?
+                    "Pilot teknik inceleme onaylandı · Mühendis onayı değil" :
+                    "Poz seçimi kaydedildi · Pilot inceleme bekliyor"}</em> :
                     selectedCode ? <em>Seçildi · henüz kaydedilmedi</em> : null}
                   {hasStaleChoice && !isSaved && <em>Eski kayıt geçersiz · yeniden seç</em>}
                 </div> :
@@ -868,7 +883,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   rowTriage ? styles.simpleStatusReview :
                   missing || needsReview ? styles.simpleStatusReview :
                   top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
-                  {isSaved && !blocked ? "Poz seçimi onaylandı" :
+                  {pilotConfirmed ? "Pilot teknik inceleme onaylandı" :
+                    pilotReopened ? "Pilot onay geri alındı" :
+                    pilotStale ? "Pilot onay güncelliğini kaybetti" :
+                    isSaved && !blocked ? "Poz seçimi onaylandı" :
                     rowTriage?.group === "prechecked" ? "Ön kontrol tamam" :
                     rowTriage?.group === "needs_info" ? "Bilgi eksik" :
                     blocked ? "Teknik uyumsuzluk" :
@@ -881,7 +899,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     needsReview || rowTriage?.group === "needs_review" ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
-                {isSaved && <small className={styles.queueReason}>Mühendis kararını detayda kontrol et · Maliyete aktarılmaz.</small>}
+                {isSaved && <small className={styles.queueReason}>
+                  {pilotConfirmed ? "Pilot kabul kaydedildi. Resmî mühendis onayı değil; maliyete aktarılmaz." :
+                    pilotReopened ? "Pilot kabul geri alındı. İncelemeye devam edilebilir; maliyete aktarılmaz." :
+                    pilotStale ? "Kaynak veya analiz değişmiş. Pilot karar yeniden verilmeli." :
+                    "Poz seçimi kayıtlı. Pilot kararını detayda kontrol et · Maliyete aktarılmaz."}
+                </small>}
                 {validatedEvidence ? <small className={styles.queueReason}>
                   Şartname–poz temel özellikleri uyumlu (PDF s. {validatedEvidence.evidence_page ?? "—"}).
                   Kapsam ve mühendis onayı bekliyor.
@@ -1018,7 +1041,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             <small>Projede özellik belirtilmemişse hiçbirini seçme. Poz kaydı teknik onay değildir.</small>
           </section>}
           {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
-            {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "Poz seçimi onaylandı" : "Henüz kaydedilmedi"}:
+            {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ?
+              engineerHandoff?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.pilot_confirmed === true &&
+              Boolean(expandedProof) ? "Pilot teknik inceleme onaylandı" : "Poz seçimi onaylandı" :
+              "Henüz kaydedilmedi"}:
             <strong> {expandedSelectedCode}</strong> · Mühendis kararını aşağıdaki bölümden kontrol et.
             {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
               <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
@@ -1052,7 +1078,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 {savedCandidates[expandedRow.work_item_id] === option.code ?
                   <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
                     projectId={projectId} importId={importId}
-                    rowId={expandedRow.work_item_id} position={option} /> :
+                    rowId={expandedRow.work_item_id} position={option}
+                    onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
                   <details>
                     <summary>PDF kanıtı ve analiz girdileri</summary>
                     <p>Önce bu poz adayını kaydet. Kaydedildikten sonra analiz taslağındaki girdileri düzenleyebilir ve mühendis incelemesine gönderebilirsin.</p>
