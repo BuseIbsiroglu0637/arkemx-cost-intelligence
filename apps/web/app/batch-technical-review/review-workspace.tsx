@@ -72,10 +72,19 @@ type EngineerHandoff = {
     reason: string;
     checks: string[];
     evidence_page: number | null;
+    evidence_facts?: Record<string, string | number>;
+    evidence_quote?: string | null;
     saved_candidate: string | null;
     engineering_approved: false;
     cost_allowed: false;
   }[];
+};
+const handoffFactLabels: Record<string,string> = {
+  layer_type: "Sıva türü",
+  layer_thickness_mm: "Katman kalınlığı (mm)",
+  concrete_class: "Beton sınıfı",
+  paint_base: "Boya türü",
+  coat_count: "Boya kat sayısı",
 };
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
@@ -822,12 +831,17 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <small>{row.status === "documented_for_review" ? "Kaynaklı ön kontrol uyumlu · Mühendis incelemesi bekliyor" :
                     row.status === "conflicting" ? "Çelişki var · İnceleme gerekli" :
                     row.status === "manual_review" ? "Belge–poz otomatik kontrolü henüz desteklenmiyor" :
+                    row.status === "document_evidence_for_review" ? "Belgelenmiş kısmi teknik bilgi · Poz incelemesi gerekli" :
                     row.status === "needs_candidate" ? "Kaydedilmiş poz bekleniyor" :
                     row.status === "stale_candidate" ? "Poz veya PDF kaynağı güncellenmeli" :
                     row.status === "input_review" ? "Excel girdisi kontrol edilmeli" :
                     "Teknik belge kanıtı bekleniyor"}</small>
                 </div>
                 <p>{row.reason}</p>
+                {row.evidence_facts && Object.keys(row.evidence_facts).length > 0 &&
+                  <small>Belgede bulunanlar: {Object.entries(row.evidence_facts)
+                    .map(([key, value]) => `${handoffFactLabels[key] ?? key}: ${String(value)}`).join(" · ")}</small>}
+                {row.evidence_quote && <small>Kaynak ifadesi: {row.evidence_quote}</small>}
                 <small>Kontrol listesi: {row.checks.join(" · ")}
                   {row.evidence_page ? ` · PDF sayfa ${row.evidence_page}` : ""}
                   {row.saved_candidate ? ` · Poz ${row.saved_candidate}` : ""}
