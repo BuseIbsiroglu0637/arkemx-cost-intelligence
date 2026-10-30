@@ -372,3 +372,7 @@ app.include_router(a330_editable_analysis_router)
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
+# A3.38 source-cited plaster facts; never a signed technical or priced decision.
+from .a338_plaster_evidence import router as a338_plaster_evidence_router
+app.include_router(a338_plaster_evidence_router)
+

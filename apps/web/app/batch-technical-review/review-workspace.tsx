@@ -10,6 +10,7 @@ import AssessmentPanel from "./assessment-panel";
 import M4LinkPanel from "./m4-link-panel";
 import HandoffDecisionPanel from "./handoff-decision-panel";
 import EditableEngineeringReview from "./editable-engineering-review";
+import PlasterEvidenceComparison from "./plaster-evidence-comparison";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -722,6 +723,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.clarification
     : null;
   const expandedSelectedCode = expandedRow ? (candidates[expandedRow.work_item_id] ?? "").trim() : "";
+  const expandedIsPlaster = Boolean(expandedRow && /s[ıi]va/i.test(expandedRow.effective_description) &&
+    /\b(kaba|ince)\b/i.test(expandedRow.effective_description));
   const expandedSavedCode = expandedRow ? savedCandidates[expandedRow.work_item_id] : undefined;
   const expandedProof = expandedRow && expandedSelectedCode ?
     evidenceProofFor(expandedRow.work_item_id, expandedSelectedCode) : null;
@@ -890,7 +893,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
             </div>
           )}
-          <div className={expandedProof ? styles.evidenceConfirmed : styles.missingFacts} role="note">
+          {!expandedIsPlaster && <div className={expandedProof ? styles.evidenceConfirmed : styles.missingFacts} role="note">
             <strong>{expandedProof ? "Şartnameden doğrulanan bilgiler" : "Projeden doğrulanması gereken bilgiler"}</strong>
             <span>{expandedProof
               ? Object.entries(expandedProof.evidence_facts ?? {})
@@ -907,7 +910,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             <small>{expandedProof
               ? `PDF sayfa ${expandedProof.evidence_page ?? "—"} · Sadece karşılaştırılan özellikler doğrulandı.`
               : "Eksik bilgiler için şartnameyi kontrol et."}</small>
-          </div>
+          </div>}
           {(
             <details className={styles.projectEvidence}>
               <summary>Proje şartnamesi PDF</summary>
@@ -1009,7 +1012,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                       option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
                       "Belge kontrolü gerekli"}
                   </span>
-                  {remainingCandidateFlags(option).length > 0 && (
+                  {!expandedIsPlaster && remainingCandidateFlags(option).length > 0 && (
                     <p className={styles.issues}>
                       {remainingCandidateFlags(option).map(value => label(value)).join(" · ")}
                     </p>
@@ -1021,6 +1024,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     {" · Güncel fiyat dönemi ayrıca doğrulanmalı"}
                   </small>
                 </div>
+                {expandedIsPlaster && pdfSource?.sha256 && <PlasterEvidenceComparison
+                  projectId={projectId} importId={importId} rowId={expandedRow.work_item_id}
+                  candidateCode={option.code} pdfSha={pdfSource.sha256}
+                  revisionId={expandedRow.revision_id} specSha={projectSpec?.sha256??null} />}
                 {savedCandidates[expandedRow.work_item_id] === option.code ?
                   <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
                     projectId={projectId} importId={importId}
