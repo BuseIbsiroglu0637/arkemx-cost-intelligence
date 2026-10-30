@@ -82,6 +82,7 @@ export default function Home() {
   const [projects,setProjects] = useState<Project[]>([]); const [project,setProject] = useState<string>("");
 
   const [projectName,setProjectName] = useState(""); const [file,setFile] = useState<File|null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
 
   const [inspection,setInspection] = useState<Inspection|null>(null); const [selectedSheet,setSelectedSheet] = useState(""); const [headerRow,setHeaderRow] = useState(1); const [preview,setPreview] = useState<Preview|null>(null);
 
@@ -219,10 +220,36 @@ export default function Home() {
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
+  async function deleteSelectedProject(e: FormEvent) {
+    e.preventDefault();
+    if (!token || !project || busy) return;
+    const selected = projects.find(item => item.id === project);
+    if (!selected || deleteConfirmName !== selected.name) return;
+    setBusy(true); setError("");
+    try {
+      const result = await request<{deleted_project_id: string; cleanup_pending: boolean}>(
+        `/api/projects/${encodeURIComponent(project)}`, token, "DELETE",
+        {confirm_project_id: project, confirm_name: deleteConfirmName}
+      );
+      if (result.deleted_project_id !== project) throw new Error("Silme yanıtı eşleşmiyor.");
+      projectRequestRef.current += 1;
+      clearWorkspace();
+      setProject(""); setItems([]); setPreview(null); setInspection(null);
+      setFile(null); setActiveExcel(""); setReviewOpened(false);
+      setDeleteConfirmName(""); setShowRevisions(false);
+      setProjects(await request<Project[]>("/api/projects", token));
+      setTab("metraj");
+      setMessage(result.cleanup_pending
+        ? "Proje kayıtları silindi; bazı yükleme dosyaları için temizlik gerekiyor."
+        : "Proje ve ilişkili verileri silindi.");
+    } catch (e) { handleError(e); }
+    finally { setBusy(false); }
+  }
+
   async function chooseProject(id:string) {
     const generation = ++projectRequestRef.current;
     if (token) rememberProject(token, id);
-    setReviewOpened(false);
+    setReviewOpened(false); setDeleteConfirmName("");
     setProject(id); setInspection(null); setPreview(null); setFile(null); setItems([]);
     setShowAllItems(false); setShowRevisions(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
     if (!token || !id) return;
@@ -398,6 +425,20 @@ export default function Home() {
                 <button type="submit" disabled={busy}>Proje oluştur</button>
               </form>
             </details>
+            {project && <details className={metrajStyle.deleteProject}>
+              <summary>Projeyi sil</summary>
+              <form onSubmit={deleteSelectedProject} className="stack">
+                <strong>Proje kalıcı olarak silinecek.</strong>
+                <p>Bu projeye ait Excel aktarımları, inceleme kayıtları, revizyonlar ve maliyet taslakları da silinir. Diğer projeler ve paylaşılan kataloglar korunur.</p>
+                <p>Onaylamak için proje adını aynen yaz:</p>
+                <code>{projects.find(item => item.id === project)?.name}</code>
+                <label>
+                  Proje adını doğrula
+                  <input type="text" value={deleteConfirmName} onChange={e => setDeleteConfirmName(e.target.value)} autoComplete="off" />
+                </label>
+                <button type="submit" disabled={busy || deleteConfirmName !== projects.find(item => item.id === project)?.name}>Projeyi kalıcı sil</button>
+              </form>
+            </details>}
           </div>
         </section>
         <nav className={metrajStyle.steps} aria-label="Çalışma aşamaları">

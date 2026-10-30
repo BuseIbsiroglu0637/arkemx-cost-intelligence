@@ -25,7 +25,7 @@ if os.getenv("ENVIRONMENT", "development") != "development":
 app = FastAPI(title="ARKEMX Cost Intelligence API", version="0.1.0")
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in origins],
-                   allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+                   allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 
 class RegisterRequest(BaseModel):
@@ -111,6 +111,10 @@ def create_project(payload: ProjectRequest, user: User = Depends(current_user), 
     db.add(project)
     db.commit()
     return {"id": project.id, "name": project.name, "created_at": project.created_at}
+
+
+from .project_deletion import router as project_deletion_router
+app.include_router(project_deletion_router)
 
 
 @app.get("/api/projects")
