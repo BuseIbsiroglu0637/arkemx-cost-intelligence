@@ -106,7 +106,9 @@ export default function CostPanel({token,project}:{token:string|null;project:str
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  }
- return <section className="cost-panel" aria-label="Taslak maliyet hesaplama">
+ return <details className="card cost-advanced" aria-label="Resmî maliyet işlemleri">
+  <summary>Resmî maliyet taslakları ve gelişmiş işlemler</summary>
+  <div className="cost-panel">
   <div className="card stack">
    <div className="flex between"><div><h2>Taslak maliyet hesabı</h2>
     <p className="hint">Onaylı poz × elle girilen birim fiyat · kaynaklı hesap geçmişi</p></div>
@@ -189,6 +191,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
    </div>}
   </div>
   <CostAnalysisPanel token={token} project={project} history={history}/>
- </section>;
+  </div>
+ </details>;
 }
 
