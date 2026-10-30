@@ -3,11 +3,10 @@ from io import BytesIO
 
 from openpyxl import Workbook
 from sqlalchemy import select
+from test_api import xlsx_bytes
 
 from app.database import get_db
 from app.models import MatchRun
-
-from test_api import xlsx_bytes
 
 
 def login(client, org, email):

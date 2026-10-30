@@ -18,7 +18,13 @@ from .m43 import _rights
 from .m43_worker import POSITION_LIMIT
 from .matching import find_candidates
 from .models import (
-    CatalogImport, CatalogPosition, CatalogSource, CatalogVersion, ImportBatch, User, WorkItem,
+    CatalogImport,
+    CatalogPosition,
+    CatalogSource,
+    CatalogVersion,
+    ImportBatch,
+    User,
+    WorkItem,
 )
 from .revisions import effective_item
 from .security import current_user
