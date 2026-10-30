@@ -49,6 +49,7 @@ type DocumentEvidence = {
   source_row?: number; source_sha256?: string;
   saved_candidate?: string | null;
   candidate_consistency?: "unverified" | "matches_examined_facts" | "conflicts";
+  candidate_link_status?: "no_saved_candidate" | "analysis_pdf_missing" | "source_or_revision_changed" | "candidate_not_in_pdf" | "current";
   evidence: { page: number; quote: string; facts: Record<string, string | number | null> }[];
   additional_evidence_count?: number;
   engineering_approved: false; cost_allowed: false;
@@ -604,6 +605,15 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.clarification
     : null;
   const expandedSelectedCode = expandedRow ? (candidates[expandedRow.work_item_id] ?? "").trim() : "";
+  const expandedSavedCode = expandedRow ? savedCandidates[expandedRow.work_item_id] : undefined;
+  const currentEvidenceMatch = Boolean(
+    expandedEvidence?.status === "found_for_review" &&
+    expandedEvidence?.candidate_link_status === "current" &&
+    expandedEvidence?.candidate_consistency === "matches_examined_facts" &&
+    expandedEvidence?.saved_candidate &&
+    expandedEvidence.saved_candidate === expandedSavedCode &&
+    expandedEvidence.saved_candidate === expandedSelectedCode
+  );
   const expandedSuggestions = expandedRow
     ? [...suggestionsFor(expandedRow.work_item_id)].sort((a, b) =>
         Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode))
@@ -885,21 +895,33 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   expandedEvidence.status === "unreadable_text" ? "Bu PDF taranmış olabilir · okunabilir metin bulunamadı" :
                   expandedEvidence.status === "conflicting" ? "Çelişkili teknik bilgiler bulundu" :
                   "Belgede ilgili bilgi bulundu · İnceleme bekliyor"}</strong>
-                {expandedEvidence.candidate_consistency === "conflicts" && <p>Kaydedilmiş poz ile belge bilgisi uyuşmuyor. Teknik inceleme gerekli.</p>}
-                {expandedEvidence.status === "found_for_review" &&
-                  expandedEvidence.saved_candidate &&
-                  expandedEvidence.saved_candidate === savedCandidates[expandedRow.work_item_id] &&
-                  expandedEvidence.saved_candidate === expandedSelectedCode && (
-                    <div className={styles.projectPositionComparison} role="note">
-                      <strong>Belge ile kaydedilmiş poz · {expandedEvidence.saved_candidate}</strong>
-                      <p>{expandedEvidence.candidate_consistency === "matches_examined_facts"
-                        ? "Dayanım/yoğunluk veya seramik türünün gerekli karşılaştırılabilir özellikleri bu belge ve pozda aynı. Metraj satırındaki eksik bilgi uyarısı teknik inceleme tamamlanana kadar kalır."
-                        : expandedEvidence.candidate_consistency === "conflicts"
-                          ? "Belgedeki teknik bilgiler pozla çelişiyor. Uygunluk için mühendis incelemesi gerekli."
-                          : "Pozun teknik özellikleri belgeyle yeterli düzeyde karşılaştırılamadı. Eksik bilgi incelemede kalır."}</p>
-                      <small>Bu karşılaştırma poz onayı değildir; mühendis onayı ve maliyet hesabı kapalıdır.</small>
-                    </div>
-                  )}
+                {(expandedEvidence.status === "found_for_review" || expandedEvidence.status === "conflicting") && (
+                  <div className={styles.projectPositionComparison} role="note">
+                    <strong>Belge–poz karşılaştırması{expandedEvidence.saved_candidate ? " · " + expandedEvidence.saved_candidate : ""}</strong>
+                    {expandedEvidence.status === "conflicting" ? (
+                      <p>Şartname içinde çelişkili bilgiler bulundu. Poz uyumu doğrulanamaz; mühendis incelemesi gerekli.</p>
+                    ) : expandedEvidence.candidate_link_status !== "current" ? (
+                      <p>{expandedEvidence.candidate_link_status === "source_or_revision_changed"
+                        ? "Kayıtlı pozun PDF kaynağı veya metraj revizyonu değişmiş. Pozu yeniden incelemek gerekiyor."
+                        : expandedEvidence.candidate_link_status === "analysis_pdf_missing"
+                        ? "Poz analiz PDF kaynağı bulunamadı; belge ile kayıtlı poz karşılaştırılamıyor."
+                        : expandedEvidence.candidate_link_status === "candidate_not_in_pdf"
+                        ? "Kayıtlı poz güncel analiz PDF dosyasında bulunamadı."
+                        : "Belgede bilgi bulundu fakat bu satıra bağlı güncel ve doğrulanabilir kayıtlı poz bulunamadı. Önce poz adayını kaydet."}</p>
+                    ) : !expandedEvidence.saved_candidate ||
+                      expandedEvidence.saved_candidate !== expandedSelectedCode ||
+                      expandedEvidence.saved_candidate !== expandedSavedCode ? (
+                      <p>Belgeyle karşılaştırılan kayıtlı poz, ekranda seçili pozla aynı değil. Kaydedilmiş pozu yenileyip tekrar “Belgede ara” işlemini çalıştır.</p>
+                    ) : expandedEvidence.candidate_consistency === "conflicts" ? (
+                      <p>Belge ve kayıtlı pozun açık teknik özellikleri uyuşmuyor. İnceleme gerekli.</p>
+                    ) : currentEvidenceMatch ? (
+                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; teknik onay hâlâ bekliyor.</p>
+                    ) : (
+                      <p>Belgede ilgili bilgiler bulundu ancak pozla gereken tüm özellikler karşılaştırılamadı. Eksikler incelemede kalır.</p>
+                    )}
+                    <small>Bu karşılaştırma yalnızca kaynaklı ön kontroldür; mühendis onayı ve maliyet hesabı kapalıdır.</small>
+                  </div>
+                )}
                 {expandedEvidence.evidence.map((record, index) => (
                   <div key={record.page + "-" + index} className={styles.projectEvidenceQuote}>
                     <strong>PDF sayfa {record.page}</strong>
@@ -954,11 +976,18 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <span className={styles.simpleStatus + " " +
                     (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
                     {option.technical_status === "blocked" ? "Teknik uyumsuzluk" :
+                      currentEvidenceMatch && option.code === expandedEvidence?.saved_candidate
+                        ? "Şartname–poz ön kontrolü uyumlu · Mühendis incelemesi" :
                       option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
                       "Mühendis kontrolü gerekli"}
                   </span>
-                  {[...option.blockers, ...option.review_flags].length > 0 &&
-                    <p className={styles.issues}>{[...option.blockers, ...option.review_flags].map(value => label(value)).join(" · ")}</p>}
+                  {[...option.blockers, ...option.review_flags].length > 0 && (
+                    <p className={styles.issues}>
+                      {currentEvidenceMatch && option.code === expandedEvidence?.saved_candidate &&
+                        "Aşağıdaki uyarılar yalnızca özgün Excel tarifine göredir; teknik şartnameden bulunan özellikler yukarıda ayrı karşılaştırıldı. "}
+                      {[...option.blockers, ...option.review_flags].map(value => label(value)).join(" · ")}
+                    </p>
+                  )}
                   <small>PDF sayfa {option.source_page ?? "—"} ·
                     {option.source_price_verified && option.source_price ?
                       " Kaynak fiyat " + option.source_price + " TL/" + option.unit : " Fiyat doğrulanmadı"}
