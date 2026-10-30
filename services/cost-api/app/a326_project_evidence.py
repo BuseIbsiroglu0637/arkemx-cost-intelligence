@@ -144,21 +144,26 @@ def _evidence_status(matches: list[dict]) -> str:
 
 
 def _position_consistency(matches: list[dict], position_description: str | None) -> str:
+    """Compare explicit facts only; partial matches must not appear verified."""
     if not matches or not position_description:
         return "unverified"
     kind = family(position_description)
     data = (extract(position_description) if kind == "gazbeton"
             else ceramic_features(position_description) if kind == "seramik" else {})
-    any_comparable = False
+    required = {
+        "gazbeton": {"gazbeton_strength_n_mm2", "gazbeton_density_kg_m3"},
+        "seramik": {"glaze", "surface", "rectified"},
+    }.get(kind, set())
+    compared: set[str] = set()
     for match in matches:
         for key, actual in match["facts"].items():
             expected = data.get(key)
             if actual is None or expected is None:
                 continue
-            any_comparable = True
+            compared.add(key)
             if actual != expected:
                 return "conflicts"
-    return "matches_examined_facts" if any_comparable else "unverified"
+    return "matches_examined_facts" if required and required <= compared else "unverified"
 
 
 @router.get("/source")
