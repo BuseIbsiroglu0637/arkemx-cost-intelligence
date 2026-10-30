@@ -92,3 +92,102 @@
 .autoCandidateMessage {font-weight:650;color:#173e79 !important}
 .candidateChoice {display:block;width:100%;margin-top:6px;padding:6px 8px;text-align:left;font-size:11px;line-height:1.3;border-radius:7px;border:1px solid #d6e0f0;background:#f2f6fd;color:#214470;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
 .candidateChoice:hover {border-color:#3164ac}
+
+
+/* A3.17 redesigned candidate-first working area */
+.sourceCards {display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:14px;align-items:start}
+.sourceCards > [role="alert"],.sourceCards > [role="status"] {grid-column:1/-1}
+.sourceMini {padding:18px 20px;min-height:124px;box-shadow:0 4px 14px #1d2a4a06}
+.sourceMini h3 {margin:0 0 10px !important;font-size:15px}
+.sourceMini p {font-size:12px}
+.sourceMini .scopedFields,.sourceMini .fields {grid-template-columns:minmax(0,1fr) auto}
+.sourceLine {font-size:12px;line-height:1.6;margin:8px 0;color:#536b8f;overflow-wrap:anywhere}
+.infoStrip {padding:14px 18px;background:#ecf4ff;border:1px solid #c7d9fc;border-radius:11px;color:#204e9e;font-size:13px;line-height:1.55}
+.suggestionPanel {padding:24px;display:grid;gap:16px}
+.suggestionTop {display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.suggestionTop h2 {font-size:22px;letter-spacing:-.03em;margin:3px 0}
+.suggestionTop h3 {margin:0 0 5px}
+.suggestionTop p {font-size:13px;margin:4px 0;line-height:1.5}
+.suggestionActions {display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.suggestionActions button {white-space:nowrap}
+.searchLabel {min-width:220px;flex:1}
+.searchLabel input {background:#fff;border-radius:9px;height:43px}
+.catalogBar {display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;padding:13px 16px;background:#f6f9ff;border:1px solid #e1e9f6;border-radius:10px}
+.catalogBar > label {flex:1;min-width:240px;max-width:510px}
+.catalogBar select {background:white}
+.noCatalog {display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:13px;color:#475569}
+.noCatalog span {flex:1;min-width:220px}
+.humanReview {display:block;font-size:12px;font-weight:600;color:#45638e;white-space:nowrap;padding:9px 11px;background:#e7f0ff;border-radius:8px}
+.inlineResult {font-size:13px;color:#1f557c;background:#eff9f5;padding:10px 14px;border-radius:9px}
+.demoLabel {background:#fff6e4;color:#855108;border:1px solid #f0dcb1;padding:10px 13px;border-radius:8px;font-size:12px;font-weight:700}
+.suggestionFilters {display:flex;flex-wrap:wrap;gap:8px}
+.suggestionFilters button {font-size:12px;font-weight:650;padding:8px 14px;background:#f1f5fb;color:#405677;border:1px solid #dbe5f3;border-radius:100px}
+.suggestionFilters button[aria-pressed="true"] {background:#1551ca;border-color:#1551ca;color:white}
+.suggestionFilters strong {display:inline-block;padding:2px 7px;background:#ffffff99;border-radius:20px;margin-left:4px}
+.summaryLine {display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#f4f7fb;color:#58708d;border-radius:8px;padding:10px 14px;font-size:12px}
+.summaryLine span {font-weight:650}
+.suggestionPanel .tableScroll {margin:0}
+.suggestionTable {min-width:920px;table-layout:fixed}
+.suggestionTable th {font-size:12px;color:#526585;white-space:normal;padding:12px;background:#f4f7fc}
+.suggestionTable td {padding:12px 10px;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}
+.suggestionTable tr:hover td {background:#fbfdff}
+.suggestionTable th:nth-child(1) {width:40px}
+.suggestionTable th:nth-child(2) {width:78px}
+.suggestionTable th:nth-child(3) {width:25%}
+.suggestionTable th:nth-child(4) {width:110px}
+.suggestionTable th:nth-child(5) {width:auto}
+.suggestionTable th:nth-child(6) {width:118px}
+.suggestionTable td input[type="checkbox"] {width:17px;height:17px;accent-color:#1650c4}
+.rowNumber {font-variant-numeric:tabular-nums;color:#34537f;font-weight:650}
+.rowNumber small {display:block;font-size:10px;font-weight:500;color:#a16b22}
+.itemDescription strong {font-weight:600;line-height:1.5;display:block}
+.itemDescription small {font-size:11px;color:#a96e1f}
+.itemQuantity {font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap;color:#253f6c}
+.itemQuantity span {color:#58708d}
+.candidateChips {display:flex;gap:6px;align-items:stretch;max-width:100%}
+.proposalChip {flex:1;min-width:0;max-width:180px;display:grid;align-content:start;gap:3px;text-align:left;padding:9px 8px;border:1px solid #d8e4f4;border-radius:9px;background:#eff3f9;color:#2b486b;font-size:11px;line-height:1.3;font-weight:500}
+.proposalChip strong {font-size:12px;color:#153c72;font-variant-numeric:tabular-nums}
+.proposalChip span {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:10px;opacity:.8}
+.proposalChip em {font-size:10px;font-style:normal;font-weight:600;color:#95600c}
+.proposalChip[aria-pressed="true"] {outline:2px solid #265bcc;outline-offset:1px}
+.proposalCompatible {background:#eaf7f1;border-color:#d3eadb}
+.proposalReview {background:#fff6e4;border-color:#eed9a9}
+.proposalBlocked {background:#fff0f0;border-color:#ecc9c9}
+.noSuggestion {color:#6b7d98;font-size:12px;margin:0}
+.selectedCode {display:block;margin-top:5px;color:#13539c;font-weight:600}
+.manualCode {display:block;margin-top:3px;color:#9b5d16}
+.showCandidates {display:inline-block;background:#fff;border:1px solid #b7cff7;color:#1551bd;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:650;white-space:nowrap}
+.showCandidates:hover {background:#eef5ff}
+.emptyRows {padding:20px;text-align:center;font-size:13px}
+.candidateDetail {padding:16px 18px;background:#f8fbff;border:1px solid #cbdcf5;border-radius:12px;display:grid;gap:12px}
+.candidateDetail .suggestionTop h3 {font-size:15px}
+.candidateDetailLine {padding:12px;background:#fff;border:1px solid #dbe3ef;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.candidateDetailLine strong {font-size:13px;display:block}
+.candidateDetailLine small {display:block;color:#6e7c8e;margin-top:4px;font-size:11px}
+.candidateDetailLine button {white-space:nowrap;font-size:12px}
+.issues {font-size:11px;color:#995828;line-height:1.5}
+.manualEntry {max-width:430px}
+.tableFooter {display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;gap:10px;font-size:12px;color:#657289}
+.pager {display:flex;align-items:center;gap:9px}
+.pager button {font-size:12px}
+.advancedReview {padding:12px 16px;border:1px solid #dae4f1;border-radius:10px;background:#fcfdff}
+.advancedReview > summary {font-size:13px;color:#42618e}
+.helpCard {padding:16px 18px;border:1px solid #dfe7f2;border-radius:10px;background:#fcfdff}
+.helpCard > summary {font-size:14px}
+.helpCard p {font-size:12px;line-height:1.6}
+.primaryAction {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.primaryAction span {font-size:12px;color:#627795}
+.primaryAction button {padding:12px 16px}
+@media(max-width:1050px){
+  .sourceCards {grid-template-columns:1fr}
+  .suggestionTable {min-width:840px}
+  .sourceMini .scopedFields {grid-template-columns:minmax(0,1fr) auto}
+}
+@media(max-width:640px){
+  .suggestionPanel {padding:15px}
+  .suggestionTop,.suggestionActions {align-items:stretch}
+  .suggestionActions,.suggestionActions button,.searchLabel {width:100%}
+  .sourceMini .scopedFields {grid-template-columns:1fr}
+  .humanReview {white-space:normal}
+  .candidateDetailLine {flex-direction:column;align-items:stretch}
+}
