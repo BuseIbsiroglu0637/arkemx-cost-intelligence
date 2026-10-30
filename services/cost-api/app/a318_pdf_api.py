@@ -19,9 +19,14 @@ from sqlalchemy.orm import Session
 
 from .a3_batch_review import NO_STORE, _source, _source_view
 from .a318_pdf_engine import PdfPosition, read_positions
+from .a320_smart_matching import (
+    enrich_technical,
+    find_pdf_candidates,
+    issue_summary,
+    potential_plaster_pairs,
+)
 from .database import get_db
 from .m2 import tenant_project
-from .matching import find_candidates
 from .models import ImportBatch, User, WorkItem
 from .revisions import effective_item
 from .security import current_user
@@ -138,13 +143,17 @@ def suggestions_from_pdf(
         raise HTTPException(409, "A licensed 2026 PDF source must be attached first")
     digest, positions = found
     by_code = {p.id: p for p in positions}
+    # Use the complete metraj to identify possible pairs on different pages.
+    # This is an advisory signal only; no quantity aggregation or auto pricing.
     items = db.scalars(select(WorkItem).where(
         WorkItem.import_id == batch.id,
-    ).order_by(WorkItem.source_row, WorkItem.id).offset(offset).limit(MAX_ROWS)).all()
+    ).order_by(WorkItem.source_row, WorkItem.id)).all()
+    effective = [effective_item(db, item) for item in items]
+    partner_rows = potential_plaster_pairs(effective)
     rows = []
-    for item in items:
-        current = effective_item(db, item)
-        candidates = find_candidates(current, positions)
+    for current in effective[offset:offset + MAX_ROWS]:
+        partners = partner_rows.get(str(current.id), [])
+        candidates = find_pdf_candidates(current, positions)
         scored = []
         for result in candidates:
             position = by_code[result["position_id"]]
@@ -153,6 +162,10 @@ def suggestions_from_pdf(
                 position.description, position.unit,
                 quantity_known=current.quantity is not None,
                 review_required=current.review_required,
+            )
+            check = enrich_technical(
+                current.raw_description, position.description, check,
+                plaster_partner_rows=partners,
             )
             scored.append({
                 "code": position.id,
@@ -174,8 +187,10 @@ def suggestions_from_pdf(
             -c["similarity"], c["code"],
         ))
         rows.append({
-            "work_item_id": item.id, "source_row": item.source_row,
+            "work_item_id": current.id, "source_row": current.source_row,
             "revision_id": current.revision_id, "suggestions": scored,
+            "related_excel_rows": partners,
+            "review_summary": issue_summary(current.raw_description, scored, partners),
         })
     top_codes = Counter(
         row["suggestions"][0]["code"]
