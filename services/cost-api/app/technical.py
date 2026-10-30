@@ -5,9 +5,10 @@ high lexical score cannot override a critical dimensional/material conflict.
 """
 import re
 from .matching import similarity
+from .measurement_context import extract_measurements
 from .excel import normalized
 
-VERSION = "technical-rules-v0.3"
+VERSION = "technical-rules-v0.4"
 MATERIAL_ALIASES = {
     "gazbeton": (r"\bgazbeton\b",),
     "seramik": (r"\bseramik\w*\b", r"\bporselen\w*\b", r"\bkaro(?:s\w*|l\w*|n\w*|d\w*)?\b", r"\bfayans\w*\b"),
@@ -36,8 +37,6 @@ METHODS = {
     "orulme": (r"\borulmesi\b", r"\borulme\b", r"\borgu\b"),
 }
 ENVIRONMENTS = {"ic": (r"\bic\b",), "dis": (r"\bdis\b", r"\bcephe\b")}
-THICKNESS = re.compile(r"\b(\d{1,4}(?:[.,]\d+)?)\s*(mm|cm)\b")
-DIMENSIONS = re.compile(r"\b(\d{1,4})\s*x\s*(\d{1,4})\b")
 # Parse explicit masonry properties in either Unicode- or ASCII-superscript units.
 # Do not infer a default density/strength when the metraj omits them.
 GAZBETON_STRENGTH = re.compile(r"(?<!\w)(\d+(?:[.,]\d+)?)\s*n\s*/\s*mm(?:2|²)(?!\w)")
@@ -57,12 +56,13 @@ def extract(description: str, unit: str | None = None) -> dict:
     surface = _attribute(text, SURFACES)
     method = _attribute(text, METHODS)
     environment = _attribute(text, ENVIRONMENTS)
-    match = THICKNESS.search(text)
-    thickness_mm = None
-    if match:
-        value = float(match.group(1).replace(",", "."))
-        thickness_mm = round(value * (10 if match.group(2) == "cm" else 1), 2)
-    sizes = {tuple(sorted((int(a), int(b)))) for a, b in DIMENSIONS.findall(text)}
+    measurements = extract_measurements(description, ceramic=mat == "seramik")
+    thick_values = measurements["thickness_mm"]
+    joint_values = measurements["joint_width_mm"]
+    # Conflicting measurements are ambiguous and cannot be silently resolved.
+    thickness_mm = next(iter(thick_values)) if len(thick_values) == 1 else None
+    joint_width_mm = next(iter(joint_values)) if len(joint_values) == 1 else None
+    sizes = measurements["sizes"]
     # Only expose gazbeton-specific attributes for gazbeton, not concrete or other works.
     strength = GAZBETON_STRENGTH.search(text) if mat == "gazbeton" else None
     density = GAZBETON_DENSITY.search(text) if mat == "gazbeton" else None
@@ -72,6 +72,7 @@ def extract(description: str, unit: str | None = None) -> dict:
         "method": method,
         "environment": environment,
         "thickness_mm": thickness_mm,
+        "joint_width_mm": joint_width_mm,
         "dimensions": sorted([list(pair) for pair in sizes]),
         "unit": unit,
         "gazbeton_strength_n_mm2": float(strength.group(1).replace(",", ".")) if strength else None,
@@ -92,7 +93,8 @@ def compare(description: str, unit: str | None,
     for key, title, essential in (
         ("unit", "Ölçü birimi", True),
         ("material", "Malzeme", True),
-        ("thickness_mm", "Kalınlık (mm)", False),
+        ("thickness_mm", "Ürün kalınlığı (mm)", False),
+        ("joint_width_mm", "Derz aralığı (mm)", False),
         ("dimensions", "Ebatlar", False),
         ("surface", "Uygulama yüzeyi", False),
         ("method", "Uygulama yöntemi", False),
@@ -103,7 +105,14 @@ def compare(description: str, unit: str | None,
         a, b = left[key], right[key]
         missing_a = a is None or a == []
         missing_b = b is None or b == []
-        if missing_a and missing_b:
+        if key == "joint_width_mm" and missing_a:
+            # PDF may describe its standard grout spacing even when the
+            # metraj leaves grout choice open. Don't mislabel this as a
+            # missing tile-thickness requirement. If metraj explicitly
+            # requires a width, a mismatch blocks and missing PDF width
+            # still requires review.
+            status = "not_specified"
+        elif missing_a and missing_b:
             status = "review" if essential else "not_specified"
         elif missing_a or missing_b:
             status = "review"
