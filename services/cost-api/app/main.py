@@ -358,3 +358,7 @@ app.include_router(a318_pdf_router)
 from .a326_project_evidence import router as a326_project_evidence_router
 app.include_router(a326_project_evidence_router)
 
+# A3.27.1 read-only engineer handoff queue; never issues approvals.
+from .a327_engineer_handoff import router as a327_engineer_handoff_router
+app.include_router(a327_engineer_handoff_router)
+
