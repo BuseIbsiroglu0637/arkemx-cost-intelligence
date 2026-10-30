@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from .a3_batch_review import NO_STORE, _source, _source_view
 from .a318_pdf_engine import PdfPosition, read_positions
 from .a324_ceramic_features import ceramic_finish_conflict, ceramic_question
+from .a325_review_queue import classify_row
 from .a320_smart_matching import (
     enrich_technical,
     find_pdf_candidates,
@@ -378,9 +379,21 @@ def suggestions_from_pdf(
         for row in rows if row["suggestions"]
         and row["suggestions"][0]["technical_status"] != "blocked"
     )
+    by_item = {str(item.id): item for item in effective[offset:offset + MAX_ROWS]}
     for row in rows:
         for candidate in row["suggestions"]:
             candidate["possible_shared_scope"] = top_codes[candidate["code"]] > 1
+        current = by_item[str(row["work_item_id"])]
+        row["triage"] = classify_row(
+            description=current.raw_description,
+            candidates=row["suggestions"],
+            saved_selection=row["saved_selection"],
+            clarification=row["clarification"],
+            related_excel_rows=row["related_excel_rows"],
+            quantity_known=current.quantity is not None,
+            unit_known=current.normalized_unit is not None,
+            input_review_required=current.review_required,
+        )
     response.headers.update(NO_STORE)
     return {
         "read_only": True, "approval_allowed": False, "cost_allowed": False,
