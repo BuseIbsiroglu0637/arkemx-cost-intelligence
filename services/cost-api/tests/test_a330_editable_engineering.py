@@ -82,6 +82,56 @@ def test_original_pdf_read_only_and_proposal_add_remove_persists(client, auth, m
     assert refreshed["engineering"]["cost_allowed"] is False
 
 
+def test_pdf_parser_empty_description_can_save_unchanged_source_lines(
+    client, auth, monkeypatch,
+):
+    """Some real PDF ingredients have a code and price but no parsed description."""
+    from dataclasses import replace
+
+    _, _, _, url = setup_project(client, auth, monkeypatch)
+    digest, positions = service.read_analysis(None)
+    original = positions[0]
+    lines = list(original.ingredients)
+    lines[0] = {**lines[0], "description": ""}
+    monkeypatch.setattr(
+        service, "read_analysis",
+        lambda user: (digest, (replace(original, ingredients=tuple(lines)),)),
+    )
+    before = state(client, auth, url)
+    assert before["source_inputs"][0]["description"] == ""
+    body = proposal(before, items=[{
+        "code": line["code"], "description": line["description"],
+        "unit": line["unit"], "quantity": line["quantity"],
+        "unit_price": line["unit_price"],
+    } for line in before["source_inputs"]], reason="")
+    response = client.post(url + "/analysis/revisions", headers=auth, json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["items"][0]["description"] == ""
+    refreshed = state(client, auth, url)
+    assert refreshed["latest_revision"]["source_current"] is True
+    assert refreshed["source_inputs"][0]["description"] == ""
+    assert refreshed["engineering"]["cost_allowed"] is False
+
+
+def test_turkish_grouped_source_price_parses_without_guessing(
+    client, auth, monkeypatch,
+):
+    _, _, _, url = setup_project(client, auth, monkeypatch)
+    before = state(client, auth, url)
+    saved = client.post(url + "/analysis/revisions", headers=auth, json=proposal(
+        before,
+        items=[{
+            "code": "10.100.01", "description": "",
+            "unit": "m²", "quantity": "1,03", "unit_price": "1.250,00",
+        }],
+    ))
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["items"][0]["amount"] == "1287.50"
+    assert saved.json()["proposed_amount"] == "1609.38"
+    assert saved.json()["items"][0]["description"] == ""
+    assert state(client, auth, url)["engineering"]["engineering_approved"] is False
+
+
 def test_analysis_reason_optional_and_server_audit_is_explicit(
     client, auth, monkeypatch,
 ):
