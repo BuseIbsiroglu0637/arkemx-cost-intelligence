@@ -349,3 +349,7 @@ app.include_router(a3_m4_bridge_router)
 # A3.17 read-only authorized catalog suggestions; no approval or pricing.
 from .a317_suggestions import router as a317_suggestions_router
 app.include_router(a317_suggestions_router)
+
+# A3.18 direct local analysis-PDF source (no synthetic catalog or automatic approval).
+from .a318_pdf_api import router as a318_pdf_router
+app.include_router(a318_pdf_router)

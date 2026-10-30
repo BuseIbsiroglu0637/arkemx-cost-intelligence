@@ -1,0 +1,197 @@
+"""A3.18: user-authorized, local-only direct PDF source for automatic matching.
+
+The actual PDF remains in the organization's local upload area, outside Git.
+No synthetic catalog fallback, no engineering approval, no cost postings.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+from collections import Counter
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated
+from uuid import UUID, uuid4
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .a3_batch_review import NO_STORE, _source, _source_view
+from .a318_pdf_engine import PdfPosition, read_positions
+from .database import get_db
+from .m2 import tenant_project
+from .matching import find_candidates
+from .models import ImportBatch, User, WorkItem
+from .revisions import effective_item
+from .security import current_user
+from .technical import compare
+
+router = APIRouter(prefix="/api/projects/{project_id}/a318", tags=["A3.18 Local PDF Analysis"])
+PDF_LIMIT = 16 * 1024 * 1024
+MAX_ROWS = 20
+
+
+def _path(user: User) -> Path:
+    # Tenant IDs are UUIDs; never interpolate user-controlled filenames.
+    org = str(UUID(user.organization_id))
+    root = Path(os.environ.get("UPLOAD_DIR", "./data/uploads")).resolve()
+    folder = root / "_pdf_sources" / org
+    return folder / "2026-analysis-cilt1.pdf"
+
+
+def _read(user: User) -> tuple[str, tuple[PdfPosition, ...]] | None:
+    path = _path(user)
+    if not path.is_file() or path.is_symlink() or path.parent.is_symlink():
+        return None
+    raw = path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    return digest, _parse(digest, raw)
+
+
+@lru_cache(maxsize=4)
+def _parse(digest: str, raw: bytes) -> tuple[PdfPosition, ...]:
+    return tuple(read_positions(raw))
+
+
+def _summary(found: tuple[str, tuple[PdfPosition, ...]] | None) -> dict:
+    if not found:
+        return {"present": False, "read_only": True}
+    digest, positions = found
+    return {
+        "present": True, "read_only": True,
+        "sha256": digest, "year": 2026, "volume": 1,
+        "position_count": len(positions),
+        "verified_price_count": sum(p.price_verified for p in positions),
+        "uncertain_price_count": sum(not p.price_verified for p in positions),
+        "source_type": "user_uploaded_local_pdf",
+    }
+
+
+@router.get("/source")
+def source_status(
+    project_id: UUID,
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    tenant_project(db, user, str(project_id))
+    response.headers.update(NO_STORE)
+    return _summary(_read(user))
+
+
+@router.post("/source", status_code=201)
+async def attach_pdf(
+    project_id: UUID,
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile, File()],
+    rights_confirmed: Annotated[bool, Form()],
+):
+    tenant_project(db, user, str(project_id))
+    if user.role != "admin":
+        raise HTTPException(403, "Only organization admin may attach the PDF")
+    if os.environ.get("ENVIRONMENT", "development") != "development":
+        raise HTTPException(403, "Local-only PDF pilot is disabled in production")
+    if not rights_confirmed:
+        raise HTTPException(403, "Confirm your authority to process the copyrighted PDF")
+    try:
+        raw = await file.read(PDF_LIMIT + 1)
+    finally:
+        await file.close()
+    if len(raw) > PDF_LIMIT:
+        raise HTTPException(413, "PDF exceeds the 16 MB local pilot limit")
+    if len(raw) < 1024 or not raw.startswith(b"%PDF-"):
+        raise HTTPException(422, "Invalid PDF file")
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        positions = _parse(digest, raw)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(422, "Unsupported or incomplete 2026 analysis PDF") from exc
+    destination = _path(user)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_symlink() or destination.parent.is_symlink():
+        raise HTTPException(409, "Untrusted PDF storage path")
+    temporary = destination.parent / f".pdf-{uuid4().hex}.tmp"
+    try:
+        temporary.write_bytes(raw)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    response.headers.update(NO_STORE)
+    return _summary((digest, positions))
+
+
+@router.get("/imports/{import_id}/suggestions")
+def suggestions_from_pdf(
+    project_id: UUID,
+    import_id: UUID,
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    batch: ImportBatch = _source(db, user, str(project_id), str(import_id))
+    found = _read(user)
+    if not found:
+        raise HTTPException(409, "A licensed 2026 PDF source must be attached first")
+    digest, positions = found
+    by_code = {p.id: p for p in positions}
+    items = db.scalars(select(WorkItem).where(
+        WorkItem.import_id == batch.id,
+    ).order_by(WorkItem.source_row, WorkItem.id).offset(offset).limit(MAX_ROWS)).all()
+    rows = []
+    for item in items:
+        current = effective_item(db, item)
+        candidates = find_candidates(current, positions)
+        scored = []
+        for result in candidates:
+            position = by_code[result["position_id"]]
+            check = compare(
+                current.raw_description, current.normalized_unit,
+                position.description, position.unit,
+                quantity_known=current.quantity is not None,
+                review_required=current.review_required,
+            )
+            scored.append({
+                "code": position.id,
+                "description": position.description,
+                "unit": position.unit,
+                "similarity": result["similarity"],
+                "technical_status": check["status"],
+                "blockers": check["blockers"],
+                "review_flags": check["review_flags"],
+                "source_version_id": digest,
+                "source_page": position.pdf_page,
+                "source_price": str(position.price) if position.price_verified else None,
+                "source_price_verified": position.price_verified,
+                "analysis_inputs": position.ingredients if position.price_verified else (),
+                "scope_excerpt": position.scope,
+            })
+        scored.sort(key=lambda c: (
+            {"compatible": 0, "review": 1, "blocked": 2}[c["technical_status"]],
+            -c["similarity"], c["code"],
+        ))
+        rows.append({
+            "work_item_id": item.id, "source_row": item.source_row,
+            "revision_id": current.revision_id, "suggestions": scored,
+        })
+    top_codes = Counter(
+        row["suggestions"][0]["code"]
+        for row in rows if row["suggestions"]
+        and row["suggestions"][0]["technical_status"] != "blocked"
+    )
+    for row in rows:
+        for candidate in row["suggestions"]:
+            candidate["possible_shared_scope"] = top_codes[candidate["code"]] > 1
+    response.headers.update(NO_STORE)
+    return {
+        "read_only": True, "approval_allowed": False, "cost_allowed": False,
+        "import_source": _source_view(batch),
+        "catalog": {
+            "version_id": digest, "synthetic": False, "sha256": digest,
+            "institution": "CSB (kullanıcı PDF kaynağı)", "year": 2026,
+        },
+        "rows": rows, "page_offset": offset,
+    }
