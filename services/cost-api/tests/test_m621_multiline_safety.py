@@ -6,7 +6,7 @@ import pymupdf
 from app.pdf_catalog_parser import parse_position_table
 
 
-def create_test_page(second_code=False):
+def create_test_page(second_code=False, continuation_row=False):
     """Dört sütunlu, iki satırlı sentetik PDF tablosu oluşturur."""
 
     doc = pymupdf.open()
@@ -14,7 +14,7 @@ def create_test_page(second_code=False):
 
     # Tablo sütun ve satır sınırları
     left, right = 40, 610
-    top, bottom = 100, 180
+    top, bottom = 100, 220 if continuation_row else 180
 
     # Dört sütunun dikey çizgileri
     for x in (40, 105, 470, 510, 610):
@@ -26,7 +26,7 @@ def create_test_page(second_code=False):
         )
 
     # İki fiziksel satırın yatay çizgileri
-    for y in (100, 140, 180):
+    for y in ((100, 140, 180, 220) if continuation_row else (100, 140, 180)):
         page.draw_line(
             (left, y),
             (right, y),
@@ -42,7 +42,7 @@ def create_test_page(second_code=False):
         fontsize=8,
     )
     page.insert_text(
-        (110, 130),
+        (110, 155 if continuation_row else 130),
         "nakliye ve iscilik dahil",
         fontsize=8,
     )
@@ -51,14 +51,15 @@ def create_test_page(second_code=False):
 
     # İsteğe bağlı ikinci poz
     if second_code:
-        page.insert_text((45, 155), "10.100.1002", fontsize=8)
+        second_y = 195 if continuation_row else 155
+        page.insert_text((45, second_y), "10.100.1002", fontsize=8)
         page.insert_text(
-            (110, 155),
+            (110, second_y),
             "Ikinci sentetik imalat",
             fontsize=8,
         )
-        page.insert_text((480, 155), "m3", fontsize=8)
-        page.insert_text((525, 155), "2500,00", fontsize=8)
+        page.insert_text((480, second_y), "m3", fontsize=8)
+        page.insert_text((525, second_y), "2500,00", fontsize=8)
 
     return doc, page
 

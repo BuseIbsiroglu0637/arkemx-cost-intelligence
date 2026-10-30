@@ -26,6 +26,7 @@ def analysis(request):
     return read_auxiliary_analysis(path, request.param)
 
 
+@pytest.mark.external_pdf
 def test_identity_and_resource_types(analysis):
     page, sand, cement, water, _ = EXPECTED[analysis["position_code"]]
     rows = analysis["resources"]
@@ -44,6 +45,7 @@ def test_identity_and_resource_types(analysis):
     assert analysis["read_only"] is True
 
 
+@pytest.mark.external_pdf
 def test_resource_totals_without_extra_markup(analysis):
     expected = Decimal(EXPECTED[analysis["position_code"]][4])
     assert Decimal(analysis["total"]) == expected
@@ -51,6 +53,7 @@ def test_resource_totals_without_extra_markup(analysis):
     assert analysis["additional_overhead_applied"] is False
 
 
+@pytest.mark.external_pdf
 def test_evidence_matches_original_extracted_page(analysis):
     text = analysis["source"]["page_text"]
     spans = [row["evidence"] for row in analysis["resources"]]
@@ -61,6 +64,7 @@ def test_evidence_matches_original_extracted_page(analysis):
         assert span["pdf_page"] == analysis["source"]["pdf_page"]
 
 
+@pytest.mark.external_pdf
 def test_changed_resource_amount_is_rejected(analysis):
     text = analysis["source"]["page_text"]
     span = analysis["resources"][0]["evidence"]
@@ -72,6 +76,7 @@ def test_changed_resource_amount_is_rejected(analysis):
         parse_auxiliary_text(damaged, analysis["position_code"])
 
 
+@pytest.mark.external_pdf
 def test_missing_resource_cannot_be_filled_from_adjacent_analysis(analysis):
     text = analysis["source"]["page_text"]
     span = analysis["resources"][2]["evidence"]
@@ -93,6 +98,7 @@ def test_unverified_source_is_rejected(tmp_path):
 
 
 @pytest.mark.parametrize("code", ["19.100.2504", "19.100.2508"])
+@pytest.mark.external_pdf
 def test_auxiliary_price_matches_parent_resource_price(code):
     parent_path = os.environ.get("ARKEMX_ANALYSIS_PDF")
     auxiliary_path = os.environ.get("ARKEMX_AUXILIARY_PDF")

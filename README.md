@@ -1,5 +1,17 @@
 # ARKEMX Cost Intelligence — M1 Metraj Çekirdeği
 
+## Küçük maliyet pilotu
+
+Güncel sade akış: **Excel metrajı → kaynaklı birim fiyat → sunucuda hesap →
+kullanıcı kontrolü → kalıcı rapor ve CSV**. 1–500 satır; eksik fiyatlar açıkça
+hesap dışında, kısmi toplam ayrı gösterilir. Windows için `PILOTU_BASLAT.cmd`.
+[Kurulum, hesap yöntemi ve doğrulama sınırları](SMALL_PILOT.md).
+
+**Aşağıdaki M1–M4 notları tarihsel geliştirme belgeleridir.** Özellikle eski
+"cost calculation not implemented" ifadesi güncel pilot kapsamını yansıtmaz.
+Yeni pilot kullanıcı incelemesiyle çalışır; M5 mühendislik onayını veya resmî
+katalog doğrulamasını kendiliğinden oluşturmaz.
+
 **Status:** Developer pilot, not commercially deployable. **Scope:** `.xlsx` upload -> column mapping -> data normalization -> human review flags -> tenant-scoped database records. **Not implemented:** AI position matching, commercial catalog data, cost calculation, Excel cost reporting, payment or production hardened access.
 
 ## M4.3 — Kalıcı yerel toplu işleme

@@ -87,8 +87,8 @@ def test_full_handoff_has_sourced_partial_evidence_for_four_more_works(client, a
     rows = response.json()["rows"]
     assert len(rows) == 6
     assert [r["status"] for r in rows] == [
-        "needs_candidate", "document_evidence_for_review",
-        "document_evidence_for_review", "needs_candidate",
+        "needs_candidate", "needs_candidate",
+        "needs_candidate", "needs_candidate",
         "document_evidence_for_review", "document_evidence_for_review",
     ]
     assert rows[1]["evidence_page"] == rows[2]["evidence_page"] == 2

@@ -376,3 +376,6 @@ app.include_router(a331_pilot_review_router)
 from .a338_plaster_evidence import router as a338_plaster_evidence_router
 app.include_router(a338_plaster_evidence_router)
 
+from .pilot_costs import router as pilot_cost_router
+app.include_router(pilot_cost_router)
+

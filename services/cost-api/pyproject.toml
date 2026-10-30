@@ -30,3 +30,4 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["external_pdf: requires privately supplied, hash-pinned analysis/auxiliary PDF files"]

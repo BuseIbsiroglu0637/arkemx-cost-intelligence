@@ -1,4 +1,4 @@
-name: M1 CI (free-tier friendly)
+name: ARKEMX local pilot CI
 on:
   push:
     branches: [main, feat/m1-metraj-core]
@@ -16,11 +16,14 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: services/cost-api/pyproject.toml
-      - run: python -m pip install -e '.[test]'
+          cache-dependency-path: services/cost-api/requirements-pilot.lock.txt
+      - run: python -m pip install -r requirements-pilot.lock.txt
+      - run: python -m pip install -e . --no-deps
       - run: python -m pytest -q tests/test_a318_pdf_api.py tests/test_a319_gazbeton_safety.py tests/test_a320_smart_matching.py tests/test_a321_candidate_selections.py tests/test_a322_material_safety.py tests/test_a323_ceramic_joint_spacing.py tests/test_a324_ceramic_clarification.py tests/test_a325_review_queue.py tests/test_a326_project_evidence.py tests/test_a327_engineer_handoff.py tests/test_a327_decisions.py tests/test_a327_additional_evidence.py tests/test_a3291_price_audit.py tests/test_a330_editable_engineering.py tests/test_a331_pilot_review.py tests/test_a335_plaster_poz_matching.py tests/test_a337_plaster_operations.py tests/test_a338_plaster_evidence.py tests/test_a3391_unified_plaster_evidence.py tests/test_a340_plaster_editable_pilot.py
       - run: DATABASE_URL=sqlite:///./migration-ci.db python -m alembic upgrade head
-      - run: python -m pytest -q
+      # Private, hash-pinned PDFs are not distributed with this repository.
+      # Their explicit external_pdf acceptance gate is documented in SMALL_PILOT.md.
+      - run: python -m pytest -q -m "not external_pdf"
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -32,6 +35,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run build

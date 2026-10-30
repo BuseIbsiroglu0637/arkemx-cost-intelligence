@@ -230,6 +230,7 @@ def test_unknown_comparison_cannot_look_like_match(verified_reader, monkeypatch)
     assert "COMPARISON_UNVERIFIED" in row["flags"]
 
 
+@pytest.mark.external_pdf
 def test_real_pdf_reader_integration():
     path = os.environ.get("ARKEMX_ANALYSIS_PDF")
     assert path, "ARKEMX_ANALYSIS_PDF must be set for real PDF integration"

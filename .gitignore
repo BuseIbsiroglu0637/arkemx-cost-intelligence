@@ -8,6 +8,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv-pilot/
+.pilot-logs/
 *.egg-info/
 # Secrets and local storage
 .env

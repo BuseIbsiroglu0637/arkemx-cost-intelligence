@@ -22,6 +22,7 @@ import BulkPanel from "./bulk-panel";
 
 import CostPanel from "./cost-panel";
 import CostDemoPreview from "./cost-demo-preview";
+import PilotCostPanel from "./pilot-cost-panel";
 
 
 type Project = {id: string; name: string; created_at: string};
@@ -677,9 +678,12 @@ export default function Home() {
        tab==="review"?<EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>:
 
        <div className="stack">
-         <CostDemoPreview key={`${token}:${project}`} token={token} project={project}
+         <PilotCostPanel key={`pilot:${project}`} token={token} project={project}
            onReview={() => goTo("technical")} />
-         <CostPanel key={`${token}:${project}`} token={token} project={project}/>
+         <details className="card"><summary>Eski DEMO karşılaştırmasını göster</summary>
+           <CostDemoPreview key={`demo:${project}`} token={token} project={project} onReview={()=>goTo("technical")}/>
+         </details>
+         <CostPanel key={`m5:${project}`} token={token} project={project}/>
        </div>}
 
       </div>
