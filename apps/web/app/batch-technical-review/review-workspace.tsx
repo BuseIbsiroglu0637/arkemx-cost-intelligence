@@ -811,7 +811,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <summary>A3.27 · Mühendis incelemesine hazırlık</summary>
           <p>Belgede kanıtı bulunan imalatları ve kontrolü eksik kalanları tek listede gör. Bu işlem teknik onay vermez veya maliyet oluşturmaz.</p>
           <button type="button" className="secondary" disabled={Boolean(busy)} onClick={loadEngineerHandoff}>
-            {busy === "engineer-readiness" ? "Kontrol ediliyor…" : "6 imalatı / bu sayfadaki imalatları kontrol et"}
+            {busy === "engineer-readiness" ? "Kontrol ediliyor…" : "Bu sayfadaki imalatları kontrol et"}
           </button>
           {engineerHandoff && <div className={styles.handoffSummary} role="status">
             <strong>Belge–poz ön karşılaştırması: {engineerHandoff.rows.filter(r => r.status === "documented_for_review").length} satırda kanıt uyumlu · {engineerHandoff.rows.filter(r => r.status !== "documented_for_review").length} satır kontrol bekliyor</strong>
