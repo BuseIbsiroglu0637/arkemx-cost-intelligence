@@ -54,7 +54,7 @@ def test_handoff_preparation_records_actor_reason_and_source_without_approval(
     assert "submit_for_engineering_review" in before["allowed_actions"]
     payload = {
         "action": "submit_for_engineering_review",
-        "reason": "Gazbeton dayanim ve yogunluk kaynagi incelenmek uzere iletildi.",
+        "reason": "",
         "expected_source_fingerprint": before["source_fingerprint"],
         "expected_previous_id": None,
         "request_key": str(uuid4()),
@@ -69,6 +69,7 @@ def test_handoff_preparation_records_actor_reason_and_source_without_approval(
     assert event["engineering_approved"] is False
     assert event["approval_allowed"] is False
     assert event["cost_allowed"] is False
+    assert event["reason"] == "Gerekçe belirtilmedi"
 
     repeated = client.post(url + "/decisions", headers=auth, json=payload)
     assert repeated.status_code == 200
