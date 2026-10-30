@@ -35,6 +35,7 @@ def test_pdf_review_requires_authentication(client):
     assert response.status_code == 401
 
 
+@pytest.mark.external_pdf
 def test_pdf_review_returns_verified_source(client, verified_analysis):
     description = verified_analysis["technical_description"]["quote"]
 
@@ -63,6 +64,7 @@ def test_pdf_review_returns_verified_source(client, verified_analysis):
     assert response.headers["cache-control"] == "private, no-store"
 
 
+@pytest.mark.external_pdf
 def test_pdf_review_blocks_changed_dosage(client, verified_analysis):
     description = verified_analysis["technical_description"]["quote"]
     assert description.count("350 kg") == 1

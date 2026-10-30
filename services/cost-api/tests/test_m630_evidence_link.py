@@ -19,7 +19,7 @@ from app.pdf_catalog_evidence import sha256_file
 
 def make_source(tmp_path):
     """Create a synthetic PDF containing two positions."""
-    doc, _ = create_test_page(second_code=True)
+    doc, _ = create_test_page(second_code=True, continuation_row=True)
 
     path = tmp_path / "synthetic_catalog.pdf"
 

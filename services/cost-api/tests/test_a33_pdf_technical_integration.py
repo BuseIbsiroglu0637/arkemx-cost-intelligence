@@ -73,3 +73,6 @@ def test_changed_fine_plaster_dosage_is_blocked(catalog_description):
     assert checks[1]["status"] == "block"
     assert result["status"] == "blocked"
     assert result["approval_allowed"] is False
+
+# Requires the actual private source documents, never a fabricated substitute.
+pytestmark = pytest.mark.external_pdf

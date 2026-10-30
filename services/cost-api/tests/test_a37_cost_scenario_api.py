@@ -35,6 +35,7 @@ def test_authentication_required(client):
     assert response.status_code == 401
 
 
+@pytest.mark.external_pdf
 def test_verified_scenario_response(client):
     path = os.environ.get("ARKEMX_ANALYSIS_PDF")
     assert path and Path(path).is_file()

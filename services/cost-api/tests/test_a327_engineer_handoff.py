@@ -64,7 +64,8 @@ def test_handoff_covers_six_rows_and_blocks_unverified_approvals(client, auth):
     assert data["next_offset"] is None
     statuses = [row["status"] for row in data["rows"]]
     assert statuses.count("needs_candidate") == 2
-    assert statuses.count("manual_review") == 4
+    assert statuses.count("manual_review") == 2
+    assert statuses.count("needs_document") == 2  # Plaster requires explicit layer evidence.
     for row in data["rows"]:
         assert row["checks"]
         assert row["engineering_approved"] is False

@@ -1,5 +1,7 @@
 
 """A3.8.1 - Scenario API must not modify the test database."""
+import pytest
+
 
 import os
 from pathlib import Path
@@ -87,3 +89,7 @@ def test_scenario_endpoint_performs_no_database_writes(
 
     assert before == after, "Database write counter changed"
     assert not write_statements, write_statements
+
+
+# Requires the actual private source documents, never a fabricated substitute.
+pytestmark = pytest.mark.external_pdf

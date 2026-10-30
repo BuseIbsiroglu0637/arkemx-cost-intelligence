@@ -106,8 +106,8 @@ export default function CostPanel({token,project}:{token:string|null;project:str
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  }
- return <details className="card cost-advanced" aria-label="Resmî maliyet işlemleri">
-  <summary>Resmî maliyet taslakları ve gelişmiş işlemler</summary>
+  return <details className="card cost-advanced" aria-label="M5 maliyet işlemleri">
+   <summary>M5 teknik onaylı taslaklar ve gelişmiş işlemler</summary>
   <div className="cost-panel">
   <div className="card stack">
    <div className="flex between"><div><h2>Taslak maliyet hesabı</h2>

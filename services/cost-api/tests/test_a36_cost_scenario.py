@@ -118,3 +118,7 @@ def test_scenario_cannot_grant_approval(source_analysis):
 
     assert result["assumptions"]["quantity_fixed"] is True
     assert result["assumptions"]["overhead_applied_once"] is True
+
+
+# Requires the actual private source documents, never a fabricated substitute.
+pytestmark = pytest.mark.external_pdf

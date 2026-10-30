@@ -1,5 +1,7 @@
 
 """A3.8.5 - Verify alternative mortar resource arithmetic."""
+import pytest
+
 
 import os
 import re
@@ -96,3 +98,7 @@ def test_alternative_mortar_pdf_resource_arithmetic():
 
     assert total == Decimal("1926.15")
     assert total == Decimal(source["unit_price_tl"])
+
+
+# Requires the actual private source documents, never a fabricated substitute.
+pytestmark = pytest.mark.external_pdf

@@ -125,3 +125,6 @@ def test_adjacent_position_cannot_supply_missing_resource(analysis):
     # Its resource must not fill the missing target-position row.
     with pytest.raises(ValueError, match="resource rows"):
         parse_analysis_text(damaged)
+
+# Requires the actual private source documents, never a fabricated substitute.
+pytestmark = pytest.mark.external_pdf
