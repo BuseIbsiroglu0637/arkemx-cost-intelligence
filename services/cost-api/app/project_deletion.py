@@ -167,14 +167,19 @@ def delete_project(
         committed = True
     except Exception:
         db.rollback()
+        restoration_failed = False
         for source, held in reversed(moved):
             if held.exists():
-                source.parent.mkdir(parents=True, exist_ok=True)
-                held.replace(source)
-        raise
-    finally:
-        if not committed and quarantine.exists():
+                try:
+                    source.parent.mkdir(parents=True, exist_ok=True)
+                    held.replace(source)
+                except OSError:
+                    restoration_failed = True
+        # Never remove a quarantine containing files that could not be
+        # restored; an operator can recover them after investigating.
+        if not restoration_failed and quarantine.exists():
             shutil.rmtree(quarantine, ignore_errors=True)
+        raise
 
     cleanup_pending = False
     if quarantine.exists():
