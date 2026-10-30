@@ -232,7 +232,15 @@ def enrich_technical(description: str, position_description: str, check: dict,
 def issue_summary(description: str, suggestions: list[dict],
                   plaster_partner_rows: list[int] | None = None) -> str | None:
     if plaster_partner_rows:
-        return "Kaba ve ince sıva ayrı katmanlardır; birleşik poz varsa aynı yüzeyin çift fiyatlanmaması için kapsam kontrol edilmeli."
+        if not suggestions:
+            return (
+                "Kaba ve ince sıva için ayrı, uyumlu poz bulunamadı; birleşik "
+                "poz iki ayrı satıra uygulanamaz. PDF tarifini kontrol et."
+            )
+        return (
+            "Kaba ve ince sıva ayrı katmanlardır; birleşik poz varsa "
+            "aynı yüzeyin çift fiyatlanmaması için kapsam kontrol edilmeli."
+        )
     if not suggestions:
         return "PDF'de doğrulanabilir aday bulunamadı. Teknik tarif kontrol edilmeli."
     checks = suggestions[0]
