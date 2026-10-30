@@ -82,6 +82,29 @@ def test_original_pdf_read_only_and_proposal_add_remove_persists(client, auth, m
     assert refreshed["engineering"]["cost_allowed"] is False
 
 
+def test_analysis_reason_optional_and_server_audit_is_explicit(
+    client, auth, monkeypatch,
+):
+    _, _, _, url = setup_project(client, auth, monkeypatch)
+    before = state(client, auth, url)
+    without_reason = proposal(before)
+    without_reason.pop("reason")
+    first = client.post(url + "/analysis/revisions", headers=auth, json=without_reason)
+    assert first.status_code == 201, first.text
+    assert first.json()["reason"] == "Gerekçe belirtilmedi"
+
+    current = state(client, auth, url)
+    blank_reason = proposal(current, reason="   ")
+    second = client.post(url + "/analysis/revisions", headers=auth, json=blank_reason)
+    assert second.status_code == 201, second.text
+    assert second.json()["version"] == 2
+    assert second.json()["reason"] == "Gerekçe belirtilmedi"
+    final = state(client, auth, url)
+    assert final["latest_revision"]["reason"] == "Gerekçe belirtilmedi"
+    assert final["engineering"]["engineering_approved"] is False
+    assert final["engineering"]["cost_allowed"] is False
+
+
 def test_admin_cannot_engineer_approve_even_with_source_evidence(client, auth, monkeypatch):
     _, _, _, url = setup_project(client, auth, monkeypatch)
     before = state(client, auth, url)
@@ -132,7 +155,7 @@ def test_qualified_engineer_can_sign_current_revision_without_cost_unlock(
     actual = state(client, engineer_auth, url)
     assert actual["engineering"]["reviewer_eligible"] is True
     request = {
-        "action": "approve", "reason": "Dayanim yogunluk, poz kapsami ve degisiklikleri inceledim.",
+        "action": "approve", "reason": "   ",
         "expected_source_fingerprint": actual["source_fingerprint"],
         "expected_analysis_revision_id": actual["latest_revision"]["id"],
         "expected_previous_signoff_id": None, "request_key": str(uuid4()),
@@ -143,6 +166,7 @@ def test_qualified_engineer_can_sign_current_revision_without_cost_unlock(
     assert signed.json()["engineering_approved"] is True
     assert signed.json()["cost_allowed"] is False
     assert state(client, auth, url)["engineering"]["engineering_approved"] is True
+    assert state(client, auth, url)["engineering"]["review"]["reason"] == "Gerekçe belirtilmedi"
 
     # Any later edit invalidates an approval for the previous analysis revision.
     current = state(client, auth, url)
