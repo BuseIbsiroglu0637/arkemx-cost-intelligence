@@ -366,3 +366,6 @@ app.include_router(a327_engineer_handoff_router)
 from .a327_decisions import router as a327_decisions_router
 app.include_router(a327_decisions_router)
 
+from .a330_editable_analysis import router as a330_editable_analysis_router
+app.include_router(a330_editable_analysis_router)
+

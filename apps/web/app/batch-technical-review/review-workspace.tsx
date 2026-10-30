@@ -9,6 +9,7 @@ import styles from "./review.module.css";
 import AssessmentPanel from "./assessment-panel";
 import M4LinkPanel from "./m4-link-panel";
 import HandoffDecisionPanel from "./handoff-decision-panel";
+import EditableEngineeringReview from "./editable-engineering-review";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -880,7 +881,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     needsReview || rowTriage?.group === "needs_review" ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
-                {isSaved && <small className={styles.queueReason}>Teknik onay bekliyor · Maliyete aktarılmaz.</small>}
+                {isSaved && <small className={styles.queueReason}>Mühendis kararını detayda kontrol et · Maliyete aktarılmaz.</small>}
                 {validatedEvidence ? <small className={styles.queueReason}>
                   Şartname–poz temel özellikleri uyumlu (PDF s. {validatedEvidence.evidence_page ?? "—"}).
                   Kapsam ve mühendis onayı bekliyor.
@@ -970,11 +971,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     ) : expandedEvidence.candidate_consistency === "conflicts" ? (
                       <p>Belge ve kayıtlı pozun açık teknik özellikleri uyuşmuyor. İnceleme gerekli.</p>
                     ) : currentEvidenceMatch ? (
-                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; teknik onay hâlâ bekliyor.</p>
+                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; mühendis kararını aşağıdaki bölümden kontrol et.</p>
                     ) : (
                       <p>Belgede ilgili bilgiler bulundu ancak pozla gereken tüm özellikler karşılaştırılamadı. Eksikler incelemede kalır.</p>
                     )}
-                    <small>Bu karşılaştırma yalnızca kaynaklı ön kontroldür; mühendis onayı ve maliyet hesabı kapalıdır.</small>
+                    <small>Bu karşılaştırma tek başına mühendis onayı veya maliyet yetkisi vermez.</small>
                   </div>
                 )}
                 {expandedEvidence.evidence.map((record, index) => (
@@ -1018,7 +1019,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           </section>}
           {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
             {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "Poz seçimi onaylandı" : "Henüz kaydedilmedi"}:
-            <strong> {expandedSelectedCode}</strong> · Teknik inceleme ve mühendis onayı bekliyor.
+            <strong> {expandedSelectedCode}</strong> · Mühendis kararını aşağıdaki bölümden kontrol et.
             {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
               <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
           </div>}
@@ -1048,23 +1049,17 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     {" · Güncel fiyat dönemi ayrıca doğrulanmalı"}
                   </small>
                 </div>
-                <details>
-                  <summary>PDF kanıtı ve analiz girdileri</summary>
-                  {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
-                  {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, i) =>
-                    <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
-                  {option.price_audit?.status === "reconciled_to_pdf_with_parser_rule" && (
-                    <p className={styles.priceReconciliation}>
-                      Analiz girdileri toplamı: {option.price_audit.inputs_total} TL ·
-                      Kontrol formülünde kullanılan %{option.price_audit.reconciliation_addition_percent} ek:
-                      {" "}{option.price_audit.reconciliation_addition} TL ·
-                      Hesaplanan: {option.price_audit.calculated_price} TL ·
-                      PDF fiyatı: {option.price_audit.pdf_price} TL ·
-                      Fark: {option.price_audit.difference} TL.
-                      Bu hesap kontrolüdür; güncel resmî fiyat veya teknik onay değildir.
-                    </p>
-                  )}
-                </details>
+                {savedCandidates[expandedRow.work_item_id] === option.code ?
+                  <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
+                    projectId={projectId} importId={importId}
+                    rowId={expandedRow.work_item_id} position={option} /> :
+                  <details>
+                    <summary>PDF kanıtı ve analiz girdileri</summary>
+                    <p>Önce bu poz adayını kaydet. Kaydedildikten sonra analiz taslağındaki girdileri düzenleyebilir ve mühendis incelemesine gönderebilirsin.</p>
+                    {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
+                    {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
+                      <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
+                  </details>}
                 <button type="button" disabled={Boolean(busy)}
                   onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
                   {savedCandidates[expandedRow.work_item_id] === option.code ? "Poz seçimi onaylandı" : "Bu adayı kaydet"}
