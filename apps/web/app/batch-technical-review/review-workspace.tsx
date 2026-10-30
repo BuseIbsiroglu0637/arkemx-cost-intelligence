@@ -30,7 +30,7 @@ type Report = { schema: string; read_only: boolean; approval_allowed: boolean; r
 type PdfSource = { present: boolean; read_only: boolean; sha256?: string; year?: number; volume?: number; position_count?: number; verified_price_count?: number; uncertain_price_count?: number };
 type CandidateCatalog = { version_id: string; institution: string; period: string; year: number; position_count: number; synthetic: boolean };
 type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean; source_page?: number; source_price?: string | null; source_price_verified?: boolean; analysis_inputs?: {code:string;description:string;unit:string;quantity:string;unit_price:string;amount:string}[]; scope_excerpt?: string };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[] }[] };
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -595,6 +595,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           </tr></thead>
           <tbody>{selection.rows.map(row => {
             const proposed = suggestionsFor(row.work_item_id);
+            const reviewRow = autoCandidates?.rows.find(item => item.work_item_id === row.work_item_id);
+            const paired = Boolean(reviewRow?.related_excel_rows?.length);
             const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
             const top = suitable ?? proposed[0] ?? null;
             const shared = Boolean(top?.possible_shared_scope);
@@ -604,8 +606,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const gasbetonDetailsMissing = Boolean(top?.review_flags.some(flag =>
               flag === "GAZBETON_STRENGTH_N_MM2_UNVERIFIED" ||
               flag === "GAZBETON_DENSITY_KG_M3_UNVERIFIED"));
+            const ambiguous = gasbetonDetailsMissing && proposed.filter(item => item.technical_status !== "blocked").length > 1;
             const needsReview = Boolean(top && (top.technical_status !== "compatible" ||
-              shared || top.similarity < 0.5 || row.input_review_required || gasbetonDetailsMissing));
+              shared || paired || top.similarity < 0.5 || row.input_review_required || gasbetonDetailsMissing));
             return <tr key={row.work_item_id}>
               <td className={styles.simpleMatchDescription}>
                 <strong>{row.effective_description}</strong>
@@ -613,7 +616,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               </td>
               <td>
                 {top && !blocked ? <div className={styles.simpleMatchPosition}>
-                  <strong>{top.code}</strong><small title={top.description}>{top.description}</small>
+                  {ambiguous ? <>
+                    <strong>{proposed.filter(item => item.technical_status !== "blocked").length} olası poz</strong>
+                    <small>Dayanım ve yoğunluk belirtilmediği için doğru kod kesinleştirilemez.</small>
+                  </> : <>
+                    <strong>{top.code}</strong><small title={top.description}>{top.description}</small>
+                  </>}
                   {selectedCode === top.code && <em>Öneri · onaylanmadı</em>}
                 </div> :
                   <span className={styles.simpleNoCandidate}>{blocked ? "Uygun aday doğrulanamadı" :
@@ -625,6 +633,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   missing || needsReview ? styles.simpleStatusReview :
                   top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
                   {blocked ? "Teknik uyumsuzluk" :
+                    paired ? "Birleşik iş kontrolü" :
                     shared ? "Çift fiyatlama riski" :
                     missing ? "İnceleme gerekli" :
                     gasbetonDetailsMissing ? "Teknik bilgi eksik" :
@@ -641,6 +650,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           })}</tbody>
         </table></div>
         {expandedRow && <div className={styles.simpleMatchDetail}>
+          {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && (
+            <div className={styles.reviewReason} role="note">
+              {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
+              {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
+                <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
+            </div>
+          )}
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
             <p>{expandedRow.effective_description}</p></div>
             <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
@@ -648,7 +664,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {suggestionsFor(expandedRow.work_item_id).slice(0,1).map(option =>
               <div key={option.code} className={styles.simplePrimaryCandidate}>
                 <div>
-                  <strong>Önerilen poz: {option.code}</strong>
+                  <strong>Olası poz: {option.code}</strong>
                   <p>{option.description}</p>
                   <span className={styles.simpleStatus + " " +
                     (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
