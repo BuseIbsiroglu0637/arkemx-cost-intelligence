@@ -206,7 +206,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
-  const [queueView, setQueueView] = useState<QueueView>("attention");
+  const [queueView, setQueueView] = useState<QueueView>("all");
   const [autoMessage, setAutoMessage] = useState("");
   const [rowSearch, setRowSearch] = useState("");
   const [autoFilter, setAutoFilter] = useState<"all" | "suggested" | "review" | "none">("all");
@@ -687,171 +687,46 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <strong>Excel kaynağı: {selection?.import_source.filename ?? imports.find(item => item.id === importId)?.filename ?? "Henüz seçilmedi"}</strong>
           <span>{selectedProject?.name ?? "Proje seçin"}{selection ? ` · ${selection.import_source.sheet_name}` : ""}</span>
         </div>
-        <details className={styles.simpleSourceSettings}><summary>Kaynağı değiştir / geçmiş</summary>
-          {!projectScope && <label>Proje
-            <select value={projectId} onChange={e => chooseProject(e.target.value)}><option value="">Proje seç</option>
-              {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </select></label>}
-          <label>Excel aktarımı
-            <select value={importId} disabled={!projectId || Boolean(busy)} onChange={e => loadItems(e.target.value)}>
-              <option value="">Excel seç</option>
-              {imports.map(item => <option key={item.id} value={item.id}>{item.filename} · {item.row_count} satır</option>)}
-            </select>
-          </label>
-          <button type="button" className="secondary" disabled={Boolean(busy) || !importId}
-            onClick={() => loadItems(importId,offset)}>Excel kayıtlarını yenile</button>
-          {selection && <details><summary>Excel kaynak kimliği</summary>
-            <p>{selection.import_source.filename} · {selection.import_source.sheet_name}</p>
-            <code>{selection.import_source.sha256}</code></details>}
-          {importId && <section aria-label="Kayıtlı incelemeler">
-            <h3>Kayıtlı incelemeler</h3>
-            <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved()}>
-              Önceki kayıtları göster</button>
-            {savedList && (savedList.records.length ? <ul className={styles.resultList}>
-              {savedList.records.map(record => <li key={record.id}><strong>{record.title}</strong> · {record.row_count} satır
-                <button type="button" className="secondary" disabled={Boolean(busy)}
-                  onClick={() => { setArchive(null); void request<SavedReview>(
-                    `/api/projects/${encodeURIComponent(projectId)}/a3/reviews/${encodeURIComponent(record.id)}`,
-                    acceptArchive, "archive"); }}>Kaydı aç</button></li>)}
-              </ul> : <p>Kayıtlı inceleme bulunamadı.</p>)}
-            {savedList?.next_offset !== null && savedList?.next_offset !== undefined &&
-              <button type="button" className="secondary" disabled={Boolean(busy)}
-                onClick={() => listSaved(savedList.next_offset!)}>Daha fazla kayıt</button>}
-          </section>}
-        </details>
+        <label>Excel aktarımı
+          <select value={importId} disabled={!projectId || Boolean(busy)}
+            onChange={e => loadItems(e.target.value)}>
+            <option value="">Excel seç</option>
+            {imports.map(item => <option key={item.id} value={item.id}>
+              {item.filename} · {item.row_count} satır
+            </option>)}
+          </select>
+        </label>
+        {!projectScope && <label>Proje
+          <select value={projectId} onChange={e => chooseProject(e.target.value)}>
+            <option value="">Proje seç</option>
+            {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+        </label>}
       </div>
       {busy && <p role="status">{busy === "auto" ? "Pozlar otomatik eşleştiriliyor…" :
         busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : "Kayıtlar yükleniyor…"}</p>}
       {saveNotice && <p className="success" role="status">{saveNotice}</p>}
       {(!selection && projectId && !busy && imports.length === 0) &&
         <p>Bu projede kayıtlı Excel bulunmuyor. Önce Metraj sayfasından Excel yükle.</p>}
-      <div className={styles.infoStrip} role="note">Eşleştirmeler katalogdan otomatik önerilir. Teknik onay veya maliyet hesabı yapılmaz; belirsiz satırlar kontrol için ayrılır.</div>
-      {archive && <section className={styles.card} aria-labelledby="archive-heading"><div className={styles.toolbar}><h2 id="archive-heading">Kaydedildiği andaki inceleme · {archive.record.title}</h2><button type="button" className="secondary" onClick={() => setArchive(null)}>Kayıt görünümünü kapat</button></div>
-        <p><strong>{archive.currentness.status === "unchanged" ? "Kaydedilen girdilerde değişiklik saptanmadı." : archive.currentness.status === "changed" ? "Kaynak veya kurallar değişmiş. Bu sonuç eski çalışmaya aittir." : "Kaydın güncelliği tamamen doğrulanamadı."}</strong></p>
-        <p>Bu bölüm tarihî kaydı gösterir; güncel teknik sonuç veya mühendis onayı değildir.</p>
-        {archive.currentness.flags.length > 0 && <ul>{archive.currentness.flags.map(flag => <li key={flag}>{freshnessLabels[flag] ?? flag}</li>)}</ul>}
-        <p>Kayıt tarihi: {new Date(archive.record.created_at).toLocaleString("tr-TR")} · {archive.record.row_count} satır</p>
-        <details><summary>Kayıt kimliği ve bütünlük kanıtı</summary><code>{archive.record.id}</code><br /><code>{archive.record.snapshot_sha256}</code></details>
-        <button type="button" disabled={Boolean(busy) || !archive.resume_allowed} onClick={prepareResume}>Adayları güncel satırlarla yeniden incelemeye hazırla</button>
-        <p className="hint">Mevcut kaydedilmemiş aday girişleri bu kayıttaki adaylarla değiştirilir. Sonuç yeniden hesaplanmadan güncel sayılmaz.</p>
-        <label>Kaydedilmiş satır<select value={archiveRow ?? ""} onChange={e => setArchiveRow(e.target.value)}>{archive.report.rows.map(row => <option key={row.identity.work_item_id} value={row.identity.work_item_id}>Excel satırı {row.identity.source_row} · {row.candidate_code ?? "Aday yok"} · {label(row.technical_status)}</option>)}</select></label>
-        {archivedDetail && <>
-          <RowDetail key={`archive-${archive.record.id}-${archiveRow}`} row={archivedDetail} />
-          <AssessmentPanel key={`assessment-${archive.record.id}-${archiveRow}`} api={API} projectId={projectId} recordId={archive.record.id}
-            itemId={archivedDetail.identity.work_item_id} snapshot={archive.record.snapshot_sha256} candidate={archivedDetail.candidate_code}
-            disabled={Boolean(busy)} onExpired={expireSavedSession} />
-          <M4LinkPanel key={`m4-link-${archive.record.id}-${archiveRow}`} api={API} projectId={projectId} recordId={archive.record.id}
-            itemId={archivedDetail.identity.work_item_id} snapshot={archive.record.snapshot_sha256} candidate={archivedDetail.candidate_code}
-            disabled={Boolean(busy)} onExpired={expireSavedSession} />
-        </>}
-      </section>}
       {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-labelledby="rows-heading">
-        <div className={styles.simpleMatchHead}>
-          <div><h2 id="rows-heading">Otomatik poz eşleştirme</h2>
-            <p>Metraj satırları seçili kaynak kataloğuna göre kendiliğinden taranır.</p></div>
-          <div className={styles.simpleMatchSummary} role="status">
-            {busy === "auto" ? "Pozlar eşleştiriliyor…" :
-              autoCandidates ? `${selection.rows.length} imalat tarandı · ${countSuggested} aday bulundu · ${countMissing} aday bulunamadı` :
-              pdfSource?.present ? "PDF ile eşleştirme hazırlanıyor…" : "PDF kaynağı bekleniyor"}
-          </div>
-        </div>
-        {pdfSource?.present ? <div className={styles.simpleCatalog}>
-          <span>Kaynak: <strong>2026 İnşaat Birim Fiyat Analizleri · Cilt 1</strong>
-            {" · "}{pdfSource.position_count} poz · {pdfSource.verified_price_count} fiyat kontrolü geçti
-            {pdfSource.uncertain_price_count ? " · " + pdfSource.uncertain_price_count + " fiyat inceleme bekliyor" : ""}
-          </span>
-          <details><summary>PDF kaynağını güncelle</summary>
-            <p>Yeni PDF bağlanırsa otomatik öneriler yeniden hesaplanır.</p>
-            <input type="file" accept=".pdf,application/pdf" aria-label="2026 analiz PDF dosyası"
-              onChange={event => setPdfFile(event.target.files?.[0] ?? null)} />
-            <label className={styles.pdfRights}><input type="checkbox" checked={pdfRightsConfirmed}
-              onChange={event => setPdfRightsConfirmed(event.target.checked)} />
-              PDF dosyasını işlemek için gerekli hak ve izne sahibim.</label>
-            <button type="button" disabled={Boolean(busy) || !pdfFile || !pdfRightsConfirmed} onClick={attachPdf}>PDF kaynağını güncelle</button>
-          </details>
-        </div> : <div className={styles.simpleMissingSource}>
-          <strong>Gerçek pozlar doğrudan 2026 analiz PDF dosyasından okunacak.</strong>
-          <p>PDF dosyasını bir kez bağla. Sonra Excel satırları bu belgeden otomatik eşleştirilir.</p>
-          <label>2026 İnşaat Birim Fiyat Analizleri · Cilt 1 PDF
-            <input type="file" accept=".pdf,application/pdf" aria-label="2026 analiz PDF dosyası"
-              onChange={event => setPdfFile(event.target.files?.[0] ?? null)} />
-          </label>
+        {!pdfSource?.present && <div className={styles.simpleMissingSource}>
+          <strong>Önce poz analiz PDF kaynağını bağla</strong>
+          <p>Gerçek poz adayları yalnızca yüklenen belge üzerinden aranır.</p>
+          <input type="file" accept=".pdf,application/pdf" aria-label="2026 analiz PDF dosyası"
+            onChange={event => setPdfFile(event.target.files?.[0] ?? null)} />
           <label className={styles.pdfRights}><input type="checkbox" checked={pdfRightsConfirmed}
             onChange={event => setPdfRightsConfirmed(event.target.checked)} />
-            Bu PDF dosyasını işlemek için gerekli hak ve izne sahibim.</label>
-          <button type="button" disabled={Boolean(busy) || !pdfFile || !pdfRightsConfirmed} onClick={attachPdf}>PDF dosyasını bağla</button>
-          <p className={styles.legalNote}>Belgenin ikinci sayfası işleme ve çoğaltma için yazılı izin şartı içeriyor. Yetkin yoksa onaylama. Bu işlem yalnızca yerel kullanım içindir.</p>
-        </div>}
-        {autoCandidates && <div className={styles.simpleSourceCitation}>
-          Kaynak PDF: {pdfSource?.sha256?.slice(0,12)}… · Teknik onay verilmedi
+            PDF dosyasını işlemek için gerekli hak ve izne sahibim.</label>
+          <button type="button" disabled={Boolean(busy) || !pdfFile || !pdfRightsConfirmed}
+            onClick={attachPdf}>PDF dosyasını bağla</button>
+          <p className={styles.legalNote}>Belgenin kullanım ve çoğaltma izinlerini kontrol et. Yetkin yoksa onaylama.</p>
         </div>}
         {error && <div role="alert" className="error">{error}
-          {pdfSource?.present && <button type="button" className="secondary" disabled={Boolean(busy)}
-            onClick={() => { automaticRunKeyRef.current = ""; findAutomaticCandidates(); }}>Yeniden dene</button>}
+          {pdfSource?.present && <button type="button" className="secondary"
+            disabled={Boolean(busy)} onClick={() => {
+              automaticRunKeyRef.current = ""; findAutomaticCandidates();
+            }}>Tekrar dene</button>}
         </div>}
-
-        {autoCandidates && <section className={styles.reviewQueue} aria-label="Teknik kontrol özeti">
-          <div className={styles.queueHeading}>
-            <div><h3>Teknik kontrol listesi</h3>
-              <p>Eksik bilgiler ve kontrol bekleyen işler bir arada. Ön kontrol, mühendis onayı değildir.</p></div>
-            <small>Bu sayfada {selection.rows.length} imalat</small>
-          </div>
-          <div className={styles.queueFilters} role="group" aria-label="Satır durumunu filtrele">
-            <button type="button" aria-pressed={queueView === "attention"}
-              onClick={() => { setQueueView("attention"); setCandidateDetailId(null); }}>
-              <strong>{queueCounts.needs_info + queueCounts.needs_review}</strong>
-              <span>Kontrol bekleyen</span>
-              <small>{queueCounts.needs_info} eksik bilgi · {queueCounts.needs_review} diğer kontrol</small>
-            </button>
-            <button type="button" aria-pressed={queueView === "prechecked"}
-              onClick={() => { setQueueView("prechecked"); setCandidateDetailId(null); }}>
-              <strong>{queueCounts.prechecked}</strong>
-              <span>Ön kontrol tamam</span>
-              <small>Henüz teknik onay değil</small>
-            </button>
-            <button type="button" aria-pressed={queueView === "all"}
-              onClick={() => { setQueueView("all"); setCandidateDetailId(null); }}>
-              <strong>{selection.rows.length}</strong>
-              <span>Tüm imalatlar</span>
-              <small>Kaynak Excel satırları</small>
-            </button>
-          </div>
-        </section>}
-        {autoCandidates && <details className={styles.projectEvidence}>
-          <summary>A3.27 · Mühendis incelemesine hazırlık</summary>
-          <p>Belgede kanıtı bulunan imalatları ve kontrolü eksik kalanları tek listede gör. Bu işlem teknik onay vermez veya maliyet oluşturmaz.</p>
-          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={loadEngineerHandoff}>
-            {busy === "engineer-readiness" ? "Kontrol ediliyor…" : "Bu sayfadaki imalatları kontrol et"}
-          </button>
-          {engineerHandoff && <div className={styles.handoffSummary} role="status">
-            <strong>Belge–poz ön karşılaştırması: {engineerHandoff.rows.filter(r => r.status === "documented_for_review").length} satırda kanıt uyumlu · {engineerHandoff.rows.filter(r => r.status !== "documented_for_review").length} satır kontrol bekliyor</strong>
-            <div className={styles.handoffRows}>
-              {engineerHandoff.rows.map(row => <div key={row.work_item_id} className={styles.handoffRow}>
-                <div><strong>Satır {row.source_row} · {row.description}</strong>
-                  <small>{row.status === "documented_for_review" ? "Kaynaklı ön kontrol uyumlu · Mühendis incelemesi bekliyor" :
-                    row.status === "conflicting" ? "Çelişki var · İnceleme gerekli" :
-                    row.status === "manual_review" ? "Belge–poz otomatik kontrolü henüz desteklenmiyor" :
-                    row.status === "document_evidence_for_review" ? "Belgelenmiş kısmi teknik bilgi · Poz incelemesi gerekli" :
-                    row.status === "needs_candidate" ? "Kaydedilmiş poz bekleniyor" :
-                    row.status === "stale_candidate" ? "Poz veya PDF kaynağı güncellenmeli" :
-                    row.status === "input_review" ? "Excel girdisi kontrol edilmeli" :
-                    "Teknik belge kanıtı bekleniyor"}</small>
-                </div>
-                <p>{row.reason}</p>
-                {row.evidence_facts && Object.keys(row.evidence_facts).length > 0 &&
-                  <small>Belgede bulunanlar: {Object.entries(row.evidence_facts)
-                    .map(([key, value]) => `${handoffFactLabels[key] ?? key}: ${String(value)}`).join(" · ")}</small>}
-                {row.evidence_quote && <small>Kaynak ifadesi: {row.evidence_quote}</small>}
-                <small>Kontrol listesi: {row.checks.join(" · ")}
-                  {row.evidence_page ? ` · PDF sayfa ${row.evidence_page}` : ""}
-                  {row.saved_candidate ? ` · Poz ${row.saved_candidate}` : ""}
-                </small>
-                <HandoffDecisionPanel projectId={projectId} importId={importId} rowId={row.work_item_id}/>
-              </div>)}
-            </div>
-            <small>Tüm satırlar mühendis kararına tabidir. Eksik bilgiler tahmin edilmez; onay veya fiyat hesabı yapılmadı.</small>
-          </div>}
-        </details>}
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
@@ -961,7 +836,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <small>Bu bilgiler metraj tarifinde yoksa mimari/teknik şartnameye bak. Poz seçmek eksik bilgiyi otomatik doğrulamaz.</small>
             </div>
           )}
-          {triageFor(expandedRow.work_item_id)?.group === "needs_info" && (
+          {(
             <details className={styles.projectEvidence}>
               <summary>Bilgiyi doğrula · Proje şartnamesi PDF</summary>
               <p>Projenin teknik şartnamesini yükle. ARKEMX ilgili ifadeyi sayfasıyla arar; bulması teknik onay değildir.</p>
@@ -1106,25 +981,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 </div>)}
             </details>}
           </> : <p>Bu satır için uygun poz doğrulanamadı. Teknik tarif veya poz ayrıca incelenmeli.</p>}
-          <details><summary>Manuel poz kodu gir (gerekirse)</summary>
-            <label>Poz kodu<input maxLength={80} disabled={Boolean(busy)}
-              value={candidates[expandedRow.work_item_id] ?? ""} placeholder="Poz kodu"
-              onChange={e => candidate(expandedRow.work_item_id, e.target.value)} /></label>
-            <button type="button" disabled={Boolean(busy) || !expandedSelectedCode ||
-              savedCandidates[expandedRow.work_item_id] === expandedSelectedCode}
-              onClick={() => saveCandidate(expandedRow.work_item_id, expandedSelectedCode)}>
-              {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "Kaydedildi" : "Poz seçimini kaydet"}
-            </button>
-            <small>Yalnızca bağlı PDF'deki pozlar kaydedilir. Teknik onay değildir.</small>
-          </details>
-          <details><summary>İleri teknik inceleme</summary>
-            <button type="button" disabled={Boolean(busy)} onClick={() => {
-              setSelected([expandedRow.work_item_id]);
-              setCandidateDetailId(null);
-            }}>Satırı incelemeye hazırla</button>
-          </details>
         </div>}
-        {autoMessage && <p role="status" className={styles.simpleFootnote}>{autoMessage}</p>}
         <div className={styles.tableFooter}>
           <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
           <div className={styles.pager}>
@@ -1134,36 +991,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               onClick={() => loadItems(importId,selection.next_offset ?? 0)}>Sonraki →</button>
           </div>
         </div>
-        <details className={styles.helpCard}>
-          <summary>Teknik inceleme ve kanıtlar (isteğe bağlı)</summary>
-          <p>Bu listede pozlar otomatik önerilir. Seçilen poz mühendis tarafından ayrıca doğrulanmadan maliyete aktarılmaz.</p>
-          <p>Teknik inceleme mevcut pilotun desteklediği pozlarla sınırlıdır. Teknik kanıtlar desteklenmeyen pozlar için otomatik onay üretmez.</p>
-          <button type="button" disabled={Boolean(busy) || !selection.rows.length}
-            onClick={() => {
-              setSelected(selection.rows.map(row => row.work_item_id));
-            }}>Tüm satırları teknik incelemeye hazırla</button>
-          <div className={styles.primaryAction}>
-            <span>{selected.length} satır incelemeye hazır</span>
-            <button type="button" disabled={Boolean(busy) || selected.length === 0}
-              onClick={compare}>Teknik karşılaştırmayı aç →</button>
-          </div>
-        </details>
       </section>}
-      {report && <div className={styles.workbench}><section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. Güncel önizleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
-        <div className={styles.bulkPanel}><label>İnceleme adı<input maxLength={120} value={recordTitle} disabled={Boolean(busy)} onChange={e => setRecordTitle(e.target.value)} placeholder="Örn. Sıva katmanları ilk inceleme" /></label><button type="button" disabled={Boolean(busy) || recordTitle.trim().length < 3} onClick={() => void saveReview()}>İncelemeyi kaydet</button><p className="hint">Sunucu sonucu yeniden doğrular ve yeni, değiştirilemez bir kayıt oluşturur. Mühendis kararı veya maliyet taslağı oluşturmaz.</p></div>
-        <div className={styles.filters} role="group" aria-label="Teknik sonuç filtreleri">{views.map(option => {
-          const count = report.rows.filter(row => option.key === "all" || (option.key === "attention" ? row.technical_status !== "checked_features_match" : row.technical_status === option.key)).length;
-          return <button type="button" key={option.key} aria-pressed={view === option.key} onClick={() => setView(option.key)}>{option.title} <strong>{count}</strong></button>;
-        })}</div>
-        {filtered.length ? <ul className={styles.resultList} aria-label="İncelenen Excel satırları">{filtered.map(row => <li className={styles.resultCard} key={row.identity.work_item_id} data-active={detailId === row.identity.work_item_id ? "true" : undefined}>
-          <div className={styles.resultHeading}><strong>Excel satırı {row.identity.source_row}</strong><span className={styles.positionCode}>{row.candidate_code ?? "Aday seçilmedi"}</span></div>
-          <div className={styles.resultStatuses}><div><small>Teknik durum</small><span className={`${styles.badge} ${badgeClass(row.technical_status)}`}>{label(row.technical_status)}</span></div><div><small>Fiyat kaynağı</small><span className={`${styles.badge} ${badgeClass(row.price_source_status)}`}>{label(row.price_source_status)}</span></div></div>
-          <button type="button" className="secondary" aria-label={`Excel satırı ${row.identity.source_row} kanıtlarını aç`} aria-pressed={detailId === row.identity.work_item_id} onClick={() => { setDetailId(row.identity.work_item_id); requestAnimationFrame(() => document.getElementById("batch-detail")?.focus()); }}>{detailId === row.identity.work_item_id ? "Kanıtlar gösteriliyor" : "Kanıtları aç"}</button>
-        </li>)}</ul> : <p>Bu filtrede satır bulunmuyor. Diğer sonuçları görmek için “Tümü” filtresini seç.</p>}
-      </section>
-      <aside id="batch-detail" tabIndex={-1} aria-label="Seçili satırın teknik kanıtları" className={styles.evidencePane}>
-        {detail ? <><div className={styles.nextAction}><strong>Excel satırı {detail.identity.source_row} · Sonraki işlem</strong><p>{detail.flags.includes("CANDIDATE_NOT_SELECTED") ? "Bu satır için aday poz kodu belirle ve yeniden incele." : detail.technical_status === "incompatible" ? "Uyuşmazlığı incele; tarifi veya aday pozu değiştirmek gerekiyorsa kaynak kaydı düzelt." : detail.technical_status === "out_of_scope" ? "Bu aday pilot kapsamının dışında. Bağımsız mühendis incelemesi gerekir." : detail.technical_status === "review_required" ? "Eksik veya belirsiz bilgileri aşağıdaki gerekçelerden kontrol et." : "Kontrol edilen özellikler eşleşti. Bu önizleme henüz mühendis kararına veya maliyet taslağına aktarılamaz."}</p><p className="hint">Sayfadan ayrılmadan önce “İncelemeyi kaydet” ile çalışmanı saklayabilirsin. Kaydedilen incelemede mühendis adayı bağlantısı ayrıca kontrol edilir; onay otomatik verilmez.</p></div><RowDetail key={detail.identity.work_item_id} row={detail} /></> : <div className={styles.card}><h2>Satırın kanıtları</h2><p>Soldaki listeden “Kanıtları aç” seç. Teknik farklar ve özgün ifadeler burada görünecek.</p></div>}
-      </aside></div>}
     </>}
   </Container>;
 }
