@@ -135,7 +135,6 @@ def delete_project(
     # them; successful deletion removes the quarantined copies afterward.
     quarantine = root / ".project-deletion" / uuid4().hex
     moved: list[tuple[Path, Path]] = []
-    committed = False
     try:
         for source in sources:
             if not source.exists():
@@ -164,7 +163,6 @@ def delete_project(
                     raise RuntimeError("Unexpected primary-key schema")
                 db.execute(delete(table).where(primary[0].in_(ids)))
         db.commit()
-        committed = True
     except Exception:
         db.rollback()
         restoration_failed = False
