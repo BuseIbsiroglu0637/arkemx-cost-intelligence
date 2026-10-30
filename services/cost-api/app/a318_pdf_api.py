@@ -65,6 +65,8 @@ def _pdf_candidate_check(current, position: PdfPosition,
     check = enrich_technical(
         current.raw_description, position.description, check,
         plaster_partner_rows=plaster_partner_rows,
+        position_scope=position.scope,
+        position_code=position.id,
     )
     if "METRAJ_REVIEW_REQUIRED" in check["blockers"]:
         blockers = sorted(set(check["blockers"]) - {"METRAJ_REVIEW_REQUIRED"})

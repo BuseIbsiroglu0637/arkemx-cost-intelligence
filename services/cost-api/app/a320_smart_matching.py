@@ -127,7 +127,14 @@ def find_pdf_candidates(item, positions) -> list[dict]:
                     "reasons": ["Poz PDF'sindeki sıva katmanı ayrıca doğrulanmalı"],
                     "warnings": ["LOW_LEXICAL_SIMILARITY"], "approvable": False,
                 }
-            incompatible, _ = plaster_checks(desc, position.description)
+            incompatible, _ = plaster_checks(
+                desc, position.description, scope=position.scope,
+                position_code=position.id,
+            )
+            if incompatible:
+                # Don't let old combined or contradictory stages displace
+                # a real single-stage poz in the three-item shortlist.
+                continue
             thickness_conflict = bool(
                 source_thickness and candidate_thickness
                 and source_thickness != candidate_thickness
@@ -208,7 +215,8 @@ def find_pdf_candidates(item, positions) -> list[dict]:
 
 
 def enrich_technical(description: str, position_description: str, check: dict,
-                     *, plaster_partner_rows: list[int] | None = None) -> dict:
+                     *, plaster_partner_rows: list[int] | None = None,
+                     position_scope: str = "", position_code: str = "") -> dict:
     """Additional construction gates; status is never upgraded."""
     blockers = set(check["blockers"])
     reviews = set(check["review_flags"])
@@ -222,7 +230,10 @@ def enrich_technical(description: str, position_description: str, check: dict,
     if _paint(description) and _water_based(description):
         if not _water_based(position_description):
             reviews.add("PAINT_BASE_UNVERIFIED")
-    plaster_blockers, plaster_reviews = plaster_checks(description, position_description)
+    plaster_blockers, plaster_reviews = plaster_checks(
+        description, position_description, scope=position_scope,
+        position_code=position_code,
+    )
     blockers.update(plaster_blockers)
     reviews.update(plaster_reviews)
     if plaster_partner_rows:

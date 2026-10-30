@@ -118,8 +118,8 @@ def test_candidate_retrieval_recovers_matching_stage_even_if_first_lexical_crowd
     assert find_pdf_candidates(coarse, [inflected])[0]["position_id"] == inflected.id
 
 
-def _setup_pdf_pair(client, auth, monkeypatch):
-    pdf_positions = (
+def _setup_pdf_pair(client, auth, monkeypatch, *, positions=None):
+    pdf_positions = positions or (
         position("15.999.2751", COMBINED),
         position("15.999.2752", "20 mm çimento esaslı kaba sıva yapılması"),
         position("15.999.2753", "8 mm ince sıva uygulanması"),
@@ -148,6 +148,108 @@ def _setup_pdf_pair(client, auth, monkeypatch):
     )
     assert upload.status_code == 201, upload.text
     return pid, iid, upload.json()["sha256"]
+
+
+def test_real_2026_mortar_title_identifies_both_plaster_stages():
+    official = (
+        "250/350 kg çimento dozlu kaba ve ince harçla "
+        "serpme (çarpma) sıva yapılması"
+    )
+    assert plaster_stages(official) == {"kaba", "ince"}
+    assert plaster_stages("Kaba ve ince harç ile sıva yapılması") == {
+        "kaba", "ince",
+    }
+    assert "PLASTER_COMBINED_SCOPE_MISMATCH" in plaster_checks(
+        COARSE, official, position_code="15.275.1114",
+    )[0]
+    assert "PLASTER_COMBINED_SCOPE_MISMATCH" in plaster_checks(
+        FINE, official, position_code="15.275.1114",
+    )[0]
+
+
+def test_scope_and_known_official_combined_code_cannot_override_single_layer():
+    scope = (
+        "Kaba sıva yapılması, üzerine serpme (çarpma) sıva yapılması "
+        "ve işçilik dahil 1 m² sıva fiyatı."
+    )
+    assert plaster_stages(scope) == {"kaba", "ince"}
+    assert "PLASTER_COMBINED_SCOPE_MISMATCH" in plaster_checks(
+        COARSE, "20 mm çimento esaslı kaba sıva", scope=scope,
+    )[0]
+    # Even if an imported title loses the word 'ince' during PDF parsing,
+    # a confirmed 2026 combined poz code must not be passed as single-stage.
+    assert "PLASTER_COMBINED_SCOPE_MISMATCH" in plaster_checks(
+        COARSE, "20 mm çimento esaslı kaba sıva",
+        position_code="15.275.1114",
+    )[0]
+    # Unrecognized/generic stage text is still review, not proof.
+    blockers, pending = plaster_checks(COARSE, "20 mm çimento esaslı sıva")
+    assert not blockers
+    assert "PLASTER_LAYER_UNVERIFIED" in pending
+
+
+def test_real_2026_poz_names_offer_only_separate_stage_candidates(
+    client, auth, monkeypatch,
+):
+    official = (
+        position("15.275.1114",
+                 "250/350 kg çimento dozlu kaba ve ince harçla "
+                 "serpme (çarpma) sıva yapılması"),
+        position("15.275.1115",
+                 "350 kg çimento dozlu harçla tek kat ince sıva yapılması"),
+        position("15.275.1116",
+                 "250 kg çimento dozlu harç ile kaba sıva yapılması"),
+    )
+    pid, iid, sha = _setup_pdf_pair(
+        client, auth, monkeypatch, positions=official,
+    )
+    url = f"/api/projects/{pid}/a318/imports/{iid}"
+    response = client.get(url + "/suggestions", headers=auth)
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    assert len(rows) == 2
+    assert rows[0]["suggestions"][0]["code"] == "15.275.1116"
+    assert rows[1]["suggestions"][0]["code"] == "15.275.1115"
+    for row in rows:
+        assert "15.275.1114" not in {
+            entry["code"] for entry in row["suggestions"]
+        }
+        assert row.get("engineering_approved") in (None, False)
+        denied = client.post(
+            f"{url}/items/{row['work_item_id']}/candidate",
+            headers=auth,
+            json={
+                "position_code": "15.275.1114",
+                "expected_revision_id": row["revision_id"],
+                "expected_pdf_sha256": sha,
+            },
+        )
+        assert denied.status_code == 422
+    # The correct separate-stage poz can be saved for further technical review.
+    saved = client.post(
+        f"{url}/items/{rows[0]['work_item_id']}/candidate",
+        headers=auth,
+        json={
+            "position_code": "15.275.1116",
+            "expected_revision_id": rows[0]["revision_id"],
+            "expected_pdf_sha256": sha,
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["cost_allowed"] is False
+
+    # A legacy combined poz code is stale even when stored with a current SHA.
+    gen = client.app.dependency_overrides[get_db]()
+    db = next(gen)
+    stored = db.scalar(select(PdfCandidateSelection).where(
+        PdfCandidateSelection.work_item_id == rows[0]["work_item_id"],
+    ))
+    stored.position_code = "15.275.1114"
+    db.commit()
+    gen.close()
+    after = client.get(url + "/suggestions", headers=auth).json()["rows"][0]
+    assert after["saved_selection"]["stale"] is True
+    assert after["saved_selection"]["stale_reason"] == "TECHNICAL_CONFLICT"
 
 
 def test_api_keeps_two_plaster_rows_and_blocks_wrong_or_combined_poz(
