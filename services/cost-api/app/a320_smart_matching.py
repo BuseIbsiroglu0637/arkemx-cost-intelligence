@@ -98,7 +98,7 @@ def find_pdf_candidates(item, positions) -> list[dict]:
     cls = _concrete(desc)
     is_paint = _paint(desc)
     is_ceramic = family(desc) == "seramik"
-    if family(desc) == "siva" and plaster_stages(desc):
+    if PLASTER.search(_text(desc)) and plaster_stages(desc):
         # A3.35: lexical top-3 can be crowded by the *other* plaster layer.
         # Search only PDF-grounded plaster positions, rank matching stages
         # before unspecified descriptions, and let strict checks block clashes.
@@ -107,7 +107,11 @@ def find_pdf_candidates(item, positions) -> list[dict]:
         _, source_thickness = measured_dimensions(desc)
         plaster_results = []
         for position in positions:
-            if family(position.description) != "siva":
+            # Some official descriptions say "sıvanması" rather than "sıva";
+            # the old exact family-token match would discard them.
+            position_family = family(position.description)
+            if (not PLASTER.search(_text(position.description)) or
+                    position_family not in (None, "siva")):
                 continue
             score = similarity(desc, position.description)
             stages = plaster_stages(position.description)
