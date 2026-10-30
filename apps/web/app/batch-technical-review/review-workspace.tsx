@@ -647,6 +647,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
             const top = suitable ?? proposed[0] ?? null;
             const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
+          const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
+          const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
             const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
             // Once the user selects a code, show that choice rather than the original
             // top lexical suggestion. A manually typed, unverified code stays unverified.
@@ -673,7 +675,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 {manuallyEntered ? <div className={styles.simpleMatchPosition}>
                   <strong>{selectedCode}</strong>
                   <small>Elle girilen poz · PDF adayları arasında doğrulanmadı</small>
-                  <em role="status">İnceleme için seçildi · onaylanmadı</em>
+                  <em role="status">{isSaved ? "İnceleme için kaydedildi · onaylanmadı" :
+                    "Seçildi · henüz kaydedilmedi"}</em>
                 </div> : visibleCandidate ? <div className={styles.simpleMatchPosition}>
                   {ambiguous ? <>
                     <strong>{proposed.filter(item => item.technical_status !== "blocked").length} olası poz</strong>
@@ -682,7 +685,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     <strong>{visibleCandidate.code}</strong>
                     <small title={visibleCandidate.description}>{visibleCandidate.description}</small>
                   </>}
-                  {selectedCandidate && <em role="status">İnceleme için seçildi · onaylanmadı</em>}
+                  {isSaved ? <em role="status">İnceleme için kaydedildi · onaylanmadı</em> :
+                    selectedCode ? <em>Seçildi · henüz kaydedilmedi</em> : null}
+                  {hasStaleChoice && !isSaved && <em>Eski kayıt geçersiz · yeniden seç</em>}
                 </div> :
                   <span className={styles.simpleNoCandidate}>{missing ? "Aday bulunamadı" : "PDF taraması bekleniyor"}</span>}
               </td>
@@ -721,7 +726,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             <p>{expandedRow.effective_description}</p></div>
             <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
           {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
-            Seçimin: <strong>{expandedSelectedCode}</strong> · Teknik onay verilmedi.
+            {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "İnceleme için kaydedildi" : "Henüz kaydedilmedi"}:
+            <strong> {expandedSelectedCode}</strong> · Teknik onay verilmedi.
             {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
               <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
           </div>}
@@ -751,8 +757,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
                 </details>
                 <button type="button" disabled={Boolean(busy)}
-                  onClick={() => candidate(expandedRow.work_item_id, option.code)}>
-                  {(candidates[expandedRow.work_item_id] ?? "") === option.code ? "Aday işaretlendi" : "Bu adayı işaretle"}
+                  onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
+                  {savedCandidates[expandedRow.work_item_id] === option.code ? "İnceleme için kaydedildi" : "Bu adayı kaydet"}
                 </button>
               </div>)}
             {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
@@ -763,7 +769,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     <small>{option.technical_status === "blocked" ? "Teknik uyumsuzluk" : "Teknik inceleme gerekli"} · PDF sayfa {option.source_page ?? "—"}</small>
                   </div>
                   <button type="button" className="secondary" disabled={Boolean(busy)}
-                    onClick={() => candidate(expandedRow.work_item_id, option.code)}>{expandedSelectedCode === option.code ? "Seçildi" : "Bu adayı seç"}</button>
+                    onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>{savedCandidates[expandedRow.work_item_id] === option.code ? "Kaydedildi" : "Bu adayı kaydet"}</button>
                 </div>)}
             </details>}
           </> : <p>Bu satır için uygun poz doğrulanamadı. Teknik tarif veya poz ayrıca incelenmeli.</p>}
@@ -771,6 +777,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             <label>Poz kodu<input maxLength={80} disabled={Boolean(busy)}
               value={candidates[expandedRow.work_item_id] ?? ""} placeholder="Poz kodu"
               onChange={e => candidate(expandedRow.work_item_id, e.target.value)} /></label>
+            <button type="button" disabled={Boolean(busy) || !expandedSelectedCode ||
+              savedCandidates[expandedRow.work_item_id] === expandedSelectedCode}
+              onClick={() => saveCandidate(expandedRow.work_item_id, expandedSelectedCode)}>
+              {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ? "Kaydedildi" : "Poz seçimini kaydet"}
+            </button>
+            <small>Yalnızca bağlı PDF'deki pozlar kaydedilir. Teknik onay değildir.</small>
           </details>
           <details><summary>İleri teknik inceleme</summary>
             <button type="button" disabled={Boolean(busy)} onClick={() => {
