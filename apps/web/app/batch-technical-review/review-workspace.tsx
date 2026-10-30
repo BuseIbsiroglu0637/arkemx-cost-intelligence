@@ -886,6 +886,20 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   expandedEvidence.status === "conflicting" ? "Çelişkili teknik bilgiler bulundu" :
                   "Belgede ilgili bilgi bulundu · İnceleme bekliyor"}</strong>
                 {expandedEvidence.candidate_consistency === "conflicts" && <p>Kaydedilmiş poz ile belge bilgisi uyuşmuyor. Teknik inceleme gerekli.</p>}
+                {expandedEvidence.status === "found_for_review" &&
+                  expandedEvidence.saved_candidate &&
+                  expandedEvidence.saved_candidate === savedCandidates[expandedRow.work_item_id] &&
+                  expandedEvidence.saved_candidate === expandedSelectedCode && (
+                    <div className={styles.projectPositionComparison} role="note">
+                      <strong>Belge ile kaydedilmiş poz · {expandedEvidence.saved_candidate}</strong>
+                      <p>{expandedEvidence.candidate_consistency === "matches_examined_facts"
+                        ? "Dayanım/yoğunluk veya seramik türünün gerekli karşılaştırılabilir özellikleri bu belge ve pozda aynı. Metraj satırındaki eksik bilgi uyarısı teknik inceleme tamamlanana kadar kalır."
+                        : expandedEvidence.candidate_consistency === "conflicts"
+                          ? "Belgedeki teknik bilgiler pozla çelişiyor. Uygunluk için mühendis incelemesi gerekli."
+                          : "Pozun teknik özellikleri belgeyle yeterli düzeyde karşılaştırılamadı. Eksik bilgi incelemede kalır."}</p>
+                      <small>Bu karşılaştırma poz onayı değildir; mühendis onayı ve maliyet hesabı kapalıdır.</small>
+                    </div>
+                  )}
                 {expandedEvidence.evidence.map((record, index) => (
                   <div key={record.page + "-" + index} className={styles.projectEvidenceQuote}>
                     <strong>PDF sayfa {record.page}</strong>
