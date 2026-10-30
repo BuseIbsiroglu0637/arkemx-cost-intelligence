@@ -11,6 +11,26 @@ from decimal import Decimal
 from .excel import normalized
 
 SIVA = re.compile(r"\bsiva\w*\b")
+# Title-level operation matters more than shared material words. Removing an
+# existing finish is NOT applying new plaster, even if both are priced in m².
+PLASTER_REMOVAL = re.compile(
+    r"\b(?:sok\w*|kazima\w*|kazin\w*|raspa\w*|demontaj\w*|yikim\w*)\b"
+)
+PLASTER_REPAIR = re.compile(r"\b(?:tamir\w*|onar\w*)\b")
+
+
+def plaster_operation(description: str) -> str | None:
+    """Main action inferred from the PDF *title*, never a word in its scope."""
+    plain = normalized(description)
+    if not SIVA.search(plain):
+        return None
+    if PLASTER_REMOVAL.search(plain):
+        return "removal"
+    if PLASTER_REPAIR.search(plain):
+        return "repair"
+    # A bare 'kaba sıva' in a metraj means construction/application.
+    return "application"
+
 LAYER_BEFORE = re.compile(
     r"\b(kaba|ince)\s+(?:\w+\s+)?siva\w*\b"
 )
@@ -83,6 +103,12 @@ def plaster_checks(
 
     blockers: set[str] = set()
     reviews: set[str] = set()
+    # The target PDF's own title defines the priced operation; its long scope
+    # may mention incidental removal/preparation, which must not override it.
+    requested_action = plaster_operation(metraj)
+    candidate_action = plaster_operation(candidate)
+    if candidate_action and requested_action != candidate_action:
+        blockers.add("PLASTER_OPERATION_MISMATCH")
     left = plaster_stages(metraj)
     title_stages = plaster_stages(candidate)
     scope_stages = plaster_stages(scope) if scope else frozenset()
