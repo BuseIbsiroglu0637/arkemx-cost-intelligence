@@ -21,6 +21,7 @@ import EngineerReviewPanel from "./engineer-review-panel";
 import BulkPanel from "./bulk-panel";
 
 import CostPanel from "./cost-panel";
+import CostDemoPreview from "./cost-demo-preview";
 
 
 type Project = {id: string; name: string; created_at: string};
@@ -492,13 +493,13 @@ export default function Home() {
           </button>
         </nav>
       </>}
-      {tab !== "metraj" && tab !== "technical" && project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Metraj yükleyin veya Pozları incele adımından Excel seçin."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
+      {tab !== "metraj" && tab !== "technical" && tab !== "cost" && project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Metraj yükleyin veya Pozları incele adımından Excel seçin."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
       {tab !== "metraj" && tab !== "technical" && <WorkflowNav active={activeSection} onSelect={goTo} />}
-      {tab !== "metraj" && tab !== "technical" && <details className="card"><summary>Proje özeti ve kaynak yönetimi</summary>
+      {tab !== "metraj" && tab !== "technical" && tab !== "cost" && <details className="card"><summary>Proje özeti ve kaynak yönetimi</summary>
         <div className="flex"><button type="button" className="secondary" onClick={() => goTo("overview")}>Proje özeti</button>
         <button type="button" className="secondary" onClick={() => goTo("catalog")}>Katalog ve PDF kaynakları</button></div>
       </details>}
-      {tab !== "metraj" && tab !== "technical" && <div className={workflow.steps}>Metraj → Pozları incele → Maliyet. Teknik farklar ve kaynak kanıtları satırın ayrıntısında gösterilir.</div>}
+      {tab !== "metraj" && tab !== "technical" && tab !== "cost" && <div className={workflow.steps}>Metraj → Pozları incele → Maliyet. Teknik farklar ve kaynak kanıtları satırın ayrıntısında gösterilir.</div>}
       <div className="workspace-main" id="workspace-main" aria-label={sectionTitles[activeSection]}>
       {(tab === "bulk" || tab === "review") && <div className="card stack">
         <button type="button" className="secondary" onClick={() => goTo("technical")}>← Teknik inceleme seçeneklerine dön</button>
@@ -675,9 +676,11 @@ export default function Home() {
 
        tab==="review"?<EngineerReviewPanel token={token} project={project} refreshKey={revisionTick} onGoToBulk={()=>goTo("bulk")}/>:
 
-       <div className="stack"><section className="card stack"><h2>Maliyet</h2><p>Yalnızca güncel mühendis onayı ve gerekli kaynak kontrolleri bulunan satırlar taslağa alınır. Onaysız veya kapsam dışı satırlar otomatik fiyatlandırılmaz.</p>
-       <p className="hint">Bu adım mevcut mühendis kararlarının son Excel aktarımını kullanır. Poz incelemesindeki geçmiş bir Excel seçimi maliyet kapsamını değiştirmez. PDF kaynak fiyatı otomatik uygulanmaz; fiyat ve dayanağı aşağıda belirtilir.</p>
-       <button type="button" className="secondary" onClick={() => goTo("technical")}>← Poz incelemesine dön</button><details><summary>Gelişmiş araç · Alternatif harç maliyet senaryosu</summary><p>Tek tarif deneme ekranındaki sınırlı senaryodur. Maliyet taslağına otomatik aktarılmaz ve teknik onay vermez.</p><Link href="/technical-review">Tarif ve senaryo ekranını aç →</Link></details></section><CostPanel key={`${token}:${project}`} token={token} project={project}/></div>}
+       <div className="stack">
+         <CostDemoPreview key={`${token}:${project}`} token={token} project={project}
+           onReview={() => goTo("technical")} />
+         <CostPanel key={`${token}:${project}`} token={token} project={project}/>
+       </div>}
 
       </div>
 

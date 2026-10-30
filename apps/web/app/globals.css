@@ -185,3 +185,27 @@ button.workspace-tab.active{background:white;color:var(--blue);border-color:var(
  .m421-list td:nth-child(2){min-width:170px}
  .m422-current-summary{align-items:flex-start}
 }
+
+/* DEMO Maliyet — one useful summary; official draft tools stay collapsed. */
+.cost-demo{display:grid;gap:16px}
+.cost-demo-head{align-items:center}
+.cost-demo-head h2{margin:0}
+.cost-demo-head .hint{margin:5px 0 0}
+.cost-demo-disclaimer{font-size:12px;line-height:1.65;color:#536985;background:#f4f7fc;border:1px solid #dbe5f4;border-radius:9px;padding:10px 12px;margin:0}
+.cost-demo-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cost-demo-kpis>div{padding:14px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafd;min-width:0;display:grid;gap:6px}
+.cost-demo-kpis small{font-size:11px;color:#667b95}
+.cost-demo-kpis strong{font-size:20px;line-height:1.25;color:#183865;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cost-demo-table{width:100%;border-collapse:collapse;font-size:12px}
+.cost-demo-table thead{background:#f1f5fb}
+.cost-demo-table th,.cost-demo-table td{text-align:left;padding:12px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+.cost-demo-table td:first-child{min-width:220px}
+.cost-demo-table td small{display:block;color:#70839b;margin-top:5px;font-size:11px}
+.cost-demo-table td:nth-child(4){font-variant-numeric:tabular-nums;white-space:nowrap}
+.cost-demo-warning{background:#fff7e8;color:#895a11;padding:12px;border:1px solid #efd7a1;border-radius:9px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:center}
+.cost-demo-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.cost-advanced{padding:0;overflow:hidden}
+.cost-advanced>summary{cursor:pointer;padding:17px 20px;font-weight:700;list-style:revert;color:var(--ink)}
+.cost-advanced>.cost-panel{padding:0 12px 12px}
+@media(max-width:800px){.cost-demo-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){.cost-demo-kpis strong{font-size:16px}.cost-demo-table{min-width:680px}.cost-demo-actions button{width:100%}}
