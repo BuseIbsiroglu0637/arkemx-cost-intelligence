@@ -52,6 +52,8 @@ const LABELS: Record<string, string> = {
   material_scope: "Malzeme kapsamı", work_scope_ince_siva: "İnce sıva kapsamı", work_scope_kaba_siva: "Kaba sıva kapsamı",
   included: "Kapsamda", excluded: "Kapsam dışı", kaba_siva: "Kaba sıva", ince_siva: "İnce sıva",
   siva: "Sıva", cimento: "Çimento", alci: "Alçı", gazbeton: "Gazbeton", ic: "İç", dis: "Dış",
+  gazbeton_strength_n_mm2: "Gazbeton dayanımı (N/mm²)",
+  gazbeton_density_kg_m3: "Gazbeton yoğunluğu (kg/m³)",
   CANDIDATE_NOT_SELECTED: "Aday poz seçilmedi.", POSITION_NOT_SUPPORTED: "Bu poz mevcut teknik destek kapsamının dışında.",
   UNIT_UNVERIFIED: "Metraj birimi doğrulanamadı.", UNIT_MISMATCH: "Metraj birimi ile poz birimi uyuşmuyor.",
   PRICE_SOURCE_NOT_VERIFIED: "PDF fiyat kaynağı doğrulanamadı.", COMPARISON_UNVERIFIED: "Teknik karşılaştırma doğrulanamadı.",
@@ -589,8 +591,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
-            <th scope="col">Excel satırı</th><th scope="col">İmalat</th>
-            <th scope="col">Otomatik bulunan poz</th><th scope="col">Durum</th><th scope="col">Ayrıntı</th>
+            <th scope="col">İmalat</th><th scope="col">Bulunan poz</th><th scope="col">Durum</th><th scope="col">İşlem</th>
           </tr></thead>
           <tbody>{selection.rows.map(row => {
             const proposed = suggestionsFor(row.work_item_id);
@@ -600,19 +601,20 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const blocked = Boolean(top && top.technical_status === "blocked");
             const missing = Boolean(autoCandidates && !top);
             const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
+            const gasbetonDetailsMissing = Boolean(top?.review_flags.some(flag =>
+              flag === "GAZBETON_STRENGTH_N_MM2_UNVERIFIED" ||
+              flag === "GAZBETON_DENSITY_KG_M3_UNVERIFIED"));
             const needsReview = Boolean(top && (top.technical_status !== "compatible" ||
-              shared || top.similarity < 0.5 || row.input_review_required));
+              shared || top.similarity < 0.5 || row.input_review_required || gasbetonDetailsMissing));
             return <tr key={row.work_item_id}>
-              <td className={styles.rowNumber}>{row.source_row}</td>
               <td className={styles.simpleMatchDescription}>
                 <strong>{row.effective_description}</strong>
-                <small>{row.quantity ?? "Miktar belirtilmemiş"} {row.unit ?? ""}</small>
+                <small>Excel {row.source_row} · {row.quantity ?? "Miktar eksik"} {row.unit ?? ""}</small>
               </td>
               <td>
                 {top && !blocked ? <div className={styles.simpleMatchPosition}>
-                  <strong>{top.code}</strong><small>{top.description}</small>
-                  <small>PDF sayfa {top.source_page ?? "—"}{top.source_price_verified && top.source_price ? " · Kaynak fiyat: " + top.source_price + " TL/" + top.unit : " · Fiyat hesabı incelenmeli"}</small>
-                  {selectedCode === top.code && <em>Ön seçildi · onaylanmadı</em>}
+                  <strong>{top.code}</strong><small title={top.description}>{top.description}</small>
+                  {selectedCode === top.code && <em>Öneri · onaylanmadı</em>}
                 </div> :
                   <span className={styles.simpleNoCandidate}>{blocked ? "Uygun aday doğrulanamadı" :
                     missing ? "Aday bulunamadı" : "Katalog taraması bekleniyor"}</span>}
@@ -625,7 +627,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   {blocked ? "Teknik uyumsuzluk" :
                     shared ? "Çift fiyatlama riski" :
                     missing ? "İnceleme gerekli" :
-                    needsReview ? "Teknik kontrol gerekli" :
+                    gasbetonDetailsMissing ? "Teknik bilgi eksik" :
+                    needsReview ? "Kontrol gerekli" :
                     top ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
               </td>
@@ -641,32 +644,59 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
             <p>{expandedRow.effective_description}</p></div>
             <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
-          {suggestionsFor(expandedRow.work_item_id).length ? suggestionsFor(expandedRow.work_item_id).map(option =>
-            <div key={option.code} className={styles.candidateDetailLine}>
-              <div><strong>{option.code} · {option.description}</strong>
-                <small>{option.technical_status === "blocked" ? "Teknik çelişki" :
-                  option.technical_status === "review" ? "Teknik kontrol gerekli" : "İlk kontrol olumlu · mühendis onayı değil"}</small>
-                {option.possible_shared_scope && <small>Aynı poz başka satırda da önerilmiş olabilir. Çift maliyet hesabı yapılmamalı.</small>}
-                <small>PDF sayfa {option.source_page ?? "—"}{option.source_price_verified && option.source_price ? " · " + option.source_price + " TL/" + option.unit : " · Fiyat doğrulaması gerekli"}</small>
-                {option.scope_excerpt && <details><summary>PDF teknik kapsamı ve ölçü tarifi</summary><p>{option.scope_excerpt}</p></details>}
-                {option.analysis_inputs && option.analysis_inputs.length > 0 && <details><summary>Analiz girdileri ({option.analysis_inputs.length})</summary><ul>{option.analysis_inputs.map((input,i) => <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul></details>}
-                {[...option.blockers, ...option.review_flags].length > 0 &&
-                  <p className={styles.issues}>{[...option.blockers, ...option.review_flags].map(v => label(v)).join(" · ")}</p>}
-              </div>
-              <button type="button" disabled={Boolean(busy)}
-                onClick={() => candidate(expandedRow.work_item_id, option.code)}>
-                {(candidates[expandedRow.work_item_id] ?? "") === option.code ? "Aday seçildi" : "Adayı değiştir"}
-              </button>
-            </div>) : <p>Bu satır için katalogda aday bulunamadı. Poz veya teknik tarif ayrıca incelenmelidir.</p>}
+          {suggestionsFor(expandedRow.work_item_id).length ? <>
+            {suggestionsFor(expandedRow.work_item_id).slice(0,1).map(option =>
+              <div key={option.code} className={styles.simplePrimaryCandidate}>
+                <div>
+                  <strong>Önerilen poz: {option.code}</strong>
+                  <p>{option.description}</p>
+                  <span className={styles.simpleStatus + " " +
+                    (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
+                    {option.technical_status === "blocked" ? "Teknik uyumsuzluk" :
+                      option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
+                      "Mühendis kontrolü gerekli"}
+                  </span>
+                  {[...option.blockers, ...option.review_flags].length > 0 &&
+                    <p className={styles.issues}>{[...option.blockers, ...option.review_flags].map(value => label(value)).join(" · ")}</p>}
+                  <small>PDF sayfa {option.source_page ?? "—"} ·
+                    {option.source_price_verified && option.source_price ?
+                      " Kaynak fiyat " + option.source_price + " TL/" + option.unit : " Fiyat doğrulanmadı"}
+                  </small>
+                </div>
+                <details>
+                  <summary>PDF kanıtı ve analiz girdileri</summary>
+                  {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
+                  {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, i) =>
+                    <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
+                </details>
+                <button type="button" disabled={Boolean(busy)}
+                  onClick={() => candidate(expandedRow.work_item_id, option.code)}>
+                  {(candidates[expandedRow.work_item_id] ?? "") === option.code ? "Aday işaretlendi" : "Bu adayı işaretle"}
+                </button>
+              </div>)}
+            {suggestionsFor(expandedRow.work_item_id).length > 1 && <details className={styles.otherCandidates}>
+              <summary>Diğer {suggestionsFor(expandedRow.work_item_id).length - 1} adayı göster</summary>
+              {suggestionsFor(expandedRow.work_item_id).slice(1).map(option =>
+                <div key={option.code} className={styles.otherCandidateRow}>
+                  <div><strong>{option.code}</strong> · {option.description}
+                    <small>{option.technical_status === "blocked" ? "Teknik uyumsuzluk" : "Teknik inceleme gerekli"} · PDF sayfa {option.source_page ?? "—"}</small>
+                  </div>
+                  <button type="button" className="secondary" disabled={Boolean(busy)}
+                    onClick={() => candidate(expandedRow.work_item_id, option.code)}>Bu adayı seç</button>
+                </div>)}
+            </details>}
+          </> : <p>Bu satır için uygun poz doğrulanamadı. Teknik tarif veya poz ayrıca incelenmeli.</p>}
           <details><summary>Manuel poz kodu gir (gerekirse)</summary>
             <label>Poz kodu<input maxLength={80} disabled={Boolean(busy)}
               value={candidates[expandedRow.work_item_id] ?? ""} placeholder="Poz kodu"
               onChange={e => candidate(expandedRow.work_item_id, e.target.value)} /></label>
           </details>
-          <button type="button" disabled={Boolean(busy)} onClick={() => {
-            setSelected([expandedRow.work_item_id]);
-            setCandidateDetailId(null);
-          }}>Bu satırı teknik incelemeye hazırla</button>
+          <details><summary>İleri teknik inceleme</summary>
+            <button type="button" disabled={Boolean(busy)} onClick={() => {
+              setSelected([expandedRow.work_item_id]);
+              setCandidateDetailId(null);
+            }}>Satırı incelemeye hazırla</button>
+          </details>
         </div>}
         {autoMessage && <p role="status" className={styles.simpleFootnote}>{autoMessage}</p>}
         <div className={styles.tableFooter}>
