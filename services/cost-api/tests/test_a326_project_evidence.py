@@ -1,9 +1,11 @@
 """A3.26 project technical-spec upload and page-cited evidence tests."""
 from io import BytesIO
+from types import SimpleNamespace
 
 import pymupdf
 from openpyxl import Workbook
 
+from app import a326_project_evidence
 from app.a326_project_evidence import (
     _block_matches, _evidence_status, _position_consistency,
 )
@@ -226,3 +228,62 @@ def test_source_position_consistency_requires_ceramic_finish_and_rectification()
         [(1, "60x60 cm mat sirli rektifiyeli porselen seramik")],
     )
     assert _position_consistency(conflicting, position) == "conflicts"
+
+
+def test_candidate_link_reasons_are_explained_and_never_approve(
+    client, auth, monkeypatch,
+):
+    from app.database import get_db
+    from app.models import PdfCandidateSelection, User
+    from sqlalchemy import select
+
+    pid, iid, ids = project_with_metraj(client, auth)
+    raw = pdf("Gazbeton 10 cm duvar: 2,50 N/mm2 ve 400 kg/m3.")
+    assert attach(client, auth, pid, raw).status_code == 201
+
+    without_candidate = evidence(client, auth, pid, iid, ids[0]).json()
+    assert without_candidate["status"] == "found_for_review"
+    assert without_candidate["candidate_link_status"] == "no_saved_candidate"
+    assert without_candidate["saved_candidate"] is None
+
+    fixture_sha = "a" * 64
+    position = SimpleNamespace(
+        id="15.225.1004",
+        description="Gazbeton 10 cm 2,50 N/mm2 ve 400 kg/m3",
+    )
+    monkeypatch.setattr(
+        a326_project_evidence, "read_analysis_pdf",
+        lambda user: (fixture_sha, (position,)),
+    )
+    gen = client.app.dependency_overrides[get_db]()
+    session = next(gen)
+    owner = session.scalar(select(User))
+    assert owner is not None
+    session.add(PdfCandidateSelection(
+        organization_id=owner.organization_id,
+        project_id=pid,
+        import_id=iid,
+        work_item_id=ids[0],
+        selected_by_id=owner.id,
+        revision_id=None,
+        pdf_sha256=fixture_sha,
+        position_code=position.id,
+    ))
+    session.commit()
+    gen.close()
+
+    matching = evidence(client, auth, pid, iid, ids[0]).json()
+    assert matching["candidate_link_status"] == "current"
+    assert matching["saved_candidate"] == position.id
+    assert matching["candidate_consistency"] == "matches_examined_facts"
+    assert matching["engineering_approved"] is False
+    assert matching["cost_allowed"] is False
+
+    monkeypatch.setattr(
+        a326_project_evidence, "read_analysis_pdf",
+        lambda user: ("b" * 64, (position,)),
+    )
+    stale = evidence(client, auth, pid, iid, ids[0]).json()
+    assert stale["candidate_link_status"] == "source_or_revision_changed"
+    assert stale["saved_candidate"] is None
+    assert stale["candidate_consistency"] == "unverified"
