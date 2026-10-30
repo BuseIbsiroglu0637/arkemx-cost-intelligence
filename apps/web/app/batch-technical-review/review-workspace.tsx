@@ -45,11 +45,12 @@ type ReviewTriage = {
 type QueueView = "attention" | "prechecked" | "all";
 type ProjectSpec = { present: boolean; filename?: string; sha256?: string; page_count?: number; read_only: true };
 type DocumentEvidence = {
-  status: "no_document" | "not_found" | "found_for_review" | "conflicting";
+  status: "no_document" | "not_found" | "unreadable_text" | "found_for_review" | "conflicting";
   source_row?: number; source_sha256?: string;
   saved_candidate?: string | null;
   candidate_consistency?: "unverified" | "matches_examined_facts" | "conflicts";
   evidence: { page: number; quote: string; facts: Record<string, string | number | null> }[];
+  additional_evidence_count?: number;
   engineering_approved: false; cost_allowed: false;
 };
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
@@ -880,6 +881,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               {expandedEvidence && <div className={styles.projectEvidenceResult} role="status">
                 <strong>{expandedEvidence.status === "no_document" ? "Önce proje şartnamesi yükle" :
                   expandedEvidence.status === "not_found" ? "Bilgi bulunamadı · Belge veya proje tarifi kontrol edilmeli" :
+                  expandedEvidence.status === "unreadable_text" ? "Bu PDF taranmış olabilir · okunabilir metin bulunamadı" :
                   expandedEvidence.status === "conflicting" ? "Çelişkili teknik bilgiler bulundu" :
                   "Belgede ilgili bilgi bulundu · İnceleme bekliyor"}</strong>
                 {expandedEvidence.candidate_consistency === "conflicts" && <p>Kaydedilmiş poz ile belge bilgisi uyuşmuyor. Teknik inceleme gerekli.</p>}
@@ -887,8 +889,19 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <div key={record.page + "-" + index} className={styles.projectEvidenceQuote}>
                     <strong>PDF sayfa {record.page}</strong>
                     <p>{record.quote}</p>
+                    <small>{Object.entries(record.facts).filter(([,value]) => value !== null).map(([key,value]) =>
+                      `${({
+                        gazbeton_strength_n_mm2: "Dayanım",
+                        gazbeton_density_kg_m3: "Yoğunluk",
+                        glaze: "Seramik yüzeyi",
+                        color: "Renk",
+                        surface: "Bitiş",
+                        rectified: "Kenar",
+                      } as Record<string, string>)[key] ?? key}: ${value}`).join(" · ")}</small>
                   </div>
                 ))}
+                {Boolean(expandedEvidence.additional_evidence_count) &&
+                  <small>Belgede {expandedEvidence.additional_evidence_count} ek ilgili ifade var; tüm belge incelenmeli.</small>}
                 <small>Belgede bilgi bulmak, eksik şartnameyi tamamlamak veya mühendis onayı vermek anlamına gelmez.</small>
               </div>}
             </details>
