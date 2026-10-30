@@ -43,6 +43,15 @@ type ReviewTriage = {
   engineering_approved: false; cost_allowed: false;
 };
 type QueueView = "attention" | "prechecked" | "all";
+type ProjectSpec = { present: boolean; filename?: string; sha256?: string; page_count?: number; read_only: true };
+type DocumentEvidence = {
+  status: "no_document" | "not_found" | "found_for_review" | "conflicting";
+  source_row?: number; source_sha256?: string;
+  saved_candidate?: string | null;
+  candidate_consistency?: "unverified" | "matches_examined_facts" | "conflicts";
+  evidence: { page: number; quote: string; facts: Record<string, string | number | null> }[];
+  engineering_approved: false; cost_allowed: false;
+};
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
@@ -155,6 +164,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [savedCandidates, setSavedCandidates] = useState<Record<string, string>>({});
   const [pdfSource, setPdfSource] = useState<PdfSource | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [specFile, setSpecFile] = useState<File | null>(null);
+  const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
+  const [specEvidence, setSpecEvidence] = useState<{ rowId: string; data: DocumentEvidence } | null>(null);
   const [pdfRightsConfirmed, setPdfRightsConfirmed] = useState(false);
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
@@ -213,6 +225,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           413: "PDF dosyası 16 MB sınırını aşıyor.",
           422: "PDF dosyası okunamadı veya 2026 analiz yapısı doğrulanamadı.",
           409: "PDF kaynak klasöründe güvenlik kontrolü başarısız.",
+        } : task === "spec-upload" ? {
+          403: "Şartnameyi yalnızca yetkili yönetici yerel ortamda bağlayabilir.",
+          413: "Şartname PDF dosyası 8 MB sınırını aşıyor.",
+          415: "Yalnızca PDF şartname yüklenebilir.",
+          422: "PDF okunamadı, taranmış veya desteklenmeyen bir belge olabilir.",
         } : {
           403: "Bu işlem için erişim izni bulunmuyor.", 404: "Proje, aktarım veya seçilen satır bulunamadı.",
           409: task === "candidate-save" ? "PDF veya metraj revizyonu değişti. Yenileyip yeniden seç." : task === "save" ? "Önizleme veya kaynak değişmiş olabilir. Güncel teknik incelemeyi yeniden çalıştırıp kaydet." : task === "archive" ? "Kayıt bütünlüğü doğrulanamadı; eski sonuç gösterilmedi." : "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
@@ -252,7 +269,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(0);
-    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
+    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setSpecFile(null); setProjectSpec(null); setSpecEvidence(null); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -267,7 +284,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(pageOffset);
-    setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
+    setAutoCandidates(null); setAutoMessage(""); setSpecEvidence(null); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     const token = sessionStorage.getItem("arkemx_dev_token");
     if (token) rememberImport(token, sourceProject, null);
@@ -285,6 +302,41 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     }, "pdf-source");
   }
 
+  function uploadSpecification() {
+    if (!projectId || !specFile || busy) return;
+    const form = new FormData();
+    form.append("file", specFile);
+    void request<ProjectSpec>(
+      `/api/projects/${encodeURIComponent(projectId)}/a326/source`,
+      data => {
+        if (!data.present || !data.sha256 || data.read_only !== true) {
+          throw new Error("Teknik şartname doğrulanamadı.");
+        }
+        setProjectSpec(data);
+        setSpecFile(null);
+        setSpecEvidence(null);
+        setSaveNotice("Proje şartnamesi bağlandı. 'Belgede ara' ile kanıtları kontrol et.");
+      }, "spec-upload", { method: "POST", body: form },
+    );
+  }
+  function findSpecificationEvidence(id: string) {
+    if (!projectId || !importId || busy) return;
+    setSpecEvidence(null);
+    void request<DocumentEvidence>(
+      `/api/projects/${encodeURIComponent(projectId)}/a326/imports/${encodeURIComponent(importId)}/items/${encodeURIComponent(id)}/evidence`,
+      data => {
+        if (data.engineering_approved !== false || data.cost_allowed !== false) {
+          throw new Error("Teknik doğrulama sonucu beklenmeyen onay içeriyor.");
+        }
+        setSpecEvidence({ rowId: id, data });
+        if (data.source_sha256) setProjectSpec(old =>
+          old?.sha256 === data.source_sha256 ? old : {
+            present: true, sha256: data.source_sha256, filename: "Proje şartnamesi.pdf",
+            read_only: true,
+          });
+      }, "spec-evidence",
+    );
+  }
   function attachPdf() {
     if (!projectId || !pdfFile || !pdfRightsConfirmed || busy) return;
     const form = new FormData();
@@ -544,6 +596,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       (queueView === "prechecked" ? group === "prechecked" : group !== "prechecked");
   }) ?? [];
   const expandedRow = selection?.rows.find(row => row.work_item_id === candidateDetailId);
+  const expandedEvidence = expandedRow && specEvidence?.rowId === expandedRow.work_item_id
+    ? specEvidence.data : null;
   const expandedClarification = expandedRow
     ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.clarification
     : null;
@@ -804,6 +858,40 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <span>{triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")}</span>
               <small>Bu bilgiler metraj tarifinde yoksa mimari/teknik şartnameye bak. Poz seçmek eksik bilgiyi otomatik doğrulamaz.</small>
             </div>
+          )}
+          {triageFor(expandedRow.work_item_id)?.group === "needs_info" && (
+            <details className={styles.projectEvidence}>
+              <summary>Bilgiyi doğrula · Proje şartnamesi PDF</summary>
+              <p>Projenin teknik şartnamesini yükle. ARKEMX ilgili ifadeyi sayfasıyla arar; bulması teknik onay değildir.</p>
+              <div className={styles.projectEvidenceActions}>
+                <label>Şartname PDF (en fazla 8 MB)
+                  <input type="file" accept=".pdf,application/pdf"
+                    disabled={Boolean(busy)} onChange={event => setSpecFile(event.target.files?.[0] ?? null)} />
+                </label>
+                <button type="button" disabled={Boolean(busy) || !specFile} onClick={uploadSpecification}>
+                  Şartnameyi bağla
+                </button>
+                <button type="button" disabled={Boolean(busy)}
+                  className="secondary" onClick={() => findSpecificationEvidence(expandedRow.work_item_id)}>
+                  Belgede ara
+                </button>
+              </div>
+              {projectSpec?.present && <small>Bağlı belge: {projectSpec.filename ?? "Proje şartnamesi PDF"} · Kaynak {projectSpec.sha256?.slice(0,12)}…</small>}
+              {expandedEvidence && <div className={styles.projectEvidenceResult} role="status">
+                <strong>{expandedEvidence.status === "no_document" ? "Önce proje şartnamesi yükle" :
+                  expandedEvidence.status === "not_found" ? "Bilgi bulunamadı · Belge veya proje tarifi kontrol edilmeli" :
+                  expandedEvidence.status === "conflicting" ? "Çelişkili teknik bilgiler bulundu" :
+                  "Belgede ilgili bilgi bulundu · İnceleme bekliyor"}</strong>
+                {expandedEvidence.candidate_consistency === "conflicts" && <p>Kaydedilmiş poz ile belge bilgisi uyuşmuyor. Teknik inceleme gerekli.</p>}
+                {expandedEvidence.evidence.map((record, index) => (
+                  <div key={record.page + "-" + index} className={styles.projectEvidenceQuote}>
+                    <strong>PDF sayfa {record.page}</strong>
+                    <p>{record.quote}</p>
+                  </div>
+                ))}
+                <small>Belgede bilgi bulmak, eksik şartnameyi tamamlamak veya mühendis onayı vermek anlamına gelmez.</small>
+              </div>}
+            </details>
           )}
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
             <p>{expandedRow.effective_description}</p></div>
