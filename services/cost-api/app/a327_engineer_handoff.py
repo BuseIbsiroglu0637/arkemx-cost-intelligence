@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .a3_batch_review import NO_STORE, _source
+from .a327_additional_evidence import conflicts_with_metraj
 from .a318_pdf_api import _read as read_analysis_pdf
 from .a326_project_evidence import (
     _block_matches, _evidence_status, _file_path, _position_consistency,
@@ -57,6 +58,8 @@ def _row_status(
         "reason": "Bu imalatta otomatik belge karşılaştırması henüz desteklenmiyor.",
         "checks": required,
         "evidence_page": None,
+        "evidence_facts": {},
+        "evidence_quote": None,
         "saved_candidate": None,
         "document_sha256": source_sha,
         "engineering_approved": False,
@@ -66,6 +69,27 @@ def _row_status(
         row.update(status="input_review", reason="Metraj miktarı, birimi veya giriş açıklaması kontrol edilmeli.")
         return row
     if kind not in SUPPORTED:
+        if document_state != "available":
+            return row
+        facts = _block_matches(description, blocks)
+        if not facts:
+            row["reason"] = "Şartnamede bu imalat için karşılaştırılabilir açık bilgi bulunamadı."
+            return row
+        row["evidence_page"] = facts[0]["page"]
+        row["evidence_quote"] = facts[0]["quote"]
+        # Present only facts stated in the PDF, not inferred from other works.
+        row["evidence_facts"] = {
+            key: value for match in facts for key, value in match["facts"].items()
+            if value is not None
+        }
+        if _evidence_status(facts) == "conflicting" or conflicts_with_metraj(description, facts):
+            row.update(status="conflicting",
+                       reason="Şartnamede birden fazla değer veya metrajla açık uyuşmazlık var.")
+        else:
+            row.update(
+                status="document_evidence_for_review",
+                reason="Şartnamede satıra ait bazı bilgiler bulundu. Poz, dozaj, kapsam ve kalan teknik şartlar henüz doğrulanmadı.",
+            )
         return row
     if document_state != "available":
         row.update(
@@ -86,6 +110,11 @@ def _row_status(
         row.update(status="needs_document", reason="Bu satır için şartnamede karşılaştırılabilir bilgi bulunamadı.")
         return row
     row["evidence_page"] = matches[0]["page"]
+    row["evidence_quote"] = matches[0]["quote"]
+    row["evidence_facts"] = {
+        key: value for match in matches for key, value in match["facts"].items()
+        if value is not None
+    }
     if saved is None:
         row.update(status="needs_candidate", reason="Şartname kanıtı var fakat henüz kaydedilmiş poz yok.")
         return row
