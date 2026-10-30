@@ -32,7 +32,7 @@ router = APIRouter(
 
 def _canonical(value):
     try:
-        return str(Decimal(str(value)).normalize())
+        return format(Decimal(str(value)).normalize(), "f")
     except (ValueError, InvalidOperation):
         return str(value)
 
