@@ -362,3 +362,7 @@ app.include_router(a326_project_evidence_router)
 from .a327_engineer_handoff import router as a327_engineer_handoff_router
 app.include_router(a327_engineer_handoff_router)
 
+# A3.27.2 append-only review handoff notes; no certified engineer approval.
+from .a327_decisions import router as a327_decisions_router
+app.include_router(a327_decisions_router)
+
