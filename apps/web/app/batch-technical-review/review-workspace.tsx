@@ -1050,7 +1050,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   </small>
                 </div>
                 {savedCandidates[expandedRow.work_item_id] === option.code ?
-                  <EditableEngineeringReview key={expandedRow.work_item_id + ":" + option.code}
+                  <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
                     projectId={projectId} importId={importId}
                     rowId={expandedRow.work_item_id} position={option} /> :
                   <details>
