@@ -57,8 +57,9 @@ function errorDetail(detail:unknown):string{
   return "Sunucu işlemi reddetti; analiz satırlarının zorunlu alanlarını kontrol et.";
 }
 
-export default function EditableEngineeringReview({projectId,importId,rowId,position}:{
+export default function EditableEngineeringReview({projectId,importId,rowId,position,onPilotChanged}:{
   projectId:string;importId:string;rowId:string;position:Position;
+  onPilotChanged?:()=>void;
 }){
   const [data,setData]=useState<State|null>(null);
   const [pilot,setPilot]=useState<PilotState|null>(null);
@@ -157,6 +158,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
         expected_previous_revision_id:data.latest_revision?.id??null,request_key:uuid(),
       });
       await reload();
+      onPilotChanged?.(); // A new draft invalidates any pilot accept on the previous revision.
       setNotice("Analiz düzenleme taslağı kaydedildi. Orijinal PDF değiştirilmedi.");
       setEditReason("");
     }catch(e){setError(e instanceof Error?e.message:"Taslak kaydedilemedi.");}
@@ -179,6 +181,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
         acknowledgement:"I_REVIEWED_SOURCE_AND_THIS_IS_NOT_ENGINEER_SIGNOFF",
       },pilotPath);
       await reload(true);
+      onPilotChanged?.();
       setNotice(action==="accept"
         ?"Pilot teknik inceleme onaylandı. Mühendis imzası veya maliyet izni oluşturulmadı."
         :"Pilot teknik onayı geri alındı; önceki kayıt geçmişte korunuyor.");

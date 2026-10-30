@@ -186,6 +186,52 @@ def engineering_readiness(
         )
         for item in visible
     ]
+
+    # Only existing pilot records are checked. The same source fingerprint
+    # as the item-level pilot API prevents a stale accept from being displayed
+    # as a fresh list approval. This is NOT engineering/M5 approval.
+    from .a327_decisions import _evidence_fingerprint
+    from .a330_review_store import ProposedAnalysisRevision
+    from .a331_pilot_review_store import PilotTechnicalReviewEvent
+
+    for item, row in zip(visible, rows):
+        row["pilot_confirmed"] = False
+        row["pilot_status"] = "none"
+        if not saved_by_item.get(item.id):
+            continue
+        latest = db.scalar(select(PilotTechnicalReviewEvent).where(
+            PilotTechnicalReviewEvent.organization_id == user.organization_id,
+            PilotTechnicalReviewEvent.project_id == batch.project_id,
+            PilotTechnicalReviewEvent.import_id == batch.id,
+            PilotTechnicalReviewEvent.work_item_id == item.id,
+        ).order_by(PilotTechnicalReviewEvent.sequence.desc()).limit(1))
+        if latest is None:
+            continue
+
+        revision = db.scalar(select(ProposedAnalysisRevision).where(
+            ProposedAnalysisRevision.organization_id == user.organization_id,
+            ProposedAnalysisRevision.project_id == batch.project_id,
+            ProposedAnalysisRevision.import_id == batch.id,
+            ProposedAnalysisRevision.work_item_id == item.id,
+        ).order_by(ProposedAnalysisRevision.version.desc()).limit(1))
+        current = effective_item(db, item)
+        fingerprint = _evidence_fingerprint(
+            batch, item, current, saved_by_item.get(item.id), catalog,
+            source_sha, row,
+        )
+        valid = (
+            row["status"] == "documented_for_review"
+            and revision is not None
+            and revision.candidate_code == row["saved_candidate"]
+            and revision.source_fingerprint == fingerprint
+            and latest.source_fingerprint == fingerprint
+            and latest.analysis_revision_id == revision.id
+        )
+        row["pilot_status"] = (
+            ("confirmed" if latest.action == "accept" else "reopened")
+            if valid else "stale"
+        )
+        row["pilot_confirmed"] = bool(valid and latest.action == "accept")
     response.headers.update(NO_STORE)
     return {
         "schema": "arkemx.a327.readiness.v1",

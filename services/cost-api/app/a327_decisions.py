@@ -71,6 +71,31 @@ def _serialize(event: Handoff) -> dict:
     }
 
 
+def _evidence_fingerprint(batch, item, current, selection, catalog, document_sha, row):
+    """Fingerprint the exact current evidence; reused by list and item review.
+
+    Keep this snapshot format stable: existing decision fingerprints are persisted.
+    """
+    snapshot = {
+        "project_id": batch.project_id, "import_id": batch.id,
+        "import_sha256": batch.sha256, "work_item_id": item.id,
+        "source_row": item.source_row, "revision_id": current.revision_id,
+        "description": current.raw_description,
+        "quantity": str(current.quantity), "unit": current.normalized_unit,
+        "input_review_required": current.review_required,
+        "status": row["status"], "checks": row["checks"],
+        "document_sha256": document_sha,
+        "candidate_id": selection.position_code if selection else None,
+        "candidate_pdf_sha256": selection.pdf_sha256 if selection else None,
+        "catalog_pdf_sha256": catalog[0] if catalog else None,
+        "saved_candidate": row["saved_candidate"],
+        "evidence_page": row["evidence_page"],
+    }
+    return hashlib.sha256(
+        json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
 def _current(db: Session, user: User, project_id: UUID, import_id: UUID, item_id: UUID):
     batch = _source(db, user, str(project_id), str(import_id))
     item = db.scalar(select(WorkItem).where(
@@ -98,25 +123,7 @@ def _current(db: Session, user: User, project_id: UUID, import_id: UUID, item_id
     row = _row_status(
         current, item, blocks, document_state, selection, catalog, document_sha,
     )
-    # Fingerprint the actual inspected sources, not just a UI-selectable code.
-    snapshot = {
-        "project_id": batch.project_id, "import_id": batch.id,
-        "import_sha256": batch.sha256, "work_item_id": item.id,
-        "source_row": item.source_row, "revision_id": current.revision_id,
-        "description": current.raw_description,
-        "quantity": str(current.quantity), "unit": current.normalized_unit,
-        "input_review_required": current.review_required,
-        "status": row["status"], "checks": row["checks"],
-        "document_sha256": document_sha,
-        "candidate_id": selection.position_code if selection else None,
-        "candidate_pdf_sha256": selection.pdf_sha256 if selection else None,
-        "catalog_pdf_sha256": catalog[0] if catalog else None,
-        "saved_candidate": row["saved_candidate"],
-        "evidence_page": row["evidence_page"],
-    }
-    fingerprint = hashlib.sha256(
-        json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    fingerprint = _evidence_fingerprint(batch, item, current, selection, catalog, document_sha, row)
     return row, fingerprint
 
 
