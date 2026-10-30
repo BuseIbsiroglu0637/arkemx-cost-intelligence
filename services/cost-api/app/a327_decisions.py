@@ -130,7 +130,13 @@ def decision_state(
     db: Annotated[Session, Depends(get_db)],
 ):
     row, fingerprint = _current(db, user, project_id, import_id, work_item_id)
-    previous = _latest(db, str(project_id), str(work_item_id))
+    events = db.scalars(select(Handoff).where(
+        Handoff.organization_id == user.organization_id,
+        Handoff.project_id == str(project_id),
+        Handoff.import_id == str(import_id),
+        Handoff.work_item_id == str(work_item_id),
+    ).order_by(Handoff.created_at.desc(), Handoff.id.desc()).limit(20)).all()
+    previous = events[0] if events else None
     response.headers.update(NO_STORE)
     return {
         "read_only": True, "approval_allowed": False,
@@ -140,6 +146,9 @@ def decision_state(
         "source_fingerprint": fingerprint,
         "latest_id": previous.id if previous else None,
         "latest_event": _serialize(previous) if previous else None,
+        "events": [{**_serialize(event),
+                    "source_current": event.source_fingerprint == fingerprint}
+                   for event in events],
         "allowed_actions": [
             "request_information",
             *(
