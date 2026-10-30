@@ -38,6 +38,69 @@ def prepare(client, auth, monkeypatch):
     return base, base.replace("/a330/", "/a331/")
 
 
+def test_position_list_pilot_status_follows_saved_decisions_and_revisions(
+    client, auth, monkeypatch,
+):
+    from app import a327_engineer_handoff
+    from app import a330_editable_analysis as analysis_api
+
+    _, _, _, probe = setup_project(client, auth, monkeypatch)
+    catalog = analysis_api.read_analysis(None)
+    monkeypatch.setattr(a327_engineer_handoff, "read_analysis_pdf",
+                        lambda user: catalog)
+    # The dedicated A3.30 endpoint includes project, import, and item IDs.
+    parts = probe.split("/")
+    pid, iid, item_id = parts[3], parts[6], parts[8]
+    decision_url = probe.replace("/a330/", "/a331/")
+    list_url = f"/api/projects/{pid}/a327/imports/{iid}/readiness?offset=0&limit=20"
+
+    def list_row():
+        response = client.get(list_url, headers=auth)
+        assert response.status_code == 200, response.text
+        entry = next(
+            r for r in response.json()["rows"] if r["work_item_id"] == item_id
+        )
+        assert entry["engineering_approved"] is False
+        assert entry["cost_allowed"] is False
+        return entry
+
+    initial = list_row()
+    assert initial["pilot_confirmed"] is False
+    assert initial["pilot_status"] == "none"
+
+    before = analysis_state(client, auth, probe)
+    assert client.post(probe + "/analysis/revisions", headers=auth,
+                       json=proposal(before)).status_code == 201
+    current = pilot_state(client, auth, decision_url)
+    assert current["evidence_ready"] is True
+    assert client.post(decision_url + "/pilot/decisions", headers=auth,
+                       json=request(current, "accept")).status_code == 201
+
+    accepted = list_row()
+    assert accepted["pilot_confirmed"] is True
+    assert accepted["pilot_status"] == "confirmed"
+    assert accepted["saved_candidate"] == "15.225.1004"
+    # A page reload still reads the persisted source-bound acceptance.
+    assert list_row()["pilot_status"] == "confirmed"
+
+    current = pilot_state(client, auth, decision_url)
+    assert client.post(decision_url + "/pilot/decisions", headers=auth,
+                       json=request(current, "reopen")).status_code == 201
+    reopened = list_row()
+    assert reopened["pilot_confirmed"] is False
+    assert reopened["pilot_status"] == "reopened"
+
+    current = pilot_state(client, auth, decision_url)
+    assert client.post(decision_url + "/pilot/decisions", headers=auth,
+                       json=request(current, "accept")).status_code == 201
+    latest = analysis_state(client, auth, probe)
+    assert client.post(probe + "/analysis/revisions", headers=auth,
+                       json=proposal(latest, reason="")).status_code == 201
+    stale = list_row()
+    assert stale["pilot_confirmed"] is False
+    assert stale["pilot_status"] == "stale"
+
+
 def test_admin_user_can_confirm_pilot_review_without_engineer_role(
     client, auth, monkeypatch,
 ):
