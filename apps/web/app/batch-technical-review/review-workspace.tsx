@@ -469,25 +469,50 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     <Link href="/#technical">← Projedeki poz incelemesine dön</Link></>}
     {!projectScope && <div><span className={styles.eyebrow}>ARKEMX · TEKNİK İNCELEME</span><Heading>Pozları incele</Heading><p>Excel satırlarına uygun poz adaylarını bul; teknik farkları ve kaynak kanıtlarını incele.</p></div>}
     {!ready ? <p role="status">Oturum kontrol ediliyor…</p> : !authenticated ? <section className={styles.card}><h2>ARKEMX oturumu gerekli</h2><p>Tarayıcıdaki ana çalışma alanından giriş yapıp buraya dön. PowerShell oturumu tarayıcıya aktarılmaz.</p><Link href="/">Giriş ekranına git</Link></section> : <>
-      <div className={styles.sourceCards}><section className={`${styles.card} ${styles.sourceMini}`} aria-labelledby="source-heading"><h3 id="source-heading">Excel kaynağı</h3><div className={projectScope ? styles.scopedFields : styles.fields}>
-        {!projectScope && <label>Proje<select value={projectId} onChange={e => chooseProject(e.target.value)}><option value="">Proje seç</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
-        <label>Excel aktarımı<select value={importId} disabled={!projectId || busy === "imports"} onChange={e => loadItems(e.target.value)}><option value="">Aktarım seç</option>{imports.map(item => <option key={item.id} value={item.id}>{item.filename} · {item.row_count} satır · {item.id.slice(0, 8)}</option>)}</select></label>
-        <button type="button" className="secondary" disabled={Boolean(busy) || !importId} onClick={() => loadItems(importId, offset)}>Satırları yeniden yükle</button>
-      </div>{projectId && !busy && imports.length === 0 && <p>Bu projede Excel aktarımı bulunmuyor.</p>}
-      {!busy && projects.length === 0 && <p>Hesabında proje yok. Ana çalışma alanından proje ve Excel aktarımı oluşturabilirsin.</p>}
-      {selectedProject?.name.toLowerCase().includes("sentetik") && <p className={styles.testNote}>Sentetik test projesi seçili. Sonuçlar gerçek proje doğruluğunu ölçmez.</p>}
-      {selection && <p className={styles.sourceLine}><strong>{selectedProject?.name}</strong> · {selection.import_source.filename} · {selection.import_source.sheet_name} · {selection.rows.length} satır (bu sayfa)</p>}
-      <details><summary>Kaynak seçimi hakkında</summary><p className="hint">Proje ve Excel seçimi sekmede hatırlanır. Kaynak veya sayfa değiştiğinde aday seçimleri sıfırlanır. Bu işlem önceki kayıtları silmez.</p></details>
-      {selection && <details><summary>Excel kaynak kimliği</summary><dl><dt>Dosya / sayfa</dt><dd>{selection.import_source.filename} / {selection.import_source.sheet_name}</dd><dt>Aktarım kimliği</dt><dd><code>{selection.import_source.import_id}</code></dd><dt>SHA-256</dt><dd><code>{selection.import_source.sha256}</code></dd></dl></details>}</section>
-      {busy && <p role="status">{busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : busy === "save" || busy === "preparing-save" ? "İnceleme doğrulanıp kaydediliyor…" : "Kaynak kayıtları yükleniyor…"}</p>}
-      {error && <div role="alert" className="error">{error}</div>}
+      <div className={styles.simpleSource}>
+        <div className={styles.simpleSourceIdentity}>
+          <strong>Excel kaynağı: {selection?.import_source.filename ?? imports.find(item => item.id === importId)?.filename ?? "Henüz seçilmedi"}</strong>
+          <span>{selectedProject?.name ?? "Proje seçin"}{selection ? ` · ${selection.import_source.sheet_name}` : ""}</span>
+        </div>
+        <details className={styles.simpleSourceSettings}><summary>Kaynağı değiştir / geçmiş</summary>
+          {!projectScope && <label>Proje
+            <select value={projectId} onChange={e => chooseProject(e.target.value)}><option value="">Proje seç</option>
+              {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select></label>}
+          <label>Excel aktarımı
+            <select value={importId} disabled={!projectId || Boolean(busy)} onChange={e => loadItems(e.target.value)}>
+              <option value="">Excel seç</option>
+              {imports.map(item => <option key={item.id} value={item.id}>{item.filename} · {item.row_count} satır</option>)}
+            </select>
+          </label>
+          <button type="button" className="secondary" disabled={Boolean(busy) || !importId}
+            onClick={() => loadItems(importId,offset)}>Excel kayıtlarını yenile</button>
+          {selection && <details><summary>Excel kaynak kimliği</summary>
+            <p>{selection.import_source.filename} · {selection.import_source.sheet_name}</p>
+            <code>{selection.import_source.sha256}</code></details>}
+          {importId && <section aria-label="Kayıtlı incelemeler">
+            <h3>Kayıtlı incelemeler</h3>
+            <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved()}>
+              Önceki kayıtları göster</button>
+            {savedList && (savedList.records.length ? <ul className={styles.resultList}>
+              {savedList.records.map(record => <li key={record.id}><strong>{record.title}</strong> · {record.row_count} satır
+                <button type="button" className="secondary" disabled={Boolean(busy)}
+                  onClick={() => { setArchive(null); void request<SavedReview>(
+                    `/api/projects/${encodeURIComponent(projectId)}/a3/reviews/${encodeURIComponent(record.id)}`,
+                    acceptArchive, "archive"); }}>Kaydı aç</button></li>)}
+              </ul> : <p>Kayıtlı inceleme bulunamadı.</p>)}
+            {savedList?.next_offset !== null && savedList?.next_offset !== undefined &&
+              <button type="button" className="secondary" disabled={Boolean(busy)}
+                onClick={() => listSaved(savedList.next_offset!)}>Daha fazla kayıt</button>}
+          </section>}
+        </details>
+      </div>
+      {busy && <p role="status">{busy === "auto" ? "Pozlar otomatik eşleştiriliyor…" :
+        busy === "compare" ? "Teknik karşılaştırma hazırlanıyor…" : "Kayıtlar yükleniyor…"}</p>}
       {saveNotice && <p className="success" role="status">{saveNotice}</p>}
-      {importId && <section className={`${styles.card} ${styles.sourceMini}`} aria-labelledby="history-heading"><h3 id="history-heading">Kayıtlı incelemeler</h3><p>Geçmişte kaydedilmiş teknik incelemeleri görüntüle.</p>
-        <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved()}>Kayıtlı incelemeleri getir</button>
-        {savedList && (savedList.records.length ? <ul className={styles.resultList}>{savedList.records.map(record => <li key={record.id}><strong>{record.title}</strong> · {record.row_count} satır · {new Date(record.created_at).toLocaleString("tr-TR")} <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => { setArchive(null); void request<SavedReview>(`/api/projects/${encodeURIComponent(projectId)}/a3/reviews/${encodeURIComponent(record.id)}`, acceptArchive, "archive"); }}>Kaydı aç</button></li>)}</ul> : <p>Bu Excel için kayıtlı inceleme yok.</p>)}
-        {savedList?.next_offset !== null && savedList?.next_offset !== undefined && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved(savedList.next_offset!)}>Daha fazla kayıt getir</button>}
-      </section>}</div>
-      <div className={styles.infoStrip} role="note">Pozlar otomatik önerilir; teknik onay verilmez. Maliyete geçmeden önce doğru adayları incelemek ve ayrıca mühendis kararı almak gerekir.</div>
+      {(!selection && projectId && !busy && imports.length === 0) &&
+        <p>Bu projede kayıtlı Excel bulunmuyor. Önce Metraj sayfasından Excel yükle.</p>}
+      <div className={styles.infoStrip} role="note">Eşleştirmeler katalogdan otomatik önerilir. Teknik onay veya maliyet hesabı yapılmaz; belirsiz satırlar kontrol için ayrılır.</div>
       {archive && <section className={styles.card} aria-labelledby="archive-heading"><div className={styles.toolbar}><h2 id="archive-heading">Kaydedildiği andaki inceleme · {archive.record.title}</h2><button type="button" className="secondary" onClick={() => setArchive(null)}>Kayıt görünümünü kapat</button></div>
         <p><strong>{archive.currentness.status === "unchanged" ? "Kaydedilen girdilerde değişiklik saptanmadı." : archive.currentness.status === "changed" ? "Kaynak veya kurallar değişmiş. Bu sonuç eski çalışmaya aittir." : "Kaydın güncelliği tamamen doğrulanamadı."}</strong></p>
         <p>Bu bölüm tarihî kaydı gösterir; güncel teknik sonuç veya mühendis onayı değildir.</p>
