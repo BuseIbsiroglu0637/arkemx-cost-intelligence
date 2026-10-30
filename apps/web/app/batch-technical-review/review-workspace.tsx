@@ -9,6 +9,7 @@ import styles from "./review.module.css";
 import AssessmentPanel from "./assessment-panel";
 import M4LinkPanel from "./m4-link-panel";
 import HandoffDecisionPanel from "./handoff-decision-panel";
+import EditableEngineeringReview from "./editable-engineering-review";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -1048,23 +1049,17 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     {" · Güncel fiyat dönemi ayrıca doğrulanmalı"}
                   </small>
                 </div>
-                <details>
-                  <summary>PDF kanıtı ve analiz girdileri</summary>
-                  {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
-                  {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, i) =>
-                    <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
-                  {option.price_audit?.status === "reconciled_to_pdf_with_parser_rule" && (
-                    <p className={styles.priceReconciliation}>
-                      Analiz girdileri toplamı: {option.price_audit.inputs_total} TL ·
-                      Kontrol formülünde kullanılan %{option.price_audit.reconciliation_addition_percent} ek:
-                      {" "}{option.price_audit.reconciliation_addition} TL ·
-                      Hesaplanan: {option.price_audit.calculated_price} TL ·
-                      PDF fiyatı: {option.price_audit.pdf_price} TL ·
-                      Fark: {option.price_audit.difference} TL.
-                      Bu hesap kontrolüdür; güncel resmî fiyat veya teknik onay değildir.
-                    </p>
-                  )}
-                </details>
+                {savedCandidates[expandedRow.work_item_id] === option.code ?
+                  <EditableEngineeringReview key={expandedRow.work_item_id + ":" + option.code}
+                    projectId={projectId} importId={importId}
+                    rowId={expandedRow.work_item_id} position={option} /> :
+                  <details>
+                    <summary>PDF kanıtı ve analiz girdileri</summary>
+                    <p>Önce bu poz adayını kaydet. Kaydedildikten sonra analiz taslağındaki girdileri düzenleyebilir ve mühendis incelemesine gönderebilirsin.</p>
+                    {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
+                    {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
+                      <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
+                  </details>}
                 <button type="button" disabled={Boolean(busy)}
                   onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
                   {savedCandidates[expandedRow.work_item_id] === option.code ? "Poz seçimi onaylandı" : "Bu adayı kaydet"}
