@@ -373,3 +373,23 @@
 .handoffRow strong {font-size:12px;color:#203e62}
 .handoffRow p {margin:0;font-size:12px;color:#496078}
 .handoffRow small {display:block;margin-top:3px;font-size:11px;color:#657990;line-height:1.45}
+
+/* A3.30: local-only, source-preserving analysis proposal and engineer review. */
+.a330Edit{border-top:1px solid #dbe5f0;display:grid;gap:12px;margin-top:14px;padding-top:13px}
+.a330Edit strong{font-size:13px;color:#2b4872}
+.a330Edit>small,.a330Approval>small{font-size:11px;color:#657992;line-height:1.6}
+.a330Line{display:grid;grid-template-columns:minmax(90px,1fr) minmax(160px,2.4fr) minmax(65px,.55fr) minmax(95px,.8fr) minmax(108px,1fr) auto;gap:8px;align-items:end;border-top:1px solid #e8edf5;padding:10px 0}
+.a330Line label,.a330Label{font-size:11px;color:#536b85;display:grid;gap:5px}
+.a330Line input,.a330Label textarea{width:100%;min-width:0;border:1px solid #cbd9e8;border-radius:7px;background:#fff;padding:9px;font-size:12px;color:#253e5a}
+.a330Line>button{padding:9px 11px;font-size:11px}
+.a330Actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.a330Actions button,.a330Edit>button{font-size:12px}
+.a330Approval{border:1px solid #cbdcee;background:#f8fbff;border-radius:10px;padding:13px 15px;font-size:12px;line-height:1.6}
+.a330Approval>summary{cursor:pointer;font-size:13px;font-weight:700;color:#1c4779}
+.a330Approval>p,.a330Approval>label,.a330Approval>.a330Actions{margin-top:12px}
+.a330Label:has(input[type="checkbox"]){display:flex;align-items:flex-start;gap:9px}
+.a330Label input[type="checkbox"]{width:16px;height:16px;flex:none;margin-top:1px}
+.a330Warning{background:#fff4e5;color:#895817;border:1px solid #f0d5a3;border-radius:8px;padding:9px 12px;font-size:11px;line-height:1.5}
+.a330Note{background:#eff5fd;color:#31547b;border-radius:8px;padding:9px 12px;font-size:11px;line-height:1.5}
+@media(max-width:900px){.a330Line{grid-template-columns:repeat(3,minmax(0,1fr))}.a330Line label:nth-child(2){grid-column:span 2}}
+@media(max-width:540px){.a330Line{grid-template-columns:repeat(2,minmax(0,1fr))}.a330Line label:nth-child(2){grid-column:span 2}}
