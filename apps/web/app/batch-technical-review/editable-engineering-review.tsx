@@ -91,7 +91,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     setLines(old=>old.map((x,i)=>i===index?{...x,[field]:value}:x));
   }
   async function save(){
-    if(!data||busy||lines.length<1||editReason.trim().length<10)return;
+    if(!data||busy||lines.length<1)return;
     setBusy(true);setError("");setNotice("");
     try{
       await call<Revision>("/analysis/revisions",{
@@ -110,7 +110,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   }
   async function sendForReview(){
     if(!data||busy||!data.latest_revision?.source_current||!data.engineering.evidence_ready||
-      reviewReason.trim().length<10||!ack)return;
+      !ack)return;
     setBusy(true);setError("");setNotice("");
     try{
       const state=await call<{source_fingerprint:string;latest_id:string|null;allowed_actions:string[]}>(
@@ -130,7 +130,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   }
   async function sign(action:"approve"|"reject"){
     if(!data||busy||!data.engineering.reviewer_eligible||
-      !data.latest_revision?.source_current||!ack||reviewReason.trim().length<20)return;
+      !data.latest_revision?.source_current||!ack)return;
     setBusy(true);setError("");setNotice("");
     try{
       await call("/engineering/signoff",{
@@ -187,11 +187,11 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
             onClick={()=>setLines(data.source_inputs.map(x=>({...x})))}>
             PDF kaynak girdilerini geri getir</button>
         </div>}
-        {data&&<label className={styles.a330Label}>Değişiklik gerekçesi
+        {data&&<label className={styles.a330Label}>Değişiklik gerekçesi (isteğe bağlı)
           <textarea rows={2} maxLength={1000} value={editReason} disabled={busy}
             placeholder="Örneğin: Eksik işçilik girdisini ekledim, poz kapsamı kontrol edilecek."
             onChange={e=>setEditReason(e.target.value)} /></label>}
-        {data&&<button type="button" disabled={busy||lines.length===0||editReason.trim().length<10}
+        {data&&<button type="button" disabled={busy||lines.length===0}
           onClick={()=>void save()}>Taslak değişikliklerini kaydet</button>}
       </div>
     </details>
@@ -214,7 +214,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
           <p className={styles.a330Warning}>Şartname–poz teknik ön karşılaştırması tamamlanmadı. Mühendis incelemesine sevk/olumlu onay engellendi.</p>}
         {!data.latest_revision?.source_current&&
           <p className={styles.a330Warning}>Önce yukarıdaki analiz girdilerinin güncel bir taslağını kaydet.</p>}
-        <label className={styles.a330Label}>Mühendis inceleme gerekçesi
+        <label className={styles.a330Label}>Mühendis inceleme gerekçesi (isteğe bağlı)
           <textarea rows={2} maxLength={1000} disabled={busy} value={reviewReason}
             placeholder="Kontrol edilen kapsam, eksikler ve teknik gerekçeyi belirt"
             onChange={e=>setReviewReason(e.target.value)}/></label>
@@ -224,18 +224,15 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
         </label>
         <div className={styles.a330Actions}>
           <button type="button" className="secondary" disabled={busy||!ack||
-            !data.engineering.evidence_ready||!data.latest_revision?.source_current||
-            reviewReason.trim().length<10} onClick={()=>void sendForReview()}>
+            !data.engineering.evidence_ready||!data.latest_revision?.source_current} onClick={()=>void sendForReview()}>
             Mühendis incelemesine gönder
           </button>
           <button type="button" disabled={busy||!ack||!data.engineering.reviewer_eligible||
-            !data.engineering.evidence_ready||!data.latest_revision?.source_current||
-            reviewReason.trim().length<20} onClick={()=>void sign("approve")}>
+            !data.engineering.evidence_ready||!data.latest_revision?.source_current} onClick={()=>void sign("approve")}>
             Mühendis onayı ver
           </button>
           <button type="button" className="secondary" disabled={busy||!ack||
-            !data.engineering.reviewer_eligible||!data.latest_revision?.source_current||
-            reviewReason.trim().length<20} onClick={()=>void sign("reject")}>
+            !data.engineering.reviewer_eligible||!data.latest_revision?.source_current} onClick={()=>void sign("reject")}>
             Mühendis reddi
           </button>
           <button type="button" className="secondary" disabled={busy}
