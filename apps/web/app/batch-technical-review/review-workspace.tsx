@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import styles from "./review.module.css";
 import AssessmentPanel from "./assessment-panel";
 import M4LinkPanel from "./m4-link-panel";
+import HandoffDecisionPanel from "./handoff-decision-panel";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -831,6 +832,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   {row.evidence_page ? ` · PDF sayfa ${row.evidence_page}` : ""}
                   {row.saved_candidate ? ` · Poz ${row.saved_candidate}` : ""}
                 </small>
+                <HandoffDecisionPanel projectId={projectId} importId={importId} rowId={row.work_item_id}/>
               </div>)}
             </div>
             <small>Tüm satırlar mühendis kararına tabidir. Eksik bilgiler tahmin edilmez; onay veya fiyat hesabı yapılmadı.</small>
