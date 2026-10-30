@@ -204,7 +204,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         } : {
           403: "Bu işlem için erişim izni bulunmuyor.", 404: "Proje, aktarım veya seçilen satır bulunamadı.",
           409: task === "candidate-save" ? "PDF veya metraj revizyonu değişti. Yenileyip yeniden seç." : task === "save" ? "Önizleme veya kaynak değişmiş olabilir. Güncel teknik incelemeyi yeniden çalıştırıp kaydet." : task === "archive" ? "Kayıt bütünlüğü doğrulanamadı; eski sonuç gösterilmedi." : "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
-          422: task === "candidate-save" ? "Poz kodu bağlı PDF’de bulunamadı. PDF’den aday seç." : "Seçimi kontrol et. Bir incelemede 1–20 farklı satır ve geçerli aday kodları kullanılmalı.",
+          422: task === "candidate-save" ? "Bu poz metrajla teknik olarak uyuşmuyor veya PDF’de bulunmuyor. Farklı bir aday seç." : "Seçimi kontrol et. Bir incelemede 1–20 farklı satır ve geçerli aday kodları kullanılmalı.",
           503: "Kaynak hizmeti şu anda kullanılamıyor.",
         };
         throw new Error(messages[response.status] ?? `İşlem tamamlanamadı (HTTP ${response.status}).`);
