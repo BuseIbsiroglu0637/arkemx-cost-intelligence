@@ -14,6 +14,7 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,7 +28,7 @@ from .a320_smart_matching import (
 )
 from .database import get_db
 from .m2 import tenant_project
-from .models import ImportBatch, User, WorkItem
+from .models import ImportBatch, PdfCandidateSelection, User, WorkItem, now_utc
 from .revisions import effective_item
 from .security import current_user
 from .technical import compare
@@ -35,6 +36,87 @@ from .technical import compare
 router = APIRouter(prefix="/api/projects/{project_id}/a318", tags=["A3.18 Local PDF Analysis"])
 PDF_LIMIT = 16 * 1024 * 1024
 MAX_ROWS = 20
+
+
+class SavePdfCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    position_code: str = Field(pattern=r"^15\.\d{3}\.\d{4}$")
+    expected_revision_id: UUID | None
+    expected_pdf_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+def _selected_view(row: PdfCandidateSelection, *, current_revision: str | None,
+                   current_pdf_sha: str) -> dict:
+    valid = row.revision_id == current_revision and row.pdf_sha256 == current_pdf_sha
+    return {
+        "code": row.position_code if valid else None,
+        "current": valid,
+        "stale": not valid,
+        "revision_id": row.revision_id if valid else None,
+        "pdf_sha256": row.pdf_sha256 if valid else None,
+        "saved_at": row.saved_at.isoformat() if valid else None,
+        "engineering_approved": False,
+        "cost_allowed": False,
+    }
+
+
+@router.post("/imports/{import_id}/items/{work_item_id}/candidate", status_code=200)
+def save_pdf_candidate(
+    project_id: UUID,
+    import_id: UUID,
+    work_item_id: UUID,
+    payload: SavePdfCandidateRequest,
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    batch = _source(db, user, str(project_id), str(import_id))
+    item = db.scalar(select(WorkItem).where(
+        WorkItem.id == str(work_item_id), WorkItem.import_id == batch.id,
+    ))
+    if item is None:
+        raise HTTPException(404, "Metraj row not found", headers=NO_STORE)
+    found = _read(user)
+    if not found:
+        raise HTTPException(409, "PDF source is missing", headers=NO_STORE)
+    digest, positions = found
+    if digest != payload.expected_pdf_sha256:
+        raise HTTPException(409, "PDF changed; refresh suggestions before saving", headers=NO_STORE)
+    current = effective_item(db, item)
+    if current.revision_id != (str(payload.expected_revision_id) if payload.expected_revision_id else None):
+        raise HTTPException(409, "Metraj revision changed; refresh before saving", headers=NO_STORE)
+    # Never save an invented/unsupported poz: the code must be in this exact uploaded PDF.
+    if payload.position_code not in {position.id for position in positions}:
+        raise HTTPException(422, "Poz code is not present in this PDF source", headers=NO_STORE)
+
+    existing = db.scalar(select(PdfCandidateSelection).where(
+        PdfCandidateSelection.organization_id == user.organization_id,
+        PdfCandidateSelection.project_id == batch.project_id,
+        PdfCandidateSelection.import_id == batch.id,
+        PdfCandidateSelection.work_item_id == item.id,
+    ).with_for_update())
+    if existing is None:
+        existing = PdfCandidateSelection(
+            organization_id=user.organization_id, project_id=batch.project_id,
+            import_id=batch.id, work_item_id=item.id,
+        )
+        db.add(existing)
+    existing.position_code = payload.position_code
+    existing.pdf_sha256 = digest
+    existing.revision_id = current.revision_id
+    existing.selected_by_id = user.id
+    existing.saved_at = now_utc()
+    db.commit()
+    response.headers.update(NO_STORE)
+    return {
+        "saved": True, "read_only": False, "approval_allowed": False,
+        "engineering_approved": False, "cost_allowed": False,
+        "work_item_id": item.id, "import_id": batch.id,
+        "selection": _selected_view(
+            existing, current_revision=current.revision_id, current_pdf_sha=digest,
+        ),
+    }
+
 
 
 def _path(user: User) -> Path:
@@ -150,6 +232,13 @@ def suggestions_from_pdf(
     ).order_by(WorkItem.source_row, WorkItem.id)).all()
     effective = [effective_item(db, item) for item in items]
     partner_rows = potential_plaster_pairs(effective)
+    saved_rows = db.scalars(select(PdfCandidateSelection).where(
+        PdfCandidateSelection.organization_id == user.organization_id,
+        PdfCandidateSelection.project_id == batch.project_id,
+        PdfCandidateSelection.import_id == batch.id,
+        PdfCandidateSelection.work_item_id.in_([item.id for item in effective[offset:offset + MAX_ROWS]]),
+    )).all()
+    saved = {row.work_item_id: row for row in saved_rows}
     rows = []
     for current in effective[offset:offset + MAX_ROWS]:
         partners = partner_rows.get(str(current.id), [])
@@ -189,6 +278,10 @@ def suggestions_from_pdf(
         rows.append({
             "work_item_id": current.id, "source_row": current.source_row,
             "revision_id": current.revision_id, "suggestions": scored,
+            "saved_selection": (
+                _selected_view(saved[str(current.id)], current_revision=current.revision_id, current_pdf_sha=digest)
+                if str(current.id) in saved else None
+            ),
             "related_excel_rows": partners,
             "review_summary": issue_summary(current.raw_description, scored, partners),
         })
