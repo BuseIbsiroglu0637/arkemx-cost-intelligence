@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app.excel import normalize_unit
 from app.technical_analysis.comparator import compare_layers
+from app.technical_analysis.owned_synthetic_source import CODE, read_fixture
 from app.technical_analysis.pdf_analysis_source import read_analysis
 from app.technical_analysis.support_registry import get_position_support
 
@@ -101,7 +102,7 @@ def review_rows(
     It is not a public API and does not grant access to imports or projects.
     """
     _validate_rows(rows)
-    supported = any(get_position_support(row.candidate_code) for row in rows)
+    supported = any(row.candidate_code == "15.275.1111" for row in rows)
     analysis = None
     source_status = "not_configured"
     if supported and pdf_path:
@@ -118,8 +119,13 @@ def review_rows(
         except (OSError, ValueError, RuntimeError, KeyError, TypeError):
             analysis = None
             source_status = "unverified"
+    pdf_analysis = analysis
+    pdf_status = source_status
     results = []
     for row in rows:
+        synthetic = row.candidate_code == CODE
+        analysis = read_fixture() if synthetic else pdf_analysis
+        source_status = "not_applicable" if synthetic else pdf_status
         result = {
             "identity": {
                 "work_item_id": row.work_item_id,
@@ -137,6 +143,10 @@ def review_rows(
             "technical_status": "review_required",
             "price_source_status": "not_available",
             "source_price": None,
+            "technical_source": None,
+            "source_verification_status": "not_available",
+            "source_rights_status": "not_assessed",
+            "engineering_status": "not_approved",
             "comparison": None,
             "flags": [],
             "review_required": True,
@@ -151,6 +161,8 @@ def review_rows(
             result["flags"].append("POSITION_NOT_SUPPORTED")
         else:
             result["price_source_status"] = source_status
+            result["source_verification_status"] = "verified" if synthetic else source_status
+            result["source_rights_status"] = "owned_synthetic_fixture" if synthetic else "not_assessed"
             unit, issues = normalize_unit(row.unit)
             if issues:
                 result["flags"].append("UNIT_UNVERIFIED")
@@ -160,13 +172,21 @@ def review_rows(
             if analysis is None:
                 result["flags"].append("PRICE_SOURCE_NOT_VERIFIED")
             else:
-                result["source_price"] = {
-                    "value": analysis["totals"]["total"],
-                    "unit": analysis["unit"],
-                    "currency": analysis["totals"]["currency"],
-                    "source": deepcopy(analysis["source"]),
-                    "applicability": "not_authorized_for_metraj_costing",
+                result["technical_source"] = {
+                    "kind": "synthetic_owned" if synthetic else "analysis_pdf",
+                    "sha256": analysis["source"]["sha256"],
+                    "source_id": analysis["source"].get("source_id", "15.275.1111"),
+                    "description": analysis["technical_description"]["quote"],
+                    "unit": analysis["unit"], "official": not synthetic,
                 }
+                if not synthetic:
+                    result["source_price"] = {
+                        "value": analysis["totals"]["total"],
+                        "unit": analysis["unit"],
+                        "currency": analysis["totals"]["currency"],
+                        "source": deepcopy(analysis["source"]),
+                        "applicability": "not_authorized_for_metraj_costing",
+                    }
                 try:
                     comparison = compare_layers(
                         row.description,

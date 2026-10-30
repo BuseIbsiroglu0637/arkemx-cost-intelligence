@@ -22,6 +22,8 @@ type Row = {
   original_description: string; effective_description: string; quantity: string | null; unit: string | null;
   candidate_code: string | null; technical_status: string; price_source_status: string;
   approval_allowed: boolean; flags: string[];
+  technical_source?: { kind: string; sha256: string; source_id: string; description: string; unit: string; official: boolean } | null;
+  source_verification_status?: string; source_rights_status?: string; engineering_status?: string;
   comparison: { status: string; approval_allowed: boolean; blockers: string[]; review_flags: string[]; checks: Check[]; technical_checks: Check[] } | null;
   source_price: { value: string; currency: string; unit: string; source: { filename: string; sha256: string; pdf_page: number; printed_page: number; price_date: string } } | null;
 };
@@ -29,6 +31,7 @@ type Report = { schema: string; read_only: boolean; approval_allowed: boolean; r
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
+  SYNTHETIC_SOURCE_CHANGED: "ARKEMX sentetik test tarifinin sürümü değişti.",
   METRAJ_CHANGED: "Metraj veya satır revizyonu değişti.", PDF_CHANGED: "PDF kaynak dosyası değişti.",
   PDF_UNVERIFIED: "Güncel PDF kaynağı doğrulanamadı.", ENGINE_CHANGED: "Karşılaştırma kuralları değişti.",
   ENGINE_UNVERIFIED: "Motor sürümü doğrulanamadı.", IMPORT_CHANGED: "Excel kaynak kimliği değişti.",
@@ -38,7 +41,7 @@ type View = "attention" | "all" | "checked_features_match" | "incompatible" | "r
 const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 const LABELS: Record<string, string> = {
   checked_features_match: "Kontrol edilen özellikler eşleşti", incompatible: "Teknik uyumsuzluk",
-  review_required: "İnceleme gerekli", out_of_scope: "Kapsam dışı", verified: "Kaynak doğrulandı",
+  review_required: "İnceleme gerekli", out_of_scope: "Kapsam dışı", verified: "Kaynak kimliği doğrulandı", not_applicable: "Test kaynağı · fiyat yok",
   not_available: "Kaynak yok", not_configured: "Kaynak tanımlanmamış", unverified: "Kaynak doğrulanamadı",
   match: "Eşleşiyor", block: "Uyuşmazlık", review: "İnceleme gerekli",
   work_type: "İmalat türü", thickness_mm: "Kalınlık (mm)", materials: "Malzeme",
@@ -87,6 +90,14 @@ function RowDetail({ row }: { row: Row }) {
     <h2>Excel satırı {row.identity.source_row}</h2>
     <div className={styles.tags}><span className={`${styles.badge} ${badgeClass(row.technical_status)}`}>{label(row.technical_status)}</span><span className={`${styles.badge} ${badgeClass(row.price_source_status)}`}>{label(row.price_source_status)}</span></div>
     <p>Bu önizleme mühendis onayı vermez. Kaynak fiyat, metraj maliyetine uygulanmış değildir.</p>
+    <div className={styles.notice} aria-label="Kaynak ve onay durumu">
+      <strong>{row.technical_source?.kind === "synthetic_owned" ? "ARKEMX'e ait sentetik test verisi" : row.technical_source?.kind === "analysis_pdf" || row.source_price ? "Gerçek PDF analiz kaynağı" : "Teknik kaynak doğrulanmadı"}</strong>
+      <p>Belge / tarif doğrulaması: {label(row.source_verification_status ?? row.price_source_status)}</p>
+      <p>Kullanım durumu: {row.source_rights_status === "owned_synthetic_fixture" ? "Sabit ARKEMX test tarifi; yalnızca sentetik pilotta kullanılır." : "Bu A3 sonucu kullanım iznini doğrulamaz. Katalog kullanım onayı ayrı kontrol edilir."}</p>
+      <p>Mühendis onayı: Verilmedi.</p>
+      {row.technical_source?.kind === "synthetic_owned" && <p>Resmî poz veya fiyat değildir. PDF'den alınmamıştır ve maliyet fiyatı içermez.</p>}
+      {row.technical_source && <details><summary>Teknik tarif kaynak kimliği</summary><p>{row.technical_source.source_id}</p><code>{row.technical_source.sha256}</code></details>}
+    </div>
     {reasons.length > 0 && <div className={styles.notice}><strong>İnceleme gerekçeleri</strong><ul>{[...new Set(reasons)].map(reason => <li key={reason}>{label(reason)}</li>)}</ul></div>}
     <details><summary>Metraj tarifi ve revizyon</summary><p className={styles.quote}>{row.effective_description}</p>
       {row.original_description !== row.effective_description && <><h3>Özgün Excel tarifi</h3><p className={styles.quote}>{row.original_description}</p></>}
@@ -374,7 +385,7 @@ export default function BatchTechnicalReviewPage() {
         </>}
       </section>}
       {selection && <section className={styles.card} aria-labelledby="rows-heading"><div className={styles.toolbar}><h2 id="rows-heading">2. Satırları ve adayları belirle</h2><span>{selected.length} / 20 satır seçili</span></div>
-        <p>Teknik destek kapsamı: <strong>15.275.1111</strong>. Diğer kodlar kapsam dışı olarak raporlanır. Aday poz, karşılaştırmak istediğin poz kodudur; onay anlamına gelmez. Boş bırakılırsa aday seçilmemiş olur.</p>
+        <p>Teknik destek kapsamı: <strong>15.275.1111</strong> (PDF) ve <strong>DEMO-ARKEMX-SIVA-01</strong> (ARKEMX test verisi). Diğer kodlar kapsam dışı olarak raporlanır. Aday poz, karşılaştırmak istediğin poz kodudur; onay anlamına gelmez. Boş bırakılırsa aday seçilmemiş olur.</p>
         <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
           <div className={styles.bulkFields}>
             <label>
@@ -428,7 +439,7 @@ export default function BatchTechnicalReviewPage() {
           <td className={styles.description}><details><summary>{row.effective_description.slice(0, 150)}{row.effective_description.length > 150 ? "…" : ""}</summary><p className={styles.quote}>{row.effective_description}</p>{row.original_description !== row.effective_description && <><strong>Özgün Excel tarifi</strong><p className={styles.quote}>{row.original_description}</p></>}</details>{row.input_review_required && <small className={styles.meta}>Girdi incelemesi gerekli</small>}</td>
           <td>{row.quantity ?? "Miktar eksik"}<br />{row.unit ?? "Birim eksik"}</td>
           <td><label><span className={styles.srOnly}>Excel satırı {row.source_row} aday poz</span><input className={styles.codeInput} list="supported-positions" maxLength={80} placeholder="Poz kodu yaz" value={candidates[row.work_item_id] ?? ""} onChange={e => candidate(row.work_item_id, e.target.value)} /></label></td>
-        </tr>)}</tbody></table></div><datalist id="supported-positions"><option value="15.275.1111" /></datalist>
+        </tr>)}</tbody></table></div><datalist id="supported-positions"><option value="15.275.1111" /><option value="DEMO-ARKEMX-SIVA-01" /></datalist>
         <div className={styles.toolbar}><div className={styles.tags}><button type="button" className="secondary" disabled={Boolean(busy) || offset === 0} onClick={() => loadItems(importId, Math.max(0, offset - 20))}>Önceki 20</button><button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null} onClick={() => loadItems(importId, selection.next_offset ?? 0)}>Sonraki 20</button></div><span>Sayfa değiştiğinde seçimler sıfırlanır.</span><button type="button" disabled={Boolean(busy) || selected.length === 0} onClick={compare}>Seçilen {selected.length} satırı incele</button></div>
       </section>}
       {report && <div className={styles.workbench}><section className={styles.card} aria-labelledby="results-heading"><h2 id="results-heading">3. Güncel önizleme sonucu</h2><p>{report.row_count} seçili satır değerlendirildi. “Kontrol edilen özellikler eşleşti” tam teknik uygunluk veya onay anlamına gelmez.</p>
