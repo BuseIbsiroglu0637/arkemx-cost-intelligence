@@ -393,3 +393,15 @@
 .a330Note{background:#eff5fd;color:#31547b;border-radius:8px;padding:9px 12px;font-size:11px;line-height:1.5}
 @media(max-width:900px){.a330Line{grid-template-columns:repeat(3,minmax(0,1fr))}.a330Line label:nth-child(2){grid-column:span 2}}
 @media(max-width:540px){.a330Line{grid-template-columns:repeat(2,minmax(0,1fr))}.a330Line label:nth-child(2){grid-column:span 2}}
+
+/* A3.34 — one clear poz-list status and three progressive review steps. */
+.simpleStepTitle{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:10px 12px;border:1px solid #d9e4f0;border-radius:9px;background:#f1f6fc;color:#24466d}
+.simpleStepTitle>span{display:inline-flex;align-items:center;justify-content:center;flex:none;width:25px;height:25px;border-radius:7px;background:#2156b5;color:#fff;font-weight:750;font-size:12px}
+.simpleStepTitle>strong{font-size:13px;font-weight:700}
+.simpleStepTitle>small{font-size:11px;color:#65809a}
+.selectedCandidateLabel{font-size:11px;font-weight:700;color:#1c7752;background:#eaf6ef;padding:5px 8px;border-radius:7px}
+.a330SourceDetails{background:#f8fbff;border:1px solid #d9e5f2;border-radius:8px;padding:9px 11px;margin:10px 0}
+.a330SourceDetails>summary{font-size:11px;color:#355b86;cursor:pointer;font-weight:650}
+.a330SourceDetails>p{font-size:11px;line-height:1.6}
+.a330SourceDetails>ul{font-size:11px;line-height:1.6}
+@media(max-width:570px){.simpleStepTitle{align-items:flex-start}.simpleStepTitle>small{flex-basis:100%;padding-left:34px}}
