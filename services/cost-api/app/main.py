@@ -345,3 +345,7 @@ app.include_router(a3_review_assessments_router)
 
 from .a3_m4_bridge import router as a3_m4_bridge_router
 app.include_router(a3_m4_bridge_router)
+
+# A3.17 read-only authorized catalog suggestions; no approval or pricing.
+from .a317_suggestions import router as a317_suggestions_router
+app.include_router(a317_suggestions_router)
