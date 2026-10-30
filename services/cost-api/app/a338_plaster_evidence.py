@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from .a3_batch_review import NO_STORE, _source
 from .a318_pdf_api import _pdf_candidate_check, _read as read_positions, _saved_choice_blocked
 from .a326_project_evidence import _file_path, _read_file, _scan
-from .a327_additional_evidence import _layer_values
+from .a327_additional_evidence import additional_matches
 from .a335_plaster_matching import plaster_dosages, plaster_stages
 from .database import get_db
 from .matching import dimensions
@@ -43,25 +43,20 @@ def _one(values):
 
 
 def _spec_facts(description: str, blocks: list[tuple[int, str]]) -> tuple[list[dict], list[dict]]:
-    stages = plaster_stages(description)
-    if len(stages) != 1:
-        return [], []
-    stage = next(iter(stages))
+    """Use exactly the evidence extracted for A3.26 'Belgede ara'.
+
+    Keeping one parser prevents the old panel and this comparison from
+    disagreeing about a material-qualified '20 mm çimento esaslı kaba sıva'.
+    """
     thickness = []
     dosage = []
-    for page, quote in blocks:
-        if "siva" not in quote.lower().replace("ı", "i"):
-            continue
-        for actual_stage, millimeters in _layer_values(quote):
-            if actual_stage == stage:
-                thickness.append({"value": millimeters, "page": page, "quote": quote[:320]})
-        # One paragraph with both layers and one dose cannot reliably
-        # attribute the dose to this layer. Preserve uncertainty.
-        if plaster_stages(quote) != stages:
-            continue
-        values = plaster_dosages(quote)
-        for value in sorted(values):
-            dosage.append({"value": str(value), "page": page, "quote": quote[:320]})
+    for match in additional_matches(description, blocks):
+        facts = match["facts"]
+        evidence = {"page": match["page"], "quote": match["quote"]}
+        if facts.get("layer_thickness_mm") is not None:
+            thickness.append({**evidence, "value": facts["layer_thickness_mm"]})
+        if facts.get("cement_dosage_kg") is not None:
+            dosage.append({**evidence, "value": facts["cement_dosage_kg"]})
     return thickness, dosage
 
 
