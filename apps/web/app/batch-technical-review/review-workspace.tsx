@@ -811,108 +811,64 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <tbody>{visibleQueueRows.map(row => {
             const proposed = suggestionsFor(row.work_item_id);
             const reviewRow = autoCandidates?.rows.find(item => item.work_item_id === row.work_item_id);
-            const rowTriage = reviewRow?.triage;
-            const paired = Boolean(reviewRow?.related_excel_rows?.length);
-            const needsCeramicChoice = Boolean(reviewRow?.clarification && !savedCandidates[row.work_item_id]);
             const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
-            const top = suitable ?? proposed[0] ?? null;
             const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
-          const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
-          const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
-          const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
-            evidenceProofFor(row.work_item_id, selectedCode) : null;
-          const pilotRow = engineerHandoff?.rows.find(item => item.work_item_id === row.work_item_id);
-          const pilotConfirmed = Boolean(isSaved && !hasStaleChoice && !(
-            proposed.find(item => item.code === selectedCode)?.technical_status === "blocked"
-          ) && validatedEvidence && pilotRow?.pilot_confirmed === true &&
-            pilotRow?.pilot_status === "confirmed");
-          const pilotReopened = Boolean(isSaved && validatedEvidence && pilotRow?.pilot_status === "reopened");
-          const pilotStale = Boolean(isSaved && pilotRow?.pilot_status === "stale");
+            const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
+            const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
             const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
-            // Once the user selects a code, show that choice rather than the original
-            // top lexical suggestion. A manually typed, unverified code stays unverified.
-            const manuallyEntered = Boolean(selectedCode && !selectedCandidate);
-            const visibleCandidate = selectedCode ? selectedCandidate : top;
-            const shared = Boolean(visibleCandidate?.possible_shared_scope);
+            const visibleCandidate = selectedCode ? selectedCandidate : suitable ?? proposed[0] ?? null;
             const blocked = visibleCandidate?.technical_status === "blocked";
-            const missing = Boolean(autoCandidates && !visibleCandidate && !manuallyEntered);
-            const gasbetonDetailsMissing = Boolean(visibleCandidate?.review_flags.some(flag =>
-              flag === "GAZBETON_STRENGTH_N_MM2_UNVERIFIED" ||
-              flag === "GAZBETON_DENSITY_KG_M3_UNVERIFIED"));
-            const ambiguous = !selectedCode && gasbetonDetailsMissing &&
-              proposed.filter(item => item.technical_status !== "blocked").length > 1;
-            const needsReview = manuallyEntered || Boolean(visibleCandidate &&
-              (visibleCandidate.technical_status !== "compatible" ||
-              shared || paired || visibleCandidate.similarity < 0.5 ||
-              row.input_review_required || gasbetonDetailsMissing));
+            const manuallyEntered = Boolean(selectedCode && !selectedCandidate);
+            const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
+              evidenceProofFor(row.work_item_id, selectedCode) : null;
+            const pilotRow = engineerHandoff?.rows.find(item => item.work_item_id === row.work_item_id);
+            // A list 'completed' state is only a current, source-linked pilot record.
+            // It is never a verified engineer signoff or an M5 cost permission.
+            const pilotConfirmed = Boolean(isSaved && !blocked && !hasStaleChoice &&
+              validatedEvidence && pilotRow?.pilot_confirmed === true &&
+              pilotRow?.pilot_status === "confirmed");
+            const requiresNewReview = hasStaleChoice ||
+              (isSaved && pilotRow?.pilot_status === "stale");
+            const needsInformation = !visibleCandidate ||
+              (!isSaved && reviewRow?.triage?.group === "needs_info");
+            const statusText = blocked ? "Poz uyumsuz" :
+              pilotConfirmed ? "Pilot kontrol tamam" :
+              requiresNewReview ? "Yeniden kontrol" :
+              manuallyEntered ? "Pozu doğrula" :
+              needsInformation ? "Bilgi eksik" : "Kontrol bekliyor";
+            const statusStyle = blocked ? styles.simpleStatusBlocked :
+              pilotConfirmed ? styles.simpleStatusSuggested :
+              statusText === "Bilgi eksik" || statusText === "Yeniden kontrol" ?
+                styles.simpleStatusReview : styles.simpleStatusPending;
+            const unresolvedCeramic = Boolean(
+              reviewRow?.clarification && !isSaved && !selectedCode
+            );
             return <tr key={row.work_item_id}>
               <td className={styles.simpleMatchDescription}>
                 <strong>{row.effective_description}</strong>
                 <small>Excel {row.source_row} · {row.quantity ?? "Miktar eksik"} {row.unit ?? ""}</small>
               </td>
               <td>
-                {manuallyEntered ? <div className={styles.simpleMatchPosition}>
-                  <strong>{selectedCode}</strong>
-                  <small>Elle girilen poz · PDF adayları arasında doğrulanmadı</small>
-                  <em role="status">{isSaved ? "Poz seçimi onaylandı · Teknik onay bekliyor" :
-                    "Seçildi · henüz kaydedilmedi"}</em>
-                </div> : visibleCandidate ? <div className={styles.simpleMatchPosition}>
-                  {needsCeramicChoice && !selectedCode ? <>
-                    <strong>{proposed.length} olası seramik pozu</strong>
-                    <small>Seramik türü projeden doğrulanmalı.</small>
-                  </> : ambiguous ? <>
-                    <strong>{proposed.filter(item => item.technical_status !== "blocked").length} olası poz</strong>
-                    <small>Dayanım ve yoğunluk belirtilmediği için doğru kod kesinleştirilemez.</small>
+                {visibleCandidate ? <div className={styles.simpleMatchPosition}>
+                  {unresolvedCeramic ? <>
+                    <strong>Seramik pozunu seç</strong>
+                    <small>Şartnamedeki seramik türüyle karşılaştır.</small>
                   </> : <>
                     <strong>{visibleCandidate.code}</strong>
                     <small title={visibleCandidate.description}>{visibleCandidate.description}</small>
                   </>}
-                  {isSaved ? <em role="status">{pilotConfirmed ?
-                    "Pilot teknik inceleme onaylandı · Mühendis onayı değil" :
-                    "Poz seçimi kaydedildi · Pilot inceleme bekliyor"}</em> :
-                    selectedCode ? <em>Seçildi · henüz kaydedilmedi</em> : null}
-                  {hasStaleChoice && !isSaved && <em>Eski kayıt geçersiz · yeniden seç</em>}
-                </div> :
-                  <span className={styles.simpleNoCandidate}>{missing ? "Aday bulunamadı" : "PDF taraması bekleniyor"}</span>}
+                </div> : manuallyEntered ? <div className={styles.simpleMatchPosition}>
+                  <strong>{selectedCode}</strong>
+                  <small>PDF kaynak pozları arasında doğrulanmadı.</small>
+                </div> : <span className={styles.simpleNoCandidate}>Poz adayı bulunamadı</span>}
               </td>
-              <td>
-                <span className={`${styles.simpleStatus} ${
-                  blocked ? styles.simpleStatusBlocked :
-                  isSaved ? styles.simpleStatusSuggested :
-                  rowTriage?.group === "prechecked" ? styles.simpleStatusSuggested :
-                  rowTriage ? styles.simpleStatusReview :
-                  missing || needsReview ? styles.simpleStatusReview :
-                  top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
-                  {pilotConfirmed ? "Pilot teknik inceleme onaylandı" :
-                    pilotReopened ? "Pilot onay geri alındı" :
-                    pilotStale ? "Pilot onay güncelliğini kaybetti" :
-                    isSaved && !blocked ? "Poz seçimi onaylandı" :
-                    rowTriage?.group === "prechecked" ? "Ön kontrol tamam" :
-                    rowTriage?.group === "needs_info" ? "Bilgi eksik" :
-                    blocked ? "Teknik uyumsuzluk" :
-                    manuallyEntered ? "Poz doğrulanmalı" :
-                    paired ? "Birleşik iş kontrolü" :
-                    shared ? "Çift fiyatlama riski" :
-                    missing ? "İnceleme gerekli" :
-                    gasbetonDetailsMissing ? "Teknik bilgi eksik" :
-                    needsCeramicChoice ? "Seramik türü sorulmalı" :
-                    needsReview || rowTriage?.group === "needs_review" ? "Kontrol gerekli" :
-                    visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
-                </span>
-                {isSaved && <small className={styles.queueReason}>
-                  {pilotConfirmed ? "Pilot kabul kaydedildi. Resmî mühendis onayı değil; maliyete aktarılmaz." :
-                    pilotReopened ? "Pilot kabul geri alındı. İncelemeye devam edilebilir; maliyete aktarılmaz." :
-                    pilotStale ? "Kaynak veya analiz değişmiş. Pilot karar yeniden verilmeli." :
-                    "Poz seçimi kayıtlı. Pilot kararını detayda kontrol et · Maliyete aktarılmaz."}
-                </small>}
-                {validatedEvidence ? <small className={styles.queueReason}>
-                  Şartname–poz temel özellikleri uyumlu (PDF s. {validatedEvidence.evidence_page ?? "—"}).
-                  Kapsam ve mühendis onayı bekliyor.
-                </small> : rowTriage && <small className={styles.queueReason}>{rowTriage.reason}</small>}
-              </td>
+              <td><span role="status" className={styles.simpleStatus + " " + statusStyle}>
+                {statusText}
+              </span></td>
               <td><button type="button" className={styles.showCandidates}
                 aria-expanded={candidateDetailId === row.work_item_id}
-                onClick={() => setCandidateDetailId(old => old === row.work_item_id ? null : row.work_item_id)}>
+                onClick={() => setCandidateDetailId(old =>
+                  old === row.work_item_id ? null : row.work_item_id)}>
                 {candidateDetailId === row.work_item_id ? "Kapat" : "Detay"}
               </button></td>
             </tr>;
@@ -923,11 +879,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             "Bu bölümde gösterilecek imalat yok."}
         </p>}
         {expandedRow && <div className={styles.simpleMatchDetail}>
-          {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && (
-            <div className={expandedProof ? styles.evidenceConfirmed : styles.reviewReason} role="note">
-              {expandedProof
-                ? "Excel tarifinde eksik olan temel özellikler proje şartnamesinden bulundu ve kayıtlı pozla ön karşılaştırmada uyumlu. Teknik kapsam ve mühendis onayı bekliyor."
-                : autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
+          <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · {expandedRow.effective_description}</h3>
+            <p>Pozu kontrol et → Analizi düzenle → Pilot kontrolü tamamla.</p></div></div>
+          <div className={styles.simpleStepTitle}><span>1</span><strong>Pozu kontrol et</strong>
+            <small>Poz bilgisi ve proje şartnamesini karşılaştır.</small></div>
+          {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && !expandedProof && (
+            <div className={styles.reviewReason} role="note">
+              {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
               {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
                 <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
             </div>
@@ -947,13 +905,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 : triageFor(expandedRow.work_item_id)?.reason ??
                   "Pozun uygulama ve fiyat kapsamı teknik belgeyle ayrıca incelenmeli."}</span>
             <small>{expandedProof
-              ? `Şartname PDF sayfa ${expandedProof.evidence_page ?? "—"} · Excel tarifinde bulunmayan alanlar belgeyle desteklendi. Uygulama kapsamı ve mühendis onayı bekliyor.`
-              : "Metraj, şartname ve poz kapsamı karşılaştırılmadan teknik onay verilmez."}</small>
+              ? `PDF sayfa ${expandedProof.evidence_page ?? "—"} · Sadece karşılaştırılan özellikler doğrulandı.`
+              : "Eksik bilgiler için şartnameyi kontrol et."}</small>
           </div>
           {(
             <details className={styles.projectEvidence}>
-              <summary>Bilgiyi doğrula · Proje şartnamesi PDF</summary>
-              <p>Projenin teknik şartnamesini yükle. ARKEMX ilgili ifadeyi sayfasıyla arar; bulması teknik onay değildir.</p>
+              <summary>Proje şartnamesi PDF</summary>
+              <p>Şartnameyi yükle veya mevcut belgede ilgili bilgiyi ara.</p>
               <div className={styles.projectEvidenceActions}>
                 <label>Şartname PDF (en fazla 8 MB)
                   <input type="file" accept=".pdf,application/pdf"
@@ -1022,9 +980,6 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               </div>}
             </details>
           )}
-          <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
-            <p>{expandedRow.effective_description}</p></div>
-            <button type="button" className="secondary" onClick={() => setCandidateDetailId(null)}>Kapat</button></div>
           {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
             <strong>{expandedClarification.prompt}</strong>
             <p>{expandedClarification.hint}</p>
@@ -1035,33 +990,24 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
                 <span>{option.label}</span>
                 <small>{option.code} · PDF sayfa {option.source_page ?? "—"}</small>
-                {savedCandidates[expandedRow.work_item_id] === option.code && <em>Poz seçimi onaylandı · Teknik onay bekliyor</em>}
+                {savedCandidates[expandedRow.work_item_id] === option.code && <em>Seçili poz</em>}
               </button>)}
             </div>
             <small>Projede özellik belirtilmemişse hiçbirini seçme. Poz kaydı teknik onay değildir.</small>
           </section>}
-          {expandedSelectedCode && <div className={styles.chosenCandidateNotice} role="status">
-            {savedCandidates[expandedRow.work_item_id] === expandedSelectedCode ?
-              engineerHandoff?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.pilot_confirmed === true &&
-              Boolean(expandedProof) ? "Pilot teknik inceleme onaylandı" : "Poz seçimi onaylandı" :
-              "Henüz kaydedilmedi"}:
-            <strong> {expandedSelectedCode}</strong> · Mühendis kararını aşağıdaki bölümden kontrol et.
-            {!expandedSuggestions.some(option => option.code === expandedSelectedCode) &&
-              <small>Bu kod önerilen PDF adayları arasında bulunmuyor; ayrıca doğrulanmalı.</small>}
-          </div>}
           {expandedSuggestions.length ? <>
             {expandedSuggestions.slice(0,1).map(option =>
               <div key={option.code} className={styles.simplePrimaryCandidate}>
                 <div>
-                  <strong>Olası poz: {option.code}</strong>
+                  <strong>Poz: {option.code}</strong>
                   <p>{option.description}</p>
                   <span className={styles.simpleStatus + " " +
                     (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
                     {option.technical_status === "blocked" ? "Teknik uyumsuzluk" :
                       currentEvidenceMatch && option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate)
-                        ? "Şartname–poz ön kontrolü uyumlu · Mühendis incelemesi" :
+                        ? "Şartname uyumlu" :
                       option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
-                      "Mühendis kontrolü gerekli"}
+                      "Belge kontrolü gerekli"}
                   </span>
                   {remainingCandidateFlags(option).length > 0 && (
                     <p className={styles.issues}>
@@ -1082,15 +1028,16 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
                   <details>
                     <summary>PDF kanıtı ve analiz girdileri</summary>
-                    <p>Önce bu poz adayını kaydet. Kaydedildikten sonra analiz taslağındaki girdileri düzenleyebilir ve mühendis incelemesine gönderebilirsin.</p>
+                    <p>Önce bu pozu kaydet; ardından analizi düzenleyip pilot kontrolü tamamla.</p>
                     {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
                     {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
                       <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
                   </details>}
-                <button type="button" disabled={Boolean(busy)}
-                  onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
-                  {savedCandidates[expandedRow.work_item_id] === option.code ? "Poz seçimi onaylandı" : "Bu adayı kaydet"}
-                </button>
+                {savedCandidates[expandedRow.work_item_id] !== option.code &&
+                  <button type="button" disabled={Boolean(busy)}
+                    onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
+                    Pozu kaydet
+                  </button>}
               </div>)}
             {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
               <summary>Diğer {expandedSuggestions.length - 1} adayı göster</summary>
@@ -1099,8 +1046,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <div><strong>{option.code}</strong> · {option.description}
                     <small>{option.technical_status === "blocked" ? "Teknik uyumsuzluk" : "Teknik inceleme gerekli"} · PDF sayfa {option.source_page ?? "—"}</small>
                   </div>
-                  <button type="button" className="secondary" disabled={Boolean(busy)}
-                    onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>{savedCandidates[expandedRow.work_item_id] === option.code ? "Kaydedildi" : "Bu adayı kaydet"}</button>
+                  {savedCandidates[expandedRow.work_item_id] === option.code ?
+                    <span className={styles.selectedCandidateLabel}>Seçili poz</span> :
+                    <button type="button" className="secondary" disabled={Boolean(busy)}
+                      onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>Bu pozu seç</button>}
                 </div>)}
             </details>}
           </> : <p>Bu satır için uygun poz doğrulanamadı. Teknik tarif veya poz ayrıca incelenmeli.</p>}

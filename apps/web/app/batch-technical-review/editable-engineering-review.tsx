@@ -72,6 +72,15 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const originalLines=data?.latest_revision?.source_current?
+    data.latest_revision.items : data?.source_inputs??[];
+  const essentialFields=(row:InputLine)=>[
+    trim(row.code),trim(row.description),trim(row.unit),
+    trim(row.quantity),trim(row.unit_price),
+  ];
+  const hasUnsavedChanges=Boolean(data) &&
+    JSON.stringify(lines.map(essentialFields)) !==
+    JSON.stringify(originalLines.map(essentialFields));
   const path="/api/projects/"+encodeURIComponent(projectId)+"/a330/imports/"+
     encodeURIComponent(importId)+"/items/"+encodeURIComponent(rowId);
   const pilotPath="/api/projects/"+encodeURIComponent(projectId)+"/a331/imports/"+
@@ -159,13 +168,16 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
       });
       await reload();
       onPilotChanged?.(); // A new draft invalidates any pilot accept on the previous revision.
-      setNotice("Analiz düzenleme taslağı kaydedildi. Orijinal PDF değiştirilmedi.");
+      setEditOpen(false);
+      setReviewOpen(true);
+      setNotice("Analiz taslağı kaydedildi. Şimdi 3. adımda pilot kontrolü tamamlayabilirsin.");
       setEditReason("");
     }catch(e){setError(e instanceof Error?e.message:"Taslak kaydedilemedi.");}
     finally{setBusy(false)}
   }
   async function savePilotDecision(action:"accept"|"reopen"){
-    if(!data||!pilot||busy||!ack||!data.latest_revision?.source_current||
+    if(!data||!pilot||busy||!ack||hasUnsavedChanges||
+      !data.latest_revision?.source_current||
       pilot.source_fingerprint!==data.source_fingerprint||
       pilot.analysis_revision_id!==data.latest_revision.id||
       (action==="accept"&&(!pilot.evidence_ready||pilot.pilot_confirmed))||
@@ -192,8 +204,11 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   return <>
     <details className={styles.projectEvidence} open={editOpen}
       onToggle={e=>setEditOpen(e.currentTarget.open)}>
-      <summary>PDF kanıtı ve analiz girdileri · Düzenlenebilir taslak</summary>
-      {position.scope_excerpt&&<p><strong>PDF orijinal poz tarifi:</strong> {position.scope_excerpt}</p>}
+      <summary>2 · Analizi düzenle</summary>
+      <p>Malzeme, işçilik, miktar ve fiyatları düzenle. Orijinal PDF değişmez.</p>
+      <details className={styles.a330SourceDetails}>
+        <summary>Orijinal PDF kanıtını göster</summary>
+        {position.scope_excerpt&&<p><strong>PDF poz tarifi:</strong> {position.scope_excerpt}</p>}
       <small>Kaynak PDF sayfa {position.source_page??"—"} · Orijinal fiyat: {position.source_price_verified?position.source_price+" TL/"+position.unit:"Doğrulanmadı"} · PDF değiştirilemez.</small>
       {position.analysis_inputs&&<ul>{position.analysis_inputs.map((x,i)=>
         <li key={i}>{x.code} · {x.description}: {x.quantity} {x.unit} × {x.unit_price} TL = {x.amount} TL</li>)}</ul>}
@@ -201,14 +216,13 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
         PDF analiz toplamı: {position.price_audit.inputs_total} TL · Kontrol eki %{position.price_audit.reconciliation_addition_percent}:
         {" "}{position.price_audit.reconciliation_addition} TL · PDF fiyatı: {position.price_audit.pdf_price} TL.
       </p>}
+      </details>
       <div className={styles.a330Edit}>
-        <strong>Analiz taslağını düzenle</strong>
-        <small>Bu satırlar, PDF'nin üzerine yazılmaz. Eklediğin ve çıkardığın girdiler ayrı, tarihçeli bir teklif/taslak oluşturur.</small>
+        <small>Girdileri ekleyebilir, değiştirebilir veya çıkarabilirsin. Kaydedilen her taslak geçmişte saklanır.</small>
         {busy&&<p role="status">Kaynaklar yükleniyor…</p>}
         {data?.latest_revision&&<p className={styles.a330Note}>
-          Son taslak: v{data.latest_revision.version} · {data.latest_revision.source_current?
-            "Kaynak güncel":"Kaynak değişmiş; taslağı tekrar oluştur"}
-          {" "}· Deneme tutarı {data.latest_revision.proposed_amount} TL (kontrol formülü %25 ek)
+          {data.latest_revision.source_current ? "Analiz kayıtlı" : "Analizi yeniden kontrol et"} ·
+          Sürüm {data.latest_revision.version} · Taslak tutar {data.latest_revision.proposed_amount} TL
         </p>}
         {data&&lines.map((line,i)=><div className={styles.a330Line} key={i}>
           <label>Kod<input value={line.code} maxLength={80} disabled={busy}
@@ -236,25 +250,26 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
             placeholder="Örneğin: Eksik işçilik girdisini ekledim, poz kapsamı kontrol edilecek."
             onChange={e=>setEditReason(e.target.value)} /></label>}
         {data&&<button type="button" disabled={busy||lines.length===0}
-          onClick={()=>void save()}>Taslak değişikliklerini kaydet</button>}
+          onClick={()=>void save()}>Analizi kaydet</button>}
       </div>
     </details>
     <details className={styles.a330Approval} open={reviewOpen}
       onToggle={e=>setReviewOpen(e.currentTarget.open)}>
-      <summary>Teknik inceleme onayı · Pilot</summary>
+      <summary>3 · Pilot kontrolü tamamla</summary>
       {!data||!pilot ? <p>Teknik karar bilgisi yükleniyor veya kaynak okunamıyor.</p> : <>
-        <p><strong>Durum:</strong> {pilot.pilot_confirmed?
-          "Pilot teknik inceleme onaylandı":"Pilot teknik inceleme onayı bekliyor"}.</p>
-        {pilot.last_event&&<p className={styles.a330Note}>
-          Son işlem: {pilot.last_event.action==="accept"?"Pilot onay":"Yeniden incelemeye açıldı"}
-          {" "}· {pilot.last_event.source_current?"Güncel belge/taslak":"Kaynak veya analiz değişmiş"}
-          {" "}· {pilot.last_event.reason}
+        <p className={pilot.pilot_confirmed ? styles.a330Note : undefined}>
+          <strong>Durum:</strong> {pilot.pilot_confirmed ? "Pilot kontrol tamam" :
+            pilot.last_event && !pilot.last_event.source_current
+              ? "Önceki kontrol güncel değil" : "Kontrol bekliyor"}.
+        </p>
+        {hasUnsavedChanges&&<p className={styles.a330Warning}>
+          Analizde kaydedilmemiş değişiklikler var. Önce 2. adımda kaydet.
         </p>}
         {!pilot.evidence_ready&&<p className={styles.a330Warning}>
-          Önce teknik şartname ile kaydedilmiş pozun uyumu belgelenmeli. Onay verilemez.
+          Önce 1. adımda şartname ile poz uyumunu doğrula.
         </p>}
         {!data.latest_revision?.source_current&&<p className={styles.a330Warning}>
-          Önce yukarıdaki analiz girdilerinin güncel bir taslağını kaydet.
+          Önce 2. adımda analizi kaydet.
         </p>}
         <label className={styles.a330Label}>İnceleme notu (isteğe bağlı)
           <textarea rows={2} maxLength={1000} disabled={busy} value={reviewReason}
@@ -264,22 +279,18 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
         <label className={styles.a330Label}>
           <input type="checkbox" checked={ack} disabled={busy}
             onChange={e=>setAck(e.target.checked)}/>
-          Pozun kaynak PDF'sini, teknik şartnameyi ve analiz taslağını kontrol ettim.
-          Bu işlemin doğrulanmış mühendis imzası olmadığını biliyorum.
+          PDF, şartname ve analizi kontrol ettim; bunun resmî mühendis onayı olmadığını biliyorum.
         </label>
         <div className={styles.a330Actions}>
           {!pilot.pilot_confirmed ? <button type="button"
-            disabled={busy||!ack||!pilot.evidence_ready||
+            disabled={busy||!ack||hasUnsavedChanges||!pilot.evidence_ready||
               !data.latest_revision?.source_current}
-            onClick={()=>void savePilotDecision("accept")}>Pilot teknik incelemeyi onayla</button> :
+            onClick={()=>void savePilotDecision("accept")}>Pilot kontrolü tamamla</button> :
           <button type="button" className="secondary"
-            disabled={busy||!ack||!data.latest_revision?.source_current}
-            onClick={()=>void savePilotDecision("reopen")}>Onayı geri al / yeniden incele</button>}
-          <button type="button" className="secondary" disabled={busy}
-            onClick={()=>void reload().catch(e=>setError(String(e)))}>Yenile</button>
+            disabled={busy||!ack||hasUnsavedChanges||!data.latest_revision?.source_current}
+            onClick={()=>void savePilotDecision("reopen")}>Kontrolü yeniden aç</button>}
         </div>
-        <small>Bu pilot kayıt, kullanıcı veya meslek yetkisi doğrulaması gerektirmez; ancak
-          resmî mühendis onayı, nihai teklif veya maliyet hesabına otomatik izin değildir.</small>
+        <small>Pilot kontrol kaydı resmî mühendis imzası değildir ve maliyet hesabına otomatik izin vermez.</small>
       </>}
     </details>
     {(error||notice)&&<p role={error?"alert":"status"} className={error?styles.a330Warning:styles.a330Note}>{error||notice}</p>}
