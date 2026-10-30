@@ -512,13 +512,6 @@ export default function Home() {
       {project && (reviewOpened || tab === "technical") && <section hidden={tab !== "technical"} style={{display: tab === "technical" ? "block" : "none"}} aria-label="Poz inceleme çalışma alanı">
         <ReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
           onImportSelected={setActiveExcel} onSessionExpired={logout} />
-        <details className="card"><summary>Gelişmiş işlemler · Katalogdan aday üretme ve mühendis kararı</summary>
-          <p>PDF karşılaştırması onay vermez. Mevcut katalog taraması ve mühendis kararları bu proje altında sürdürülür; teknik engeller aynen uygulanır.</p>
-          <BulkPanel token={token} project={project} onCompleted={() => setSummaryRefresh(v => v + 1)} />
-          <EngineerReviewPanel token={token} project={project} refreshKey={summaryRefresh} onGoToBulk={() => goTo("bulk")} />
-        </details>
-        <div className="card flex between"><button type="button" className="secondary" onClick={() => goTo("metraj")}>← Metraja dön</button>
-          <button type="button" onClick={() => goTo("cost")}>Maliyete geç →</button></div>
       </section>}
 
       {!project?<section className="card empty">Yukarıdan bir proje seçin veya yeni proje oluşturun.</section>:
