@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .a3_batch_review import NO_STORE, _source, _source_view
-from .a318_pdf_engine import PdfPosition, read_positions
+from .a318_pdf_engine import PdfPosition, read_positions, verified_price_audit
 from .a324_ceramic_features import ceramic_finish_conflict, ceramic_question
 from .a325_review_queue import classify_row
 from .a320_smart_matching import (
@@ -340,6 +340,10 @@ def suggestions_from_pdf(
                 "source_price": str(position.price) if position.price_verified else None,
                 "source_price_verified": position.price_verified,
                 "analysis_inputs": position.ingredients if position.price_verified else (),
+                # This date is verified by read_positions against page 6 of
+                # the specific PDF edition, not the live/current official rate.
+                "pdf_edition_date": "1.01.2026",
+                "price_audit": verified_price_audit(position),
                 "scope_excerpt": position.scope,
             })
         scored.sort(key=lambda c: (

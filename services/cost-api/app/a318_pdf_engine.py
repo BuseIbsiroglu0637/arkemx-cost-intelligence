@@ -42,6 +42,40 @@ class PdfPosition:
     scope: str
 
 
+def verified_price_audit(position: PdfPosition) -> dict | None:
+    """Show the *existing parser rule* transparently; never infer an official price.
+
+    The PDF parser accepts a source price only if sum(input amounts) x 1.25
+    is within 0.04 TL. For other price constructions, no breakdown is claimed.
+    This is an analysis reconciliation, NOT a live official rayic quotation.
+    """
+    if not position.price_verified or not position.ingredients:
+        return None
+    amounts = [number(entry.get("amount")) for entry in position.ingredients]
+    if any(amount is None for amount in amounts):
+        return None
+    subtotal = sum(amounts, Decimal("0"))
+    calculated = (subtotal * Decimal("1.25")).quantize(
+        Decimal(".01"), rounding=ROUND_HALF_UP,
+    )
+    difference = position.price - calculated
+    if abs(difference) > Decimal("0.04"):
+        return None
+
+    def amount(value: Decimal) -> str:
+        return str(value.quantize(Decimal(".01"), rounding=ROUND_HALF_UP))
+
+    return {
+        "inputs_total": amount(subtotal),
+        "reconciliation_addition_percent": 25,
+        "reconciliation_addition": amount(calculated - subtotal),
+        "calculated_price": amount(calculated),
+        "pdf_price": amount(position.price),
+        "difference": amount(difference),
+        "status": "reconciled_to_pdf_with_parser_rule",
+    }
+
+
 def _page_positions(page, number_: int) -> list[PdfPosition]:
     words = page.get_text("words", sort=False)
     headings = sorted(

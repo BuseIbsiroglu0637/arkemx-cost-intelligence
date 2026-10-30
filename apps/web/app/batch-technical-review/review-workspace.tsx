@@ -30,7 +30,10 @@ type Row = {
 type Report = { schema: string; read_only: boolean; approval_allowed: boolean; row_count: number; rows: Row[]; import_source: Source };
 type PdfSource = { present: boolean; read_only: boolean; sha256?: string; year?: number; volume?: number; position_count?: number; verified_price_count?: number; uncertain_price_count?: number };
 type CandidateCatalog = { version_id: string; institution: string; period: string; year: number; position_count: number; synthetic: boolean };
-type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean; source_page?: number; source_price?: string | null; source_price_verified?: boolean; analysis_inputs?: {code:string;description:string;unit:string;quantity:string;unit_price:string;amount:string}[]; scope_excerpt?: string };
+type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean; source_page?: number; source_price?: string | null; source_price_verified?: boolean; analysis_inputs?: {code:string;description:string;unit:string;quantity:string;unit_price:string;amount:string}[]; scope_excerpt?: string; pdf_edition_date?: string; price_audit?: {
+  inputs_total: string; reconciliation_addition_percent: number; reconciliation_addition: string;
+  calculated_price: string; pdf_price: string; difference: string; status: string;
+} | null };
 type SavedCandidate = { code: string | null; current: boolean; stale: boolean; revision_id: string | null; pdf_sha256: string | null; saved_at: string | null; engineering_approved: false; cost_allowed: false };
 type CandidateSaveResponse = { saved: true; approval_allowed: false; engineering_approved: false; cost_allowed: false; work_item_id: string; import_id: string; selection: SavedCandidate };
 type CeramicClarification = {
@@ -472,6 +475,44 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     );
   }
 
+  // Reconcile Excel-only flags with the current saved candidate and the
+  // matching technical specification. Read-only; no engineering approval.
+  useEffect(() => {
+    const token = sessionStorage.getItem("arkemx_dev_token");
+    if (!selection || !autoCandidates || !pdfSource?.sha256 || !projectId || !importId || !token) {
+      setEngineerHandoff(null);
+      return;
+    }
+    const controller = new AbortController();
+    const expected = selection.rows;
+    setEngineerHandoff(null);
+    void fetch(
+      `${API}/api/projects/${encodeURIComponent(projectId)}/a327/imports/${encodeURIComponent(importId)}/readiness?offset=${offset}&limit=20`,
+      {cache: "no-store", signal: controller.signal,
+       headers: {Authorization: `Bearer ${token}`}},
+    ).then(async response => {
+      if (!response.ok) throw Error("Evidence readiness unavailable");
+      return await response.json() as EngineerHandoff;
+    }).then(data => {
+      if (controller.signal.aborted || sessionStorage.getItem("arkemx_dev_token") !== token) return;
+      if (data.schema !== "arkemx.a327.readiness.v1" ||
+          data.read_only !== true || data.approval_allowed !== false ||
+          data.engineering_approved !== false || data.cost_allowed !== false ||
+          data.import_id !== importId ||
+          (projectSpec?.sha256 && data.source_sha256 !== projectSpec.sha256) ||
+          data.rows.length !== expected.length ||
+          data.rows.some((row, i) => row.work_item_id !== expected[i].work_item_id ||
+            row.engineering_approved !== false || row.cost_allowed !== false)) {
+        return;
+      }
+      setEngineerHandoff(data);
+    }).catch(() => {
+      // Failure means unknown, never silently verified.
+      if (!controller.signal.aborted) setEngineerHandoff(null);
+    });
+    return () => controller.abort();
+  }, [selection, autoCandidates, projectId, importId, offset, pdfSource?.sha256, projectSpec?.sha256]);
+
   // Run automatically once per Excel import, page, source revision and catalog.
   // Never create a synthetic catalog or accept a cost decision automatically.
   useEffect(() => {
@@ -643,6 +684,20 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const countMissing = autoCandidates ? (selection?.rows.length ?? 0) - countSuggested : 0;
   const triageFor = (id: string): ReviewTriage | undefined =>
     autoCandidates?.rows.find(row => row.work_item_id === id)?.triage;
+  const evidenceProofFor = (id: string, code: string) => {
+    const candidate = autoCandidates?.rows.find(row => row.work_item_id === id);
+    const original = selection?.rows.find(row => row.work_item_id === id);
+    const linked = engineerHandoff?.rows.find(row => row.work_item_id === id);
+    if (!code || !candidate || !original || !linked ||
+        savedCandidates[id] !== code ||
+        candidate.saved_selection?.current !== true ||
+        candidate.saved_selection.code !== code ||
+        candidate.saved_selection.pdf_sha256 !== pdfSource?.sha256 ||
+        candidate.saved_selection.revision_id !== original.revision_id ||
+        linked.saved_candidate !== code ||
+        linked.status !== "documented_for_review") return null;
+    return linked;
+  };
   const queueCounts = { needs_info: 0, needs_review: 0, prechecked: 0 };
   for (const row of selection?.rows ?? []) {
     const group = triageFor(row.work_item_id)?.group ?? "needs_review";
@@ -661,14 +716,28 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     : null;
   const expandedSelectedCode = expandedRow ? (candidates[expandedRow.work_item_id] ?? "").trim() : "";
   const expandedSavedCode = expandedRow ? savedCandidates[expandedRow.work_item_id] : undefined;
-  const currentEvidenceMatch = Boolean(
+  const expandedProof = expandedRow && expandedSelectedCode ?
+    evidenceProofFor(expandedRow.work_item_id, expandedSelectedCode) : null;
+  const currentEvidenceMatch = Boolean(expandedProof || (
     expandedEvidence?.status === "found_for_review" &&
     expandedEvidence?.candidate_link_status === "current" &&
     expandedEvidence?.candidate_consistency === "matches_examined_facts" &&
     expandedEvidence?.saved_candidate &&
     expandedEvidence.saved_candidate === expandedSavedCode &&
     expandedEvidence.saved_candidate === expandedSelectedCode
-  );
+  ));
+  const remainingCandidateFlags = (option: CandidateChoice): string[] => {
+    const flags = [...option.blockers, ...option.review_flags];
+    const matching = currentEvidenceMatch &&
+      option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate);
+    if (!matching) return flags;
+    // These two flags come solely from missing attributes in the original Excel,
+    // not from any source/poz contradiction. A3.27 separately verifies both.
+    return flags.filter(flag => ![
+      "GAZBETON_STRENGTH_N_MM2_UNVERIFIED",
+      "GAZBETON_DENSITY_KG_M3_UNVERIFIED",
+    ].includes(flag));
+  };
   const expandedSuggestions = expandedRow
     ? [...suggestionsFor(expandedRow.work_item_id)].sort((a, b) =>
         Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode))
@@ -743,6 +812,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
           const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
           const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
+          const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
+            evidenceProofFor(row.work_item_id, selectedCode) : null;
             const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
             // Once the user selects a code, show that choice rather than the original
             // top lexical suggestion. A manually typed, unverified code stays unverified.
@@ -810,7 +881,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
                 {isSaved && <small className={styles.queueReason}>Teknik onay bekliyor · Maliyete aktarılmaz.</small>}
-                {rowTriage && <small className={styles.queueReason}>{rowTriage.reason}</small>}
+                {validatedEvidence ? <small className={styles.queueReason}>
+                  Şartname–poz temel özellikleri uyumlu (PDF s. {validatedEvidence.evidence_page ?? "—"}).
+                  Kapsam ve mühendis onayı bekliyor.
+                </small> : rowTriage && <small className={styles.queueReason}>{rowTriage.reason}</small>}
               </td>
               <td><button type="button" className={styles.showCandidates}
                 aria-expanded={candidateDetailId === row.work_item_id}
@@ -826,19 +900,31 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         </p>}
         {expandedRow && <div className={styles.simpleMatchDetail}>
           {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && (
-            <div className={styles.reviewReason} role="note">
-              {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
+            <div className={expandedProof ? styles.evidenceConfirmed : styles.reviewReason} role="note">
+              {expandedProof
+                ? "Excel tarifinde eksik olan temel özellikler proje şartnamesinden bulundu ve kayıtlı pozla ön karşılaştırmada uyumlu. Teknik kapsam ve mühendis onayı bekliyor."
+                : autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
               {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
                 <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
             </div>
           )}
-          <div className={styles.missingFacts} role="note">
-            <strong>Projeden doğrulanması gereken bilgiler</strong>
-            <span>{triageFor(expandedRow.work_item_id)?.missing_fields.length
-              ? triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")
-              : triageFor(expandedRow.work_item_id)?.reason ??
-                "Pozun uygulama ve fiyat kapsamı teknik belgeyle ayrıca incelenmeli."}</span>
-            <small>Metraj, şartname ve poz kapsamı karşılaştırılmadan teknik onay verilmez.</small>
+          <div className={expandedProof ? styles.evidenceConfirmed : styles.missingFacts} role="note">
+            <strong>{expandedProof ? "Şartnameden doğrulanan bilgiler" : "Projeden doğrulanması gereken bilgiler"}</strong>
+            <span>{expandedProof
+              ? Object.entries(expandedProof.evidence_facts ?? {})
+                  .filter(([, value]) => value !== null)
+                  .map(([key, value]) => `${({
+                    gazbeton_strength_n_mm2: "Gazbeton dayanımı (N/mm²)",
+                    gazbeton_density_kg_m3: "Gazbeton yoğunluğu (kg/m³)",
+                    glaze: "Seramik yüzeyi", surface: "Yüzey", rectified: "Kenar",
+                  } as Record<string, string>)[key] ?? key}: ${value}`).join(" · ")
+              : triageFor(expandedRow.work_item_id)?.missing_fields.length
+                ? triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")
+                : triageFor(expandedRow.work_item_id)?.reason ??
+                  "Pozun uygulama ve fiyat kapsamı teknik belgeyle ayrıca incelenmeli."}</span>
+            <small>{expandedProof
+              ? `Şartname PDF sayfa ${expandedProof.evidence_page ?? "—"} · Excel tarifinde bulunmayan alanlar belgeyle desteklendi. Uygulama kapsamı ve mühendis onayı bekliyor.`
+              : "Metraj, şartname ve poz kapsamı karşılaştırılmadan teknik onay verilmez."}</small>
           </div>
           {(
             <details className={styles.projectEvidence}>
@@ -945,21 +1031,21 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <span className={styles.simpleStatus + " " +
                     (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
                     {option.technical_status === "blocked" ? "Teknik uyumsuzluk" :
-                      currentEvidenceMatch && option.code === expandedEvidence?.saved_candidate
+                      currentEvidenceMatch && option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate)
                         ? "Şartname–poz ön kontrolü uyumlu · Mühendis incelemesi" :
                       option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
                       "Mühendis kontrolü gerekli"}
                   </span>
-                  {[...option.blockers, ...option.review_flags].length > 0 && (
+                  {remainingCandidateFlags(option).length > 0 && (
                     <p className={styles.issues}>
-                      {currentEvidenceMatch && option.code === expandedEvidence?.saved_candidate &&
-                        "Aşağıdaki uyarılar yalnızca özgün Excel tarifine göredir; teknik şartnameden bulunan özellikler yukarıda ayrı karşılaştırıldı. "}
-                      {[...option.blockers, ...option.review_flags].map(value => label(value)).join(" · ")}
+                      {remainingCandidateFlags(option).map(value => label(value)).join(" · ")}
                     </p>
                   )}
                   <small>PDF sayfa {option.source_page ?? "—"} ·
                     {option.source_price_verified && option.source_price ?
                       " Kaynak fiyat " + option.source_price + " TL/" + option.unit : " Fiyat doğrulanmadı"}
+                    {option.pdf_edition_date ? ` · PDF belge tarihi ${option.pdf_edition_date}` : ""}
+                    {" · Güncel fiyat dönemi ayrıca doğrulanmalı"}
                   </small>
                 </div>
                 <details>
@@ -967,6 +1053,17 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
                   {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, i) =>
                     <li key={input.code + "-" + i}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
+                  {option.price_audit?.status === "reconciled_to_pdf_with_parser_rule" && (
+                    <p className={styles.priceReconciliation}>
+                      Analiz girdileri toplamı: {option.price_audit.inputs_total} TL ·
+                      Kontrol formülünde kullanılan %{option.price_audit.reconciliation_addition_percent} ek:
+                      {" "}{option.price_audit.reconciliation_addition} TL ·
+                      Hesaplanan: {option.price_audit.calculated_price} TL ·
+                      PDF fiyatı: {option.price_audit.pdf_price} TL ·
+                      Fark: {option.price_audit.difference} TL.
+                      Bu hesap kontrolüdür; güncel resmî fiyat veya teknik onay değildir.
+                    </p>
+                  )}
                 </details>
                 <button type="button" disabled={Boolean(busy)}
                   onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>

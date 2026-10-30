@@ -76,6 +76,33 @@ def test_upload_and_direct_suggestion_are_read_only(client, auth, monkeypatch):
     assert suggested.headers["cache-control"] == "private, no-store"
 
 
+def test_a3291_suggestions_expose_source_price_audit_not_official_current_price(
+    client, auth, monkeypatch,
+):
+    from dataclasses import replace
+
+    source = replace(positions()[0], price=Decimal("125.00"))
+    monkeypatch.setattr(a318_pdf_api, "_parse", lambda *args: (source,))
+    pid, iid = setup(client, auth, "A3291 price audit")
+    assert upload(client, pid, auth).status_code == 201
+    response = client.get(
+        f"/api/projects/{pid}/a318/imports/{iid}/suggestions", headers=auth
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    candidate = next(
+        c for row in data["rows"] for c in row["suggestions"]
+        if c["code"] == source.id
+    )
+    assert candidate["pdf_edition_date"] == "1.01.2026"
+    assert candidate["price_audit"]["inputs_total"] == "100.00"
+    assert candidate["price_audit"]["reconciliation_addition"] == "25.00"
+    assert candidate["price_audit"]["calculated_price"] == "125.00"
+    assert candidate["price_audit"]["difference"] == "0.00"
+    assert data["approval_allowed"] is False
+    assert data["cost_allowed"] is False
+
+
 def test_other_organization_cannot_see_pdf_source(client, monkeypatch):
     monkeypatch.setattr(a318_pdf_api, "_parse", lambda *args: positions())
     def register(name, email):
