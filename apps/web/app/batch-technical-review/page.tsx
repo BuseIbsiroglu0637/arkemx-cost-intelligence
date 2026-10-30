@@ -1,5 +1,5 @@
-import ReviewWorkspace from "./review-workspace";
+import SimpleReviewWorkspace from "./simple-review-workspace";
 
 export default function BatchTechnicalReviewPage() {
-  return <ReviewWorkspace />;
+  return <SimpleReviewWorkspace />;
 }
