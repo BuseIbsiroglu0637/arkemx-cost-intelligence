@@ -72,6 +72,15 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const originalLines=data?.latest_revision?.source_current?
+    data.latest_revision.items : data?.source_inputs??[];
+  const essentialFields=(row:InputLine)=>[
+    trim(row.code),trim(row.description),trim(row.unit),
+    trim(row.quantity),trim(row.unit_price),
+  ];
+  const hasUnsavedChanges=Boolean(data) &&
+    JSON.stringify(lines.map(essentialFields)) !==
+    JSON.stringify(originalLines.map(essentialFields));
   const path="/api/projects/"+encodeURIComponent(projectId)+"/a330/imports/"+
     encodeURIComponent(importId)+"/items/"+encodeURIComponent(rowId);
   const pilotPath="/api/projects/"+encodeURIComponent(projectId)+"/a331/imports/"+
@@ -167,7 +176,8 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     finally{setBusy(false)}
   }
   async function savePilotDecision(action:"accept"|"reopen"){
-    if(!data||!pilot||busy||!ack||!data.latest_revision?.source_current||
+    if(!data||!pilot||busy||!ack||hasUnsavedChanges||
+      !data.latest_revision?.source_current||
       pilot.source_fingerprint!==data.source_fingerprint||
       pilot.analysis_revision_id!==data.latest_revision.id||
       (action==="accept"&&(!pilot.evidence_ready||pilot.pilot_confirmed))||
@@ -252,6 +262,9 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
             pilot.last_event && !pilot.last_event.source_current
               ? "Önceki kontrol güncel değil" : "Kontrol bekliyor"}.
         </p>
+        {hasUnsavedChanges&&<p className={styles.a330Warning}>
+          Analizde kaydedilmemiş değişiklikler var. Önce 2. adımda kaydet.
+        </p>}
         {!pilot.evidence_ready&&<p className={styles.a330Warning}>
           Önce 1. adımda şartname ile poz uyumunu doğrula.
         </p>}
@@ -270,11 +283,11 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
         </label>
         <div className={styles.a330Actions}>
           {!pilot.pilot_confirmed ? <button type="button"
-            disabled={busy||!ack||!pilot.evidence_ready||
+            disabled={busy||!ack||hasUnsavedChanges||!pilot.evidence_ready||
               !data.latest_revision?.source_current}
             onClick={()=>void savePilotDecision("accept")}>Pilot kontrolü tamamla</button> :
           <button type="button" className="secondary"
-            disabled={busy||!ack||!data.latest_revision?.source_current}
+            disabled={busy||!ack||hasUnsavedChanges||!data.latest_revision?.source_current}
             onClick={()=>void savePilotDecision("reopen")}>Kontrolü yeniden aç</button>}
         </div>
         <small>Pilot kontrol kaydı resmî mühendis imzası değildir ve maliyet hesabına otomatik izin vermez.</small>
