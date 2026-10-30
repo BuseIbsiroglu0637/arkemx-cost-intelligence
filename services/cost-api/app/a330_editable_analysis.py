@@ -41,17 +41,28 @@ NUMBER = re.compile(r"^\d{1,9}(?:[.,]\d{1,4})?$")
 class ProposedLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(min_length=2, max_length=80)
-    description: str = Field(min_length=3, max_length=250)
+    # The verified source-PDF parser can return an empty material description
+    # while still providing its code, quantity, unit, unit price and amount.
+    # Do not invent a material name or block saving a faithful source draft.
+    description: str = Field(max_length=250)
     unit: str = Field(min_length=1, max_length=30)
     quantity: str
     unit_price: str
 
-    @field_validator("code", "description", "unit")
+    @field_validator("code", "unit")
     @classmethod
     def strip_nonempty(cls, value: str) -> str:
         value = value.strip()
         if not value or any(ord(char) < 32 for char in value):
             raise ValueError("Invalid item field")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def preserve_missing_source_description(cls, value: str) -> str:
+        value = value.strip()
+        if any(ord(char) < 32 for char in value):
+            raise ValueError("Invalid description")
         return value
 
 
