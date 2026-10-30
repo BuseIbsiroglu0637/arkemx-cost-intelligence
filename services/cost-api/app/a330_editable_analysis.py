@@ -35,10 +35,10 @@ router = APIRouter(
 MONEY = Decimal("0.01")
 THICK = Decimal("0.0001")
 SOURCE_LINE_LIMIT = 30
-NUMBER = re.compile(r"^\\d{1,9}(?:[.,]\\d{1,4})?$".replace("\\\\", "\\"))
+NUMBER = re.compile(r"^\d{1,9}(?:[.,]\d{1,4})?$")
 # Thousands are valid only with an explicit comma decimal marker, avoiding
 # misreading ambiguous "1.234" as either 1.234 or 1234.
-GROUPED_NUMBER = re.compile(r"^\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,4})$".replace("\\\\", "\\"))
+GROUPED_NUMBER = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d{1,4})$")
 
 
 class ProposedLine(BaseModel):
