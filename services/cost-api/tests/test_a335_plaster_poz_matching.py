@@ -45,6 +45,7 @@ def test_stage_recognition_is_specific_and_does_not_merge_layers():
     assert plaster_stages("kaba/ince sıva imalatı") == {"kaba", "ince"}
     assert plaster_stages("kaba+ince sıva imalatı") == {"kaba", "ince"}
     assert plaster_stages("sıva katmanı kaba") == {"kaba"}
+    assert plaster_stages("20 mm kaba sıvanması") == {"kaba"}
     assert plaster_stages("kaba kumla ince sıva") == {"ince"}
     assert plaster_stages("çimento harcı") == set()
 
@@ -113,6 +114,8 @@ def test_candidate_retrieval_recovers_matching_stage_even_if_first_lexical_crowd
     assert coarse_found[0]["position_id"] == "15.999.2753"
     assert fine_found[0]["position_id"] == "15.999.2754"
     assert coarse_found[0]["position_id"] != fine_found[0]["position_id"]
+    inflected = position("15.999.2756", "20 mm çimento harcı ile kaba sıvanması")
+    assert find_pdf_candidates(coarse, [inflected])[0]["position_id"] == inflected.id
 
 
 def _setup_pdf_pair(client, auth, monkeypatch):
