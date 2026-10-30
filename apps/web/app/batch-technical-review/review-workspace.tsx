@@ -37,7 +37,13 @@ type CeramicClarification = {
   options: { code: string; label: string; source_page?: number | null }[];
   approval_allowed: false; cost_allowed: false;
 };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type ReviewTriage = {
+  group: "needs_info" | "needs_review" | "prechecked";
+  reason: string; missing_fields: string[];
+  engineering_approved: false; cost_allowed: false;
+};
+type QueueView = "attention" | "prechecked" | "all";
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -153,6 +159,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
+  const [queueView, setQueueView] = useState<QueueView>("attention");
   const [autoMessage, setAutoMessage] = useState("");
   const [rowSearch, setRowSearch] = useState("");
   const [autoFilter, setAutoFilter] = useState<"all" | "suggested" | "review" | "none">("all");
@@ -296,6 +303,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setSavedCandidates({});
       setSelected([]);
       setAutoCandidates(null);
+      setQueueView("attention");
       setCandidateDetailId(null);
       setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
     }, "pdf-upload", { method: "POST", body: form });
@@ -320,11 +328,15 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           || data.rows.some(row => {
             const original = expected.get(row.work_item_id);
             return !original || original.revision_id !== row.revision_id
-              || original.source_row !== row.source_row || row.suggestions.length > 3;
+              || original.source_row !== row.source_row || row.suggestions.length > 3
+              || !row.triage
+              || !["needs_info", "needs_review", "prechecked"].includes(row.triage.group)
+              || row.triage.engineering_approved !== false || row.triage.cost_allowed !== false;
           })
         ) throw new Error("Öneriler özgün Excel kaynağıyla uyuşmuyor.");
         setAutoCandidates(data);
-        setCandidateDetailId(null); setAutoFilter("all");
+        setCandidateDetailId(prev => prev && data.rows.some(row => row.work_item_id === prev) ? prev : null);
+        setAutoFilter("all");
         const restored = data.rows.flatMap(row => {
           const saved = row.saved_selection;
           return saved?.current && saved.code && saved.pdf_sha256 === sourceSha &&
@@ -390,6 +402,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSelected(prev => [...new Set([...prev, id])]);
         setSaveNotice(`${targetCode} inceleme için kaydedildi. Mühendis onayı verilmedi.`);
+        automaticRunKeyRef.current = ""; // Read current triage from the server after saving.
       }, "candidate-save", {
         method: "POST", body: JSON.stringify({
           position_code: targetCode, expected_revision_id: item.revision_id,
@@ -517,6 +530,18 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     autoCandidates?.rows.find(item => item.work_item_id === id)?.suggestions ?? [];
   const countSuggested = selection?.rows.filter(row => suggestionsFor(row.work_item_id).some(item => item.technical_status !== 'blocked')).length ?? 0;
   const countMissing = autoCandidates ? (selection?.rows.length ?? 0) - countSuggested : 0;
+  const triageFor = (id: string): ReviewTriage | undefined =>
+    autoCandidates?.rows.find(row => row.work_item_id === id)?.triage;
+  const queueCounts = { needs_info: 0, needs_review: 0, prechecked: 0 };
+  for (const row of selection?.rows ?? []) {
+    const group = triageFor(row.work_item_id)?.group ?? "needs_review";
+    queueCounts[group] += 1;
+  }
+  const visibleQueueRows = selection?.rows.filter(row => {
+    const group = triageFor(row.work_item_id)?.group ?? "needs_review";
+    return queueView === "all" ||
+      (queueView === "prechecked" ? group === "prechecked" : group !== "prechecked");
+  }) ?? [];
   const expandedRow = selection?.rows.find(row => row.work_item_id === candidateDetailId);
   const expandedClarification = expandedRow
     ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.clarification
@@ -643,14 +668,42 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             onClick={() => { automaticRunKeyRef.current = ""; findAutomaticCandidates(); }}>Yeniden dene</button>}
         </div>}
 
+        {autoCandidates && <section className={styles.reviewQueue} aria-label="Teknik kontrol özeti">
+          <div className={styles.queueHeading}>
+            <div><h3>Teknik kontrol listesi</h3>
+              <p>Eksik bilgiler ve kontrol bekleyen işler bir arada. Ön kontrol, mühendis onayı değildir.</p></div>
+            <small>Bu sayfada {selection.rows.length} imalat</small>
+          </div>
+          <div className={styles.queueFilters} role="group" aria-label="Satır durumunu filtrele">
+            <button type="button" aria-pressed={queueView === "attention"}
+              onClick={() => { setQueueView("attention"); setCandidateDetailId(null); }}>
+              <strong>{queueCounts.needs_info + queueCounts.needs_review}</strong>
+              <span>Kontrol bekleyen</span>
+              <small>{queueCounts.needs_info} eksik bilgi · {queueCounts.needs_review} diğer kontrol</small>
+            </button>
+            <button type="button" aria-pressed={queueView === "prechecked"}
+              onClick={() => { setQueueView("prechecked"); setCandidateDetailId(null); }}>
+              <strong>{queueCounts.prechecked}</strong>
+              <span>Ön kontrol tamam</span>
+              <small>Henüz teknik onay değil</small>
+            </button>
+            <button type="button" aria-pressed={queueView === "all"}
+              onClick={() => { setQueueView("all"); setCandidateDetailId(null); }}>
+              <strong>{selection.rows.length}</strong>
+              <span>Tüm imalatlar</span>
+              <small>Kaynak Excel satırları</small>
+            </button>
+          </div>
+        </section>}
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
             <th scope="col">İmalat</th><th scope="col">Bulunan poz</th><th scope="col">Durum</th><th scope="col">İşlem</th>
           </tr></thead>
-          <tbody>{selection.rows.map(row => {
+          <tbody>{visibleQueueRows.map(row => {
             const proposed = suggestionsFor(row.work_item_id);
             const reviewRow = autoCandidates?.rows.find(item => item.work_item_id === row.work_item_id);
+            const rowTriage = reviewRow?.triage;
             const paired = Boolean(reviewRow?.related_excel_rows?.length);
             const needsCeramicChoice = Boolean(reviewRow?.clarification && !savedCandidates[row.work_item_id]);
             const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
@@ -708,7 +761,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   blocked ? styles.simpleStatusBlocked :
                   missing || needsReview ? styles.simpleStatusReview :
                   top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
-                  {blocked ? "Teknik uyumsuzluk" :
+                  {rowTriage?.group === "prechecked" ? "Ön kontrol tamam" :
+                    rowTriage?.group === "needs_info" ? "Bilgi eksik" :
+                    blocked ? "Teknik uyumsuzluk" :
                     manuallyEntered ? "Poz doğrulanmalı" :
                     paired ? "Birleşik iş kontrolü" :
                     shared ? "Çift fiyatlama riski" :
@@ -718,6 +773,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     needsReview ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
+                {rowTriage && <small className={styles.queueReason}>{rowTriage.reason}</small>}
               </td>
               <td><button type="button" className={styles.showCandidates}
                 aria-expanded={candidateDetailId === row.work_item_id}
@@ -727,12 +783,23 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             </tr>;
           })}</tbody>
         </table></div>
+        {autoCandidates && visibleQueueRows.length === 0 && <p className={styles.queueEmpty}>
+          {queueView === "prechecked" ? "Henüz ön kontrolü tamamlanmış poz yok. Bu, teknik uygunluk onayı verilmediği anlamına gelmez; eksik bilgiler incelenmeli." :
+            "Bu bölümde gösterilecek imalat yok."}
+        </p>}
         {expandedRow && <div className={styles.simpleMatchDetail}>
           {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && (
             <div className={styles.reviewReason} role="note">
               {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
               {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
                 <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
+            </div>
+          )}
+          {triageFor(expandedRow.work_item_id)?.group === "needs_info" && (
+            <div className={styles.missingFacts} role="note">
+              <strong>Projeden doğrulanması gereken bilgiler</strong>
+              <span>{triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")}</span>
+              <small>Bu bilgiler metraj tarifinde yoksa mimari/teknik şartnameye bak. Poz seçmek eksik bilgiyi otomatik doğrulamaz.</small>
             </div>
           )}
           <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
