@@ -249,8 +249,9 @@ def issue_summary(description: str, suggestions: list[dict],
     if plaster_partner_rows:
         if not suggestions:
             return (
-                "Kaba ve ince sıva için ayrı, uyumlu poz bulunamadı; birleşik "
-                "poz iki ayrı satıra uygulanamaz. PDF tarifini kontrol et."
+                "Kaba ve ince sıva yapımı için uygun ayrı poz bulunamadı. "
+                "Söküm veya birleşik poz iki ayrı imalata uygulanamaz. "
+                "PDF tarifini kontrol et."
             )
         return (
             "Kaba ve ince sıva ayrı katmanlardır; birleşik poz varsa "
