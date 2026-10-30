@@ -86,13 +86,26 @@ def _fact(name, excel, position, spec_rows, expected):
     }
 
 
+def _single_thickness(value):
+    # matching.dimensions returns a set of observed millimetres, not a scalar.
+    # Never choose one thickness from multiple conflicting measurements.
+    if not value:
+        return None
+    if isinstance(value, (set, list, tuple)):
+        if len(value) != 1:
+            return None
+        value = next(iter(value))
+    number = float(value)
+    return int(number) if number.is_integer() else number
+
+
 def compare_plaster_sources(description, position, blocks):
     stages = plaster_stages(description)
     if len(stages) != 1:
         return []
     stage = next(iter(stages))
-    source_thickness = dimensions(description)[1]
-    pdf_thickness = dimensions(position.description)[1]
+    source_thickness = _single_thickness(dimensions(description)[1])
+    pdf_thickness = _single_thickness(dimensions(position.description)[1])
     thickness_records, dosage_records = _spec_facts(description, blocks)
     title_doses = plaster_dosages(position.description)
     scope_doses = plaster_dosages(position.scope or "")
