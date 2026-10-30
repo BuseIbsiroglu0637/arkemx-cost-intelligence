@@ -28,6 +28,7 @@ from .a320_smart_matching import (
 )
 from .database import get_db
 from .m2 import tenant_project
+from .matching import family
 from .models import ImportBatch, PdfCandidateSelection, User, WorkItem, now_utc
 from .revisions import effective_item
 from .security import current_user
@@ -45,13 +46,31 @@ class SavePdfCandidateRequest(BaseModel):
     expected_pdf_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+def _technical_status(current, position: PdfPosition) -> str:
+    check = compare(
+        current.raw_description, current.normalized_unit,
+        position.description, position.unit,
+        quantity_known=current.quantity is not None,
+        review_required=current.review_required,
+    )
+    return enrich_technical(
+        current.raw_description, position.description, check,
+    )["status"]
+
+
 def _selected_view(row: PdfCandidateSelection, *, current_revision: str | None,
-                   current_pdf_sha: str) -> dict:
-    valid = row.revision_id == current_revision and row.pdf_sha256 == current_pdf_sha
+                   current_pdf_sha: str, technically_blocked: bool = False) -> dict:
+    valid = (
+        row.revision_id == current_revision
+        and row.pdf_sha256 == current_pdf_sha
+        and not technically_blocked
+    )
     return {
         "code": row.position_code if valid else None,
         "current": valid,
         "stale": not valid,
+        "stale_reason": "TECHNICAL_CONFLICT" if technically_blocked else
+            "SOURCE_OR_REVISION_CHANGED" if not valid else None,
         "revision_id": row.revision_id if valid else None,
         "pdf_sha256": row.pdf_sha256 if valid else None,
         "saved_at": row.saved_at.isoformat() if valid else None,
@@ -86,8 +105,17 @@ def save_pdf_candidate(
     if current.revision_id != (str(payload.expected_revision_id) if payload.expected_revision_id else None):
         raise HTTPException(409, "Metraj revision changed; refresh before saving", headers=NO_STORE)
     # Never save an invented/unsupported poz: the code must be in this exact uploaded PDF.
-    if payload.position_code not in {position.id for position in positions}:
+    by_code = {position.id: position for position in positions}
+    position = by_code.get(payload.position_code)
+    if position is None:
         raise HTTPException(422, "Poz code is not present in this PDF source", headers=NO_STORE)
+    if _technical_status(current, position) == "blocked" or (
+        family(current.raw_description) == "seramik" and family(position.description) != "seramik"
+    ):
+        raise HTTPException(
+            422, "Candidate contradicts the metraj material or technical properties",
+            headers=NO_STORE,
+        )
 
     existing = db.scalar(select(PdfCandidateSelection).where(
         PdfCandidateSelection.organization_id == user.organization_id,
@@ -279,8 +307,20 @@ def suggestions_from_pdf(
             "work_item_id": current.id, "source_row": current.source_row,
             "revision_id": current.revision_id, "suggestions": scored,
             "saved_selection": (
-                _selected_view(saved[str(current.id)], current_revision=current.revision_id, current_pdf_sha=digest)
-                if str(current.id) in saved else None
+                _selected_view(
+                    saved[str(current.id)],
+                    current_revision=current.revision_id,
+                    current_pdf_sha=digest,
+                    technically_blocked=(
+                        saved[str(current.id)].position_code not in by_code or
+                        _technical_status(
+                            current, by_code[saved[str(current.id)].position_code],
+                        ) == "blocked" or
+                        (family(current.raw_description) == "seramik" and
+                         family(by_code[saved[str(current.id)].position_code].description) != "seramik"
+                         if saved[str(current.id)].position_code in by_code else True)
+                    ),
+                ) if str(current.id) in saved else None
             ),
             "related_excel_rows": partners,
             "review_summary": issue_summary(current.raw_description, scored, partners),
