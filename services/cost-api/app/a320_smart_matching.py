@@ -39,6 +39,21 @@ def _is_plaster(value: str, layer: str) -> bool:
     return bool(PLASTER.search(text)) and bool(re.search(rf"\b{layer}\b", text))
 
 
+def _known_location(value: str) -> tuple[str | None, str | None]:
+    text = _text(value)
+    zone = ("dis" if "dis cephe" in text else
+            "ic" if "ic cephe" in text else None)
+    surface = ("tavan" if "tavan" in text else
+               "zemin" if "zemin" in text else
+               "duvar" if "duvar" in text else None)
+    return zone, surface
+
+
+def _locations_conflict(left: str, right: str) -> bool:
+    return any(a is not None and b is not None and a != b for a, b in
+               zip(_known_location(left), _known_location(right)))
+
+
 def potential_plaster_pairs(items) -> dict[str, list[int]]:
     """Equal quantities identify a *review hint*, never verified common area.
 
@@ -58,13 +73,17 @@ def potential_plaster_pairs(items) -> dict[str, list[int]]:
         if layer != "kaba":
             continue
         opposite = buckets.get(("ince", quantity, unit), [])
-        if not opposite:
-            continue
         for item in group:
-            pairs[str(item.id)] = sorted({int(other.source_row) for other in opposite})
-        for item in opposite:
-            pairs[str(item.id)] = sorted({int(other.source_row) for other in group})
-    return pairs
+            valid_opposite = [
+                other for other in opposite
+                if not _locations_conflict(item.raw_description, other.raw_description)
+            ]
+            if not valid_opposite:
+                continue
+            pairs[str(item.id)] = sorted({int(other.source_row) for other in valid_opposite})
+            for other in valid_opposite:
+                pairs.setdefault(str(other.id), []).append(int(item.source_row))
+    return {item_id: sorted(set(rows)) for item_id, rows in pairs.items()}
 
 
 def find_pdf_candidates(item, positions) -> list[dict]:
