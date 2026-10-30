@@ -301,3 +301,18 @@
 .chosenCandidateNotice strong {color:#12449b}
 .chosenCandidateNotice small {display:block;margin-top:4px;color:#8d5516}
 .simpleMatchPosition em {font-weight:700}
+
+
+/* A3.24: one short, evidence-grounded ceramic clarification in row details. */
+.simpleCeramicQuestion {display:grid;gap:9px;padding:14px 16px;border-radius:11px;border:1px solid #ccdbf4;background:#f4f8ff}
+.simpleCeramicQuestion > strong {font-size:14px;color:#173c79}
+.simpleCeramicQuestion > p {font-size:12px;line-height:1.5;margin:0;color:#5c6d83}
+.simpleCeramicQuestion > small {font-size:11px;color:#8d561d}
+.simpleCeramicChoices {display:flex;gap:9px;flex-wrap:wrap}
+.simpleCeramicChoices button {display:flex;flex:1 1 170px;align-items:flex-start;flex-direction:column;gap:4px;border-radius:9px;padding:11px 12px;background:white;color:#244b80;text-align:left;border:1px solid #bdcfea;min-width:150px}
+.simpleCeramicChoices button:hover {border-color:#3168d3;background:#f9fcff}
+.simpleCeramicChoices button[aria-pressed="true"] {border:2px solid #2f68c9;background:#ebf3ff}
+.simpleCeramicChoices button span {font-size:12px;font-weight:700}
+.simpleCeramicChoices button small {font-size:11px;color:#607594}
+.simpleCeramicChoices button em {font-size:11px;color:#28734f;font-weight:700;font-style:normal}
+@media(max-width:650px){.simpleCeramicChoices {display:grid;grid-template-columns:1fr}.simpleCeramicChoices button{width:100%}}
