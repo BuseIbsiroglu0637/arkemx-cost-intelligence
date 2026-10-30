@@ -331,7 +331,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               || original.source_row !== row.source_row || row.suggestions.length > 3
               || !row.triage
               || !["needs_info", "needs_review", "prechecked"].includes(row.triage.group)
-              || row.triage.engineering_approved !== false || row.triage.cost_allowed !== false;
+              || row.triage.engineering_approved !== false || row.triage.cost_allowed !== false
+              || (row.triage.group === "prechecked" && !row.saved_selection?.current);
           })
         ) throw new Error("Öneriler özgün Excel kaynağıyla uyuşmuyor.");
         setAutoCandidates(data);
@@ -759,6 +760,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <td>
                 <span className={`${styles.simpleStatus} ${
                   blocked ? styles.simpleStatusBlocked :
+                  rowTriage?.group === "prechecked" ? styles.simpleStatusSuggested :
+                  rowTriage ? styles.simpleStatusReview :
                   missing || needsReview ? styles.simpleStatusReview :
                   top ? styles.simpleStatusSuggested : styles.simpleStatusPending}`}>
                   {rowTriage?.group === "prechecked" ? "Ön kontrol tamam" :
@@ -770,7 +773,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     missing ? "İnceleme gerekli" :
                     gasbetonDetailsMissing ? "Teknik bilgi eksik" :
                     needsCeramicChoice ? "Seramik türü sorulmalı" :
-                    needsReview ? "Kontrol gerekli" :
+                    needsReview || rowTriage?.group === "needs_review" ? "Kontrol gerekli" :
                     visibleCandidate ? "Aday bulundu · onay bekliyor" : "Taranıyor"}
                 </span>
                 {rowTriage && <small className={styles.queueReason}>{rowTriage.reason}</small>}
