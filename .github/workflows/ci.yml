@@ -18,7 +18,7 @@ jobs:
           cache: pip
           cache-dependency-path: services/cost-api/pyproject.toml
       - run: python -m pip install -e '.[test]'
-      - run: python -m pytest -q tests/test_a318_pdf_api.py tests/test_a319_gazbeton_safety.py tests/test_a320_smart_matching.py tests/test_a321_candidate_selections.py tests/test_a322_material_safety.py tests/test_a323_ceramic_joint_spacing.py tests/test_a324_ceramic_clarification.py tests/test_a325_review_queue.py tests/test_a326_project_evidence.py tests/test_a327_engineer_handoff.py tests/test_a327_decisions.py tests/test_a327_additional_evidence.py tests/test_a3291_price_audit.py tests/test_a330_editable_engineering.py tests/test_a331_pilot_review.py tests/test_a335_plaster_poz_matching.py tests/test_a337_plaster_operations.py tests/test_a338_plaster_evidence.py tests/test_a3391_unified_plaster_evidence.py
+      - run: python -m pytest -q tests/test_a318_pdf_api.py tests/test_a319_gazbeton_safety.py tests/test_a320_smart_matching.py tests/test_a321_candidate_selections.py tests/test_a322_material_safety.py tests/test_a323_ceramic_joint_spacing.py tests/test_a324_ceramic_clarification.py tests/test_a325_review_queue.py tests/test_a326_project_evidence.py tests/test_a327_engineer_handoff.py tests/test_a327_decisions.py tests/test_a327_additional_evidence.py tests/test_a3291_price_audit.py tests/test_a330_editable_engineering.py tests/test_a331_pilot_review.py tests/test_a335_plaster_poz_matching.py tests/test_a337_plaster_operations.py tests/test_a338_plaster_evidence.py tests/test_a3391_unified_plaster_evidence.py tests/test_a340_plaster_editable_pilot.py
       - run: DATABASE_URL=sqlite:///./migration-ci.db python -m alembic upgrade head
       - run: python -m pytest -q
   web:
