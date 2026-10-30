@@ -191,7 +191,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           if (currentProject) rememberImport(token, currentProject, null);
           setImportId(""); setSelection(null);
         }
-        const messages: Record<number, string> = {
+        const messages: Record<number, string> = task === "pdf-upload" ? {
+          403: "PDF için gerekli işleme izni ve yönetici yetkisi doğrulanmalı.",
+          413: "PDF dosyası 16 MB sınırını aşıyor.",
+          422: "PDF dosyası okunamadı veya 2026 analiz yapısı doğrulanamadı.",
+          409: "PDF kaynak klasöründe güvenlik kontrolü başarısız.",
+        } : {
           403: "Bu işlem için erişim izni bulunmuyor.", 404: "Proje, aktarım veya seçilen satır bulunamadı.",
           409: task === "save" ? "Önizleme veya kaynak değişmiş olabilir. Güncel teknik incelemeyi yeniden çalıştırıp kaydet." : task === "archive" ? "Kayıt bütünlüğü doğrulanamadı; eski sonuç gösterilmedi." : "Revizyon değişmiş veya aktarım incelemeye kapatılmış olabilir. Satırları yeniden yükle.",
           422: "Seçimi kontrol et. Bir incelemede 1–20 farklı satır ve geçerli aday kodları kullanılmalı.",
