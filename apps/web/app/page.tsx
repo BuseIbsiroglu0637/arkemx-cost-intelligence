@@ -11,7 +11,6 @@ import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 import MatchPanel from "./match-panel";
 import ReviewWorkspace from "./batch-technical-review/review-workspace";
 
-import CorrectionPanel from "./correction-panel";
 
 import CatalogPanel from "./catalog-panel";
 
@@ -23,7 +22,6 @@ import BulkPanel from "./bulk-panel";
 
 import CostPanel from "./cost-panel";
 
-import RevisedMetrajPanel from "./revised-metraj-panel";
 
 type Project = {id: string; name: string; created_at: string};
 
@@ -101,7 +99,6 @@ export default function Home() {
 
   const [showAllItems,setShowAllItems] = useState(false);
 
-  const [showRevisions,setShowRevisions] = useState(false);
 
   const [summaryRefresh,setSummaryRefresh] = useState(0);
 
@@ -216,7 +213,7 @@ export default function Home() {
 
     const p = await request<Project>("/api/projects",token,"POST",{name:projectName});
 
-    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("metraj");setShowRevisions(false);setMessage("Proje oluşturuldu.");
+    await loadProjects(token);await chooseProject(p.id);setProjectName("");setTab("metraj");setMessage("Proje oluşturuldu.");
 
   }catch(e){handleError(e);}finally{setBusy(false);}}
 
@@ -236,7 +233,7 @@ export default function Home() {
       clearWorkspace();
       setProject(""); setItems([]); setPreview(null); setInspection(null);
       setFile(null); setActiveExcel(""); setReviewOpened(false);
-      setDeleteConfirmName(""); setShowRevisions(false);
+      setDeleteConfirmName("");
       setProjects(await request<Project[]>("/api/projects", token));
       setTab("metraj");
       setMessage(result.cleanup_pending
@@ -251,7 +248,7 @@ export default function Home() {
     if (token) rememberProject(token, id);
     setReviewOpened(false); setDeleteConfirmName("");
     setProject(id); setInspection(null); setPreview(null); setFile(null); setItems([]);
-    setShowAllItems(false); setShowRevisions(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
+    setShowAllItems(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
     if (!token || !id) return;
     try {
       const rows = await request<Row[]>(`/api/projects/${id}/items`, token);
@@ -669,31 +666,7 @@ export default function Home() {
            <p className="hint">İlk 30 satır gösteriliyor. Tüm satırlar kaydetme sırasında yeniden doğrulanır.</p>
          </section>}
 
-         <details className={metrajStyle.advanced}>
-           <summary><span>⚙ &nbsp; Gelişmiş işlemler</span><small>Revizyonlar · Düzeltme geçmişi · Katalog ve PDF kaynakları</small></summary>
-           <div className={metrajStyle.advancedBody}>
-             <div className={metrajStyle.advancedLinks}>
-               <button type="button" className="secondary" onClick={() => goTo("overview")}>Proje özeti</button>
-               <button type="button" className="secondary" onClick={() => goTo("catalog")}>Katalog ve PDF kaynakları</button>
-             </div>
-             <RevisedMetrajPanel token={token} project={project}
-               onApplied={async () => {
-                 if (token) setItems(await request<Row[]>(`/api/projects/${project}/items`, token));
-                 setRevisionTick(v => v + 1); setSummaryRefresh(v => v + 1);
-               }}/>
-             <section className="workspace-collapsible">
-               <button type="button" className="secondary" aria-expanded={showRevisions} onClick={() => setShowRevisions(v => !v)}>
-                 {showRevisions ? "Düzeltme geçmişini kapat" : "Metraj düzeltme ve revizyon geçmişini aç"}
-               </button>
-               {showRevisions && <CorrectionPanel token={token} project={project} refreshKey={revisionTick} onChange={() => setRevisionTick(v => v + 1)}/>}
-             </section>
-             <div className={metrajStyle.jobNote}>
-               <span>En yeni toplu iş: <strong>{jobStatusText}</strong></span>
-               <span>İşlenen satır: <strong>{jobSummary ? `${jobSummary.processed_rows}/${jobSummary.total_rows}` : "—"}</strong></span>
-               <button type="button" className="secondary" onClick={() => setSummaryRefresh(v => v + 1)}>Durumu yenile</button>
-             </div>
-           </div>
-         </details>
+
        </div>:
 
        tab==="catalog"?<div className="stack"><section className="card stack"><h2>Kaynaklar</h2><p>Poz adaylarını bulmak için kullanılan katalogları yönet. Katalogda bulunmak, kanıtlı teknik inceleme desteği anlamına gelmez.</p><details><summary>PDF katalog araçları</summary><Link href="/catalog-analysis">PDF kataloğunu incele →</Link></details><p className="hint">Doğrulanmış analiz PDF’sinin belge kimliği ve fiyat tarihi, teknik inceleme sonucundaki kaynak kanıtında gösterilir.</p></section><CatalogPanel token={token} project={project} onMatch={()=>setRevisionTick(v=>v+1)}/></div>:
