@@ -353,3 +353,8 @@ app.include_router(a317_suggestions_router)
 # A3.18 direct local analysis-PDF source (no synthetic catalog or automatic approval).
 from .a318_pdf_api import router as a318_pdf_router
 app.include_router(a318_pdf_router)
+
+# A3.26 project technical specification evidence (local-only, not engineering approval).
+from .a326_project_evidence import router as a326_project_evidence_router
+app.include_router(a326_project_evidence_router)
+
