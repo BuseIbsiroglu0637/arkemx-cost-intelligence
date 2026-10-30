@@ -343,7 +343,7 @@ export default function Home() {
 
     <main className="page workspace-page">
 
-      {tab !== "metraj" && <section className="workspace-context card" aria-label="Proje seçimi ve çalışma özeti">
+      {tab !== "metraj" && tab !== "technical" && <section className="workspace-context card" aria-label="Proje seçimi ve çalışma özeti">
 
         <div className="workspace-project">
 
