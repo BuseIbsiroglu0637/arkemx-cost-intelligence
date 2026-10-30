@@ -125,7 +125,7 @@ def plaster_source_comparison(
     response: Response,
     user: Annotated[User, Depends(current_user)],
     db: Annotated[Session, Depends(get_db)],
-    position_code: Annotated[str, Query(pattern=r"^15\\.\\d{3}\\.\\d{4}$")],
+    position_code: Annotated[str, Query(pattern=r"^15\.\d{3}\.\d{4}$")],
 ):
     batch = _source(db, user, str(project_id), str(import_id))
     item = db.scalar(select(WorkItem).where(
