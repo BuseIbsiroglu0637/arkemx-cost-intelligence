@@ -456,13 +456,52 @@ export default function Home() {
           </button>
         </nav>
       </>}
-      {tab !== "metraj" && project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Metraj yükleyin veya Pozları incele adımından Excel seçin."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
-      {tab !== "metraj" && <WorkflowNav active={activeSection} onSelect={goTo} />}
-      {tab !== "metraj" && <details className="card"><summary>Proje özeti ve kaynak yönetimi</summary>
+      {tab === "technical" && <>
+        <section className={metrajStyle.hero} aria-label="Poz inceleme çalışma alanı">
+          <div>
+            <span className={metrajStyle.kicker}>ÇALIŞMA ALANI / METRAJ / POZ İNCELEME</span>
+            <h1>Poz inceleme</h1>
+            <p>Excel metrajın için poz adaylarını otomatik bul, teknik farkları kontrol et.</p>
+          </div>
+          <div className={metrajStyle.projectActions}>
+            <label className={metrajStyle.projectSelect}>
+              <span>Aktif proje</span>
+              <select aria-label="Aktif proje seç" value={project} onChange={e => chooseProject(e.target.value)}>
+                <option value="">Proje seçin</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <details className={metrajStyle.newProject}>
+              <summary>+ Yeni proje</summary>
+              <form className="stack" onSubmit={createProject}>
+                <label>Proje adı<input required minLength={2} value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Yeni proje adı" /></label>
+                <button type="submit" disabled={busy}>Proje oluştur</button>
+              </form>
+            </details>
+          </div>
+        </section>
+        <nav className={metrajStyle.steps} aria-label="Çalışma aşamaları">
+          <button type="button" onClick={() => goTo("metraj")}>
+            <span className={metrajStyle.stepNumber}>1</span>
+            <span><strong>Metraj</strong><small>Excel ve kayıtlar</small></span>
+          </button>
+          <button type="button" className={metrajStyle.stepActive} aria-current="step">
+            <span className={metrajStyle.stepNumber}>2</span>
+            <span><strong>Poz inceleme</strong><small>Adaylar ve kanıtlar</small></span>
+          </button>
+          <button type="button" disabled={!project} onClick={() => goTo("cost")}>
+            <span className={metrajStyle.stepNumber}>3</span>
+            <span><strong>Maliyet</strong><small>Taslak ve farklar</small></span>
+          </button>
+        </nav>
+      </>}
+      {tab !== "metraj" && tab !== "technical" && project && <div className={workflow.context} aria-label="Aktif çalışma kaynağı"><span><strong>Proje:</strong> {projects.find(item => item.id === project)?.name}</span><span><strong>Excel / çalışma sayfası:</strong> {activeExcel || "Metraj yükleyin veya Pozları incele adımından Excel seçin."}</span><span>Satır revizyonu teknik inceleme kanıtında gösterilir.</span></div>}
+      {tab !== "metraj" && tab !== "technical" && <WorkflowNav active={activeSection} onSelect={goTo} />}
+      {tab !== "metraj" && tab !== "technical" && <details className="card"><summary>Proje özeti ve kaynak yönetimi</summary>
         <div className="flex"><button type="button" className="secondary" onClick={() => goTo("overview")}>Proje özeti</button>
         <button type="button" className="secondary" onClick={() => goTo("catalog")}>Katalog ve PDF kaynakları</button></div>
       </details>}
-      {tab !== "metraj" && <div className={workflow.steps}>Metraj → Pozları incele → Maliyet. Teknik farklar ve kaynak kanıtları satırın ayrıntısında gösterilir.</div>}
+      {tab !== "metraj" && tab !== "technical" && <div className={workflow.steps}>Metraj → Pozları incele → Maliyet. Teknik farklar ve kaynak kanıtları satırın ayrıntısında gösterilir.</div>}
       <div className="workspace-main" id="workspace-main" aria-label={sectionTitles[activeSection]}>
       {(tab === "bulk" || tab === "review") && <div className="card stack">
         <button type="button" className="secondary" onClick={() => goTo("technical")}>← Teknik inceleme seçeneklerine dön</button>
@@ -473,7 +512,7 @@ export default function Home() {
       {project && (reviewOpened || tab === "technical") && <section hidden={tab !== "technical"} style={{display: tab === "technical" ? "block" : "none"}} aria-label="Poz inceleme çalışma alanı">
         <ReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
           onImportSelected={setActiveExcel} onSessionExpired={logout} />
-        <details className="card"><summary>Katalogdan aday üretme ve mühendis kararı</summary>
+        <details className="card"><summary>Gelişmiş işlemler · Katalogdan aday üretme ve mühendis kararı</summary>
           <p>PDF karşılaştırması onay vermez. Mevcut katalog taraması ve mühendis kararları bu proje altında sürdürülür; teknik engeller aynen uygulanır.</p>
           <BulkPanel token={token} project={project} onCompleted={() => setSummaryRefresh(v => v + 1)} />
           <EngineerReviewPanel token={token} project={project} refreshKey={summaryRefresh} onGoToBulk={() => goTo("bulk")} />
