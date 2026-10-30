@@ -261,24 +261,36 @@ def find_project_evidence(
     # Compare only against a currently saved selection and same PDF source.
     selection = db.scalar(select(PdfCandidateSelection).where(
         PdfCandidateSelection.work_item_id == item.id,
+        PdfCandidateSelection.import_id == batch.id,
         PdfCandidateSelection.organization_id == user.organization_id,
         PdfCandidateSelection.project_id == batch.project_id,
     ))
     comparison = "unverified"
     saved_code = None
-    pdf = read_analysis_pdf(user)
-    if selection and pdf and selection.pdf_sha256 == pdf[0] and (
-        selection.revision_id == current.revision_id
-    ):
-        pos = next((x for x in pdf[1] if x.id == selection.position_code), None)
-        if pos:
-            saved_code = pos.id
-            comparison = _position_consistency(matches, pos.description)
+    link_status = "no_saved_candidate"
+    if selection:
+        pdf = read_analysis_pdf(user)
+        if not pdf:
+            link_status = "analysis_pdf_missing"
+        elif selection.pdf_sha256 != pdf[0] or (
+            selection.revision_id != current.revision_id
+        ):
+            link_status = "source_or_revision_changed"
+        else:
+            pos = next((x for x in pdf[1] if x.id == selection.position_code), None)
+            if pos is None:
+                link_status = "candidate_not_in_pdf"
+            else:
+                saved_code = pos.id
+                link_status = "current"
+                if status == "found_for_review":
+                    comparison = _position_consistency(matches, pos.description)
     return {
         "status": status, "document": _metadata(_file_path(user, project_id), raw, pages),
         "source_sha256": digest, "source_row": item.source_row,
         "revision_id": current.revision_id,
         "saved_candidate": saved_code, "candidate_consistency": comparison,
+        "candidate_link_status": link_status,
         "evidence": matches[:MAX_MATCH_BLOCKS],
         "additional_evidence_count": max(0, len(matches) - MAX_MATCH_BLOCKS),
         "engineering_approved": False,
