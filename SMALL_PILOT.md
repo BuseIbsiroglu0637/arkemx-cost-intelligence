@@ -81,3 +81,17 @@ Bu testler, gerçek piyasa fiyatı veya genel poz eşleştirme doğruluğu kanı
 
 Bu yerel pilotun PostgreSQL üretim kurulumu, çok kullanıcılı yükü ve tüm resmî
 katalogla doğruluğu ayrıca kabul edilmelidir.
+
+## Windows EXE
+
+`scripts/desktop_pilot.py`, dışarıya açılmayan tek bir yerel API ve paketlenmiş
+statik arayüzle çalışır. Python veya Node.js kurulumu istemeyen EXE üretmek için
+Windows üzerinde API'nin kilitli ortamına `requirements-desktop-build.txt`
+paketlerini kurup `python scripts/build_desktop.py` çalıştırılır.
+Arayüz için `ARKEMX_DESKTOP_BUILD=1` kullanılır; normal web derlemesi değişmez.
+EXE varsayılan olarak yalnız `127.0.0.1:18020` adresini dinler.
+
+Veri ve oturum anahtarı, EXE'nin yanındaki `ARKEMX-verileri` klasöründe saklanır;
+tek dosyanın geçici açılma klasörüne yazılmaz. Açılışta mevcut SQLite için yedek
+alınır ve migration uygulanır. Önceki geliştirme verileri otomatik taşınmaz.
+Kontrol penceresindeki Kapat düğmesi yerel sunucuyu da durdurur.

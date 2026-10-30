@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 .venv-pilot/
 .pilot-logs/
+.next-desktop/
 *.egg-info/
 # Secrets and local storage
 .env
