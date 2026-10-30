@@ -126,8 +126,6 @@ def _block_matches(description: str, blocks: list[tuple[int, str]]) -> list[dict
             return []
         matches.append({"page": page, "quote": text[:320],
                         "facts": facts})
-        if len(matches) >= MAX_MATCH_BLOCKS:
-            break
     return matches
 
 
@@ -254,7 +252,7 @@ def find_project_evidence(
         raise HTTPException(422, "Project PDF can no longer be read")
     current = effective_item(db, item)
     matches = _block_matches(current.raw_description, blocks)
-    status = _evidence_status(matches)
+    status = "unreadable_text" if not blocks else _evidence_status(matches)
     # Compare only against a currently saved selection and same PDF source.
     selection = db.scalar(select(PdfCandidateSelection).where(
         PdfCandidateSelection.work_item_id == item.id,
@@ -276,6 +274,8 @@ def find_project_evidence(
         "source_sha256": digest, "source_row": item.source_row,
         "revision_id": current.revision_id,
         "saved_candidate": saved_code, "candidate_consistency": comparison,
-        "evidence": matches, "engineering_approved": False,
+        "evidence": matches[:MAX_MATCH_BLOCKS],
+        "additional_evidence_count": max(0, len(matches) - MAX_MATCH_BLOCKS),
+        "engineering_approved": False,
         "cost_allowed": False,
     }
