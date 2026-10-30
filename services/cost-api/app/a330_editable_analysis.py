@@ -58,7 +58,7 @@ class ProposedLine(BaseModel):
 class SaveProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     items: list[ProposedLine] = Field(min_length=1, max_length=SOURCE_LINE_LIMIT)
-    reason: str = Field(min_length=10, max_length=1000)
+    reason: str = Field(default="", max_length=1000)
     expected_source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_previous_revision_id: UUID | None
     request_key: UUID
@@ -66,16 +66,13 @@ class SaveProposal(BaseModel):
     @field_validator("reason")
     @classmethod
     def strip_reason(cls, text: str) -> str:
-        text = text.strip()
-        if len(text) < 10:
-            raise ValueError("Revision rationale must be ten characters or more")
-        return text
+        return text.strip()
 
 
 class SignoffRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["approve", "reject"]
-    reason: str = Field(min_length=20, max_length=1000)
+    reason: str = Field(default="", max_length=1000)
     expected_source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_analysis_revision_id: UUID
     expected_previous_signoff_id: UUID | None
@@ -85,10 +82,7 @@ class SignoffRequest(BaseModel):
     @field_validator("reason")
     @classmethod
     def strip_reason(cls, value: str) -> str:
-        value = value.strip()
-        if len(value) < 20:
-            raise ValueError("Detailed engineering reason required")
-        return value
+        return value.strip()
 
 
 def _number(value: str, scale: Decimal) -> Decimal:
@@ -269,7 +263,7 @@ def save_analysis_revision(
         candidate_code=position.id, analysis_pdf_sha256=digest,
         source_fingerprint=fingerprint,
         items_json=json.dumps(lines, ensure_ascii=False),
-        proposed_amount=proposal, reason=payload.reason,
+        proposed_amount=proposal, reason=payload.reason or "Gerekçe belirtilmedi",
         created_by_id=user.id, request_key=str(payload.request_key),
         request_hash=request_hash,
     )
@@ -324,7 +318,7 @@ def record_engineering_signoff(
         organization_id=user.organization_id, project_id=str(project_id),
         import_id=str(import_id), work_item_id=str(work_item_id),
         analysis_revision_id=latest.id, source_fingerprint=fingerprint,
-        action=payload.action, reason=payload.reason,
+        action=payload.action, reason=payload.reason or "Gerekçe belirtilmedi",
         signed_by_id=user.id, request_key=str(payload.request_key),
         request_hash=request_hash,
     )
