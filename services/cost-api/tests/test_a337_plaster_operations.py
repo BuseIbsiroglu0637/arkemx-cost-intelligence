@@ -1,7 +1,6 @@
 """A3.37: never confuse the *removal* of old plaster with new plastering."""
 from sqlalchemy import select
 
-from app import a318_pdf_api
 from app.a335_plaster_matching import plaster_checks, plaster_operation
 from app.a320_smart_matching import find_pdf_candidates
 from app.database import get_db
