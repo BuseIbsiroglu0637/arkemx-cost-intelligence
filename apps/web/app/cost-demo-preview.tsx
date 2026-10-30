@@ -15,6 +15,10 @@ type Suggestion={work_item_id:string;source_row:number;revision_id:string|null;
   pdf_sha256:string|null;revision_id:string|null}|null};
 type SuggestionPage={read_only:boolean;approval_allowed:false;cost_allowed:false;
   catalog:{sha256:string;synthetic:boolean};rows:Suggestion[];page_offset:number};
+type PilotRow={work_item_id:string;source_row:number;saved_candidate:string|null;
+  pilot_status:"none"|"confirmed"|"reopened"|"stale";pilot_confirmed:boolean};
+type PilotPage={schema:string;read_only:true;approval_allowed:false;
+  engineering_approved:false;cost_allowed:false;rows:PilotRow[];next_offset:number|null};
 type EstimateRow={row:WorkRow;code:string|null;sourcePrice:string|null;
   amountCents:bigint|null;reason:string;sourceDate:string|null};
 
@@ -39,40 +43,48 @@ async function get<T>(path:string,token:string):Promise<T>{
 }
 async function collect(
   project:string,importId:string,token:string,
-):Promise<{rows:WorkRow[];suggestions:Suggestion[];sha:string;partial:boolean}>{
-  const rows:WorkRow[]=[],suggestions:Suggestion[]=[];
+):Promise<{rows:WorkRow[];suggestions:Suggestion[];pilots:PilotRow[];sha:string;partial:boolean}>{
+  const rows:WorkRow[]=[],suggestions:Suggestion[]=[],pilots:PilotRow[]=[];
   let offset=0,sha:string|null=null,partial=false;
   // Current local pilot has a 500-row cap; never silently label a partial
   // subset as the whole project or the final cost.
   for(let page=0;page<25;page++){
     const prefix="/api/projects/"+encodeURIComponent(project);
     const source="/a3/imports/"+encodeURIComponent(importId);
-    const [items,positions]=await Promise.all([
+    const [items,positions,pilot]=await Promise.all([
       get<ItemPage>(prefix+source+"/items?offset="+offset+"&limit=20",token),
       get<SuggestionPage>(prefix+"/a318/imports/"+encodeURIComponent(importId)+
         "/suggestions?offset="+offset,token),
+      get<PilotPage>(prefix+"/a327/imports/"+encodeURIComponent(importId)+
+        "/readiness?offset="+offset+"&limit=20",token),
     ]);
     if(items.schema!=="arkemx.batch_review_selection.v1"||
       items.read_only!==true||items.approval_allowed!==false||
       positions.read_only!==true||positions.approval_allowed!==false||
       positions.cost_allowed!==false||positions.catalog.synthetic!==false||
       !positions.catalog.sha256||positions.page_offset!==offset||
-      items.rows.length!==positions.rows.length||
+      pilot.schema!=="arkemx.a327.readiness.v1"||
+      pilot.read_only!==true||pilot.approval_allowed!==false||
+      pilot.engineering_approved!==false||pilot.cost_allowed!==false||
+      items.rows.length!==positions.rows.length||items.rows.length!==pilot.rows.length||
       items.rows.some((row,i)=>row.work_item_id!==positions.rows[i].work_item_id||
-        row.source_row!==positions.rows[i].source_row)){
+        row.source_row!==positions.rows[i].source_row||
+        row.work_item_id!==pilot.rows[i].work_item_id||
+        row.source_row!==pilot.rows[i].source_row)){
       throw Error("Metraj ve poz kaynakları eşleşmiyor. Poz incelemesinde yenile.");
     }
     if(sha&&sha!==positions.catalog.sha256)throw Error("Poz PDF değişti. Yeniden kontrol et.");
     sha=positions.catalog.sha256;
-    rows.push(...items.rows);suggestions.push(...positions.rows);
-    if(items.next_offset===null)return {rows,suggestions,sha,partial};
+    rows.push(...items.rows);suggestions.push(...positions.rows);pilots.push(...pilot.rows);
+    if(items.next_offset!==pilot.next_offset)throw Error("Pilot durumları eksik; hesap yapılmadı.");
+    if(items.next_offset===null)return {rows,suggestions,pilots,sha,partial};
     if(items.next_offset<=offset)throw Error("Metraj sayfalaması doğrulanamadı.");
     offset=items.next_offset;
   }
   partial=true;
-  return {rows,suggestions,sha:sha??"",partial};
+  return {rows,suggestions,pilots,sha:sha??"",partial};
 }
-function preview(row:WorkRow,candidate:Suggestion|undefined,sha:string):EstimateRow{
+function preview(row:WorkRow,candidate:Suggestion|undefined,pilot:PilotRow|undefined,sha:string):EstimateRow{
   const result:EstimateRow={row,code:null,sourcePrice:null,sourceDate:null,amountCents:null,
     reason:"Poz seçimi bekliyor"};
   const selected=candidate?.saved_selection;
@@ -90,6 +102,11 @@ function preview(row:WorkRow,candidate:Suggestion|undefined,sha:string):Estimate
     result.reason="Metraj bilgisi eksik";return result;
   }
   if(option.unit!==row.unit){result.reason="Ölçü birimleri farklı";return result;}
+  if(!pilot?.pilot_confirmed||pilot.pilot_status!=="confirmed"||
+    pilot.saved_candidate!==selected.code){
+    result.reason=pilot?.pilot_status==="stale"?"Pilot kontrol güncelliğini kaybetti":"Pilot kontrol bekliyor";
+    return result;
+  }
   if(!option.source_price_verified||!option.source_price){
     result.reason="PDF fiyatı doğrulanamadı";return result;
   }
@@ -97,7 +114,7 @@ function preview(row:WorkRow,candidate:Suggestion|undefined,sha:string):Estimate
   if(cents===null){result.reason="Miktar veya fiyat okunamadı";return result;}
   result.amountCents=cents;result.sourcePrice=option.source_price;
   result.sourceDate=option.pdf_edition_date;
-  result.reason="Kaynak fiyatlı DEMO";
+  result.reason="Pilot tamam · DEMO fiyatlı";
   return result;
 }
 export default function CostDemoPreview({token,project,onReview}:{
@@ -121,7 +138,7 @@ export default function CostDemoPreview({token,project,onReview}:{
     setImportId(workspace.importId);setLoading(true);
     collect(project,workspace.importId,token).then(data=>{
       if(!active)return;
-      setRows(data.rows.map((row,index)=>preview(row,data.suggestions[index],data.sha)));
+      setRows(data.rows.map((row,index)=>preview(row,data.suggestions[index],data.pilots[index],data.sha)));
       setPartial(data.partial);
     }).catch(e=>{if(active){setRows([]);setError(e instanceof Error?e.message:"Kaynak okunamadı.");}})
       .finally(()=>{if(active)setLoading(false)});
@@ -134,11 +151,11 @@ export default function CostDemoPreview({token,project,onReview}:{
   return <section className="card cost-demo" aria-label="DEMO ön maliyet">
     <div className="flex between cost-demo-head">
       <div><h2>DEMO ön maliyet</h2>
-        <p className="hint">Seçilmiş ve kaynak fiyatı bulunan pozların deneme hesabı</p></div>
+        <p className="hint">Güncel pilot kontrolü tamamlanmış, kaynak fiyatlı pozların deneme hesabı</p></div>
       <button type="button" className="secondary" disabled={loading}
         onClick={()=>setRefresh(n=>n+1)}>Yenile</button>
     </div>
-    <p className="cost-demo-disclaimer">Yalnızca örnek hesap. Resmî mühendis onayı, güncel resmî fiyat veya nihai teklif değildir.
+    <p className="cost-demo-disclaimer">Yalnızca örnek hesap. Pilot kontrol resmî mühendis onayı değildir; bu tutar güncel resmî fiyat veya nihai teklif değildir.
       Kaynak fiyatları yüklü 2026/01 PDF dönemine aittir.</p>
     {loading&&<p role="status">Metraj ve poz fiyatları kontrol ediliyor…</p>}
     {error&&<div role="alert" className="cost-demo-warning">{error}
@@ -167,7 +184,7 @@ export default function CostDemoPreview({token,project,onReview}:{
           <td>{item.reason}</td>
         </tr>)}</tbody>
       </table></div>}
-      <p className="hint">“—” işaretli imalatlar sıfır TL değildir; DEMO ara toplamın dışındadır.
+      <p className="hint">“—” işaretli imalatlar sıfır TL değildir; pilot kontrol veya kaynak kontrolü tamamlanmadığı için DEMO ara toplamın dışındadır.
         Poz ve fiyat kaynağı değişirse bu ön hesap yeniden yapılmalıdır.</p>
       <div className="cost-demo-actions"><button type="button" onClick={onReview}>
         Eksik pozları incele</button><span className="hint">
