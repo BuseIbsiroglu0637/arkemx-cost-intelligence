@@ -7,10 +7,12 @@ import re
 from .matching import similarity
 from .excel import normalized
 
-VERSION = "technical-rules-v0.2"
+VERSION = "technical-rules-v0.3"
 MATERIAL_ALIASES = {
     "gazbeton": (r"\bgazbeton\b",),
-    "seramik": (r"\bseramik\b", r"\bporselen\b"),
+    "seramik": (r"\bseramik\w*\b", r"\bporselen\w*\b", r"\bkaro\w*\b", r"\bfayans\w*\b"),
+    "poliuretan": (r"\bpoliuretan\w*\b",),
+    "epoksi": (r"\bepoksi\w*\b",),
     "beton": (r"\bbeton\b",),
     "tugla": (r"\btugla\b",),
     "boya": (r"\bboya\b", r"\bboyama\b"),
@@ -127,6 +129,11 @@ def compare(description: str, unit: str | None,
             ),
         })
 
+    # When a ceramic finish is explicit, an unspecified/non-ceramic finish
+    # on the candidate is not a sufficient material match. Keep it in review;
+    # explicit opposing finishes are already blocked by MATERIAL_MISMATCH.
+    if left["material"] == "seramik" and right["material"] is None:
+        reviews.append("CERAMIC_FINISH_UNVERIFIED")
     if review_required or not quantity_known:
         blockers.append("METRAJ_REVIEW_REQUIRED")
     blockers = sorted(set(blockers))

@@ -15,7 +15,12 @@ from .excel import normalized
 
 ALGORITHM = "lexical-gated-v0.2"
 MAX_MATCH_ROWS = 100
-MATERIALS = ("gazbeton", "seramik", "beton", "kapi", "boya", "celik", "siva", "yalitim")
+MATERIALS = ("gazbeton", "seramik", "beton", "kapi", "boya", "celik", "siva", "yalitim", "poliuretan", "epoksi")
+# Explicit surface finishes must agree; generic "zemin kaplama" cannot be
+# treated as a ceramic poz merely because both descriptions contain "kaplama".
+CERAMIC_TERMS = re.compile(r"\b(?:seramik\w*|porselen\w*|karo\w*|fayans\w*)\b")
+POLYURETHANE_TERMS = re.compile(r"\bpoliuretan\w*\b")
+EPOXY_TERMS = re.compile(r"\bepoksi\w*\b")
 STOP = {"ve", "ile", "dahil", "olan", "isleri", "imalati", "uygulanmasi", "yapilmasi", "is", "malzeme"}
 WORD = re.compile(r"[a-z0-9]+")
 SIZE2D = re.compile(r"(?<!\d)(\d{1,4})\s*[x×]\s*(\d{1,4})(?!\d)")
@@ -33,6 +38,11 @@ def tokens(value: str) -> set[str]:
 
 
 def family(value: str) -> str | None:
+    text = lexical_text(value)
+    # Evaluate explicit ceramic aliases before generic floor-finish terms.
+    # A porcelain tile is a ceramic candidate, never polyurethane coating.
+    if CERAMIC_TERMS.search(text):
+        return "seramik"
     found = tokens(value)
     for label in MATERIALS:
         if label in found:
@@ -71,6 +81,10 @@ def evaluate(item, position) -> dict | None:
     item_family, candidate_family = family(description), family(position.description)
     # Do not propose clearly different material families even with similar filler words.
     if item_family and candidate_family and item_family != candidate_family:
+        return None
+    # A ceramic/porselen metraj requires a *positive* ceramic indicator in
+    # the poz; a generic surface-coating description is insufficient evidence.
+    if item_family == "seramik" and candidate_family != "seramik":
         return None
     if score < 0.18:
         return None
