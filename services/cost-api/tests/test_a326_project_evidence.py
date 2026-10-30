@@ -164,3 +164,26 @@ def test_metadata_only_never_approves(candidate_code=None):
         [(1, "Gazbeton 10 cm 2,50 N/mm2 400 kg/m3")],
     )
     assert _evidence_status(found) == "found_for_review"
+
+
+def test_image_only_pdf_is_reported_as_unreadable_text(client, auth):
+    pid, iid, ids = project_with_metraj(client, auth)
+    attached = attach(client, auth, pid, pdf(""))
+    assert attached.status_code == 201
+    result = evidence(client, auth, pid, iid, ids[0]).json()
+    assert result["status"] == "unreadable_text"
+    assert result["cost_allowed"] is False
+
+
+def test_conflict_after_first_six_source_excerpts_is_still_detected(client, auth):
+    pid, iid, ids = project_with_metraj(client, auth)
+    repeated = ["Gazbeton 10 cm duvar: 2,50 N/mm2 ve 400 kg/m3."] * 6
+    attached = attach(client, auth, pid, pdf(*(repeated + [
+        "Gazbeton 10 cm duvar: 3,50 N/mm2 ve 500 kg/m3.",
+    ])))
+    assert attached.status_code == 201
+    result = evidence(client, auth, pid, iid, ids[0]).json()
+    assert result["status"] == "conflicting"
+    assert len(result["evidence"]) == 6
+    assert result["additional_evidence_count"] == 1
+    assert result["engineering_approved"] is False
