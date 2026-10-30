@@ -292,3 +292,6 @@
   .simpleMatchTable {min-width:680px}
   .otherCandidateRow {align-items:stretch;flex-direction:column}
 }
+
+.reviewReason {display:grid;gap:5px;border-radius:10px;padding:12px 15px;background:#fff7e7;border:1px solid #f0dab0;color:#7e5411;font-size:13px;font-weight:650;line-height:1.55}
+.reviewReason small {font-size:11px;color:#826637;font-weight:500}
