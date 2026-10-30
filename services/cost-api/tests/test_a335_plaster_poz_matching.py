@@ -42,6 +42,8 @@ def test_stage_recognition_is_specific_and_does_not_merge_layers():
     assert plaster_stages(FINE) == {"ince"}
     assert plaster_stages(COMBINED) == {"kaba", "ince"}
     assert plaster_stages("kaba ve ince sıva imalatı") == {"kaba", "ince"}
+    assert plaster_stages("kaba/ince sıva imalatı") == {"kaba", "ince"}
+    assert plaster_stages("kaba+ince sıva imalatı") == {"kaba", "ince"}
     assert plaster_stages("sıva katmanı kaba") == {"kaba"}
     assert plaster_stages("kaba kumla ince sıva") == {"ince"}
     assert plaster_stages("çimento harcı") == set()
@@ -153,7 +155,7 @@ def test_api_keeps_two_plaster_rows_and_blocks_wrong_or_combined_poz(
     response = client.get(url + "/suggestions", headers=auth)
     assert response.status_code == 200, response.text
     result = response.json()
-    assert not result["engineering_approved"] if "engineering_approved" in result else True
+    assert result.get("engineering_approved") in (None, False)
     assert result["cost_allowed"] is False
     assert result["approval_allowed"] is False
     rows = result["rows"]
