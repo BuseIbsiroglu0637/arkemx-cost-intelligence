@@ -67,9 +67,9 @@ export default function PlasterEvidenceComparison({
   if(!data)return <p role="status" className={styles.a338Hint}>Excel, poz PDF ve şartname karşılaştırılıyor…</p>;
   return <div className={styles.a338Comparison} aria-label="Kaynaklı teknik bilgiler">
     <strong>Kaynaklı teknik bilgiler</strong>
-    {data.old_selection_stale_code&&data.old_selection_stale_code!==candidateCode&&
+    {data.old_selection_stale_code&&
       <p className={styles.a338Warning}>
-        Önceki poz {data.old_selection_stale_code} artık geçerli değil.
+        Önceki poz kaydı {data.old_selection_stale_code} artık güncel değil.
         Kayıt geçmişi korundu; yeni poz kaydı ve analizi ayrıca kontrol edilmeli.
       </p>}
     <table className={styles.a338Table}>
