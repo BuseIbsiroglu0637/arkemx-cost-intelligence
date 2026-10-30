@@ -27,6 +27,7 @@ type Row = {
   source_price: { value: string; currency: string; unit: string; source: { filename: string; sha256: string; pdf_page: number; printed_page: number; price_date: string } } | null;
 };
 type Report = { schema: string; read_only: boolean; approval_allowed: boolean; row_count: number; rows: Row[]; import_source: Source };
+type PdfSource = { present: boolean; read_only: boolean; sha256?: string; year?: number; volume?: number; position_count?: number; verified_price_count?: number; uncertain_price_count?: number };
 type CandidateCatalog = { version_id: string; institution: string; period: string; year: number; position_count: number; synthetic: boolean };
 type CandidateChoice = { code: string; description: string; unit: string; similarity: number; technical_status: "compatible" | "review" | "blocked"; blockers: string[]; review_flags: string[]; source_version_id: string; possible_shared_scope: boolean };
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[] }[] };
@@ -136,6 +137,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<Record<string, string>>({});
+  const [pdfSource, setPdfSource] = useState<PdfSource | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfRightsConfirmed, setPdfRightsConfirmed] = useState(false);
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
@@ -173,7 +177,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     setBusy(task); setError("");
     try {
       const response = await fetch(`${API}${path}`, { ...init, cache: "no-store", signal: controller.signal,
-        headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}) } });
+        headers: { Authorization: `Bearer ${token}`, ...(init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}) } });
       if (controller.signal.aborted || requestRef.current !== controller || sessionStorage.getItem("arkemx_dev_token") !== token) return;
       if (response.status === 401) {
         sessionStorage.removeItem("arkemx_dev_token"); clearWorkspace(); setAuthenticated(false);
@@ -226,7 +230,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setOffset(0);
-    setCatalogs([]); setCatalogVersion(""); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
+    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -249,47 +253,47 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       if (data.read_only !== true || data.approval_allowed !== false || data.import_source.import_id !== id || data.import_source.project_id !== sourceProject || data.rows.length > 20) throw new Error("Satır kaynağı doğrulanamadı.");
       setSelection(data);
       if (token) rememberImport(token, sourceProject, id);
-      loadCatalogs(sourceProject);
+      loadPdfSource(sourceProject);
     }, "items");
   }
-  function loadCatalogs(id: string) {
-    void request<{ read_only: boolean; catalogs: CandidateCatalog[] }>(
-      `/api/projects/${encodeURIComponent(id)}/a317/catalogs`, data => {
-        if (data.read_only !== true) throw new Error("Katalog yetkisi doğrulanamadı.");
-        const ordered = [...data.catalogs].sort((a, b) =>
-          Number(a.synthetic) - Number(b.synthetic) ||
-          b.year - a.year || b.period.localeCompare(a.period));
-        setCatalogs(ordered);
-        setCatalogVersion(previous =>
-          ordered.some(item => item.version_id === previous)
-            ? previous : (ordered[0]?.version_id ?? ""));
-      }, "catalogs"
-    );
+  function loadPdfSource(id: string) {
+    void request<PdfSource>(`/api/projects/${encodeURIComponent(id)}/a318/source`, data => {
+      if (data.read_only !== true) throw new Error("PDF kaynak doğrulaması başarısız.");
+      setPdfSource(data);
+    }, "pdf-source");
   }
 
-  function seedDemoCatalog() {
-    if (!projectId || busy) return;
-    void request<{ synthetic: boolean }>("/api/m2/demo-catalog", data => {
-      if (data.synthetic !== true) throw new Error("Deneme kataloğu doğrulanamadı.");
-      loadCatalogs(projectId);
-      setAutoMessage("Sentetik deneme kataloğu hazır. Gerçek poz veya fiyat içermez.");
-    }, "catalog-demo", { method: "POST" });
+  function attachPdf() {
+    if (!projectId || !pdfFile || !pdfRightsConfirmed || busy) return;
+    const form = new FormData();
+    form.append("file", pdfFile);
+    form.append("rights_confirmed", "true");
+    void request<PdfSource>(`/api/projects/${encodeURIComponent(projectId)}/a318/source`, data => {
+      if (!data.present || !data.sha256 || !data.position_count || data.read_only !== true) {
+        throw new Error("PDF analizi doğrulanamadı.");
+      }
+      automaticRunKeyRef.current = "";
+      setPdfSource(data);
+      setPdfFile(null);
+      setPdfRightsConfirmed(false);
+      setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
+    }, "pdf-upload", { method: "POST", body: form });
   }
-
   function findAutomaticCandidates() {
-    if (!selection || !projectId || !importId || !catalogVersion || busy) return;
+    if (!selection || !projectId || !importId || !pdfSource?.present || !pdfSource.sha256 || busy) return;
     const source = selection;
+    const sourceSha = pdfSource.sha256;
     clearResult();
     setAutoCandidates(null);
     void request<CandidateResponse>(
-      `/api/projects/${encodeURIComponent(projectId)}/a317/imports/${encodeURIComponent(importId)}/suggestions?version_id=${encodeURIComponent(catalogVersion)}&offset=${offset}`,
+      `/api/projects/${encodeURIComponent(projectId)}/a318/imports/${encodeURIComponent(importId)}/suggestions?offset=${offset}`,
       data => {
         const expected = new Map(source.rows.map(row => [row.work_item_id, row]));
         if (
           data.read_only !== true || data.approval_allowed !== false || data.cost_allowed !== false
           || data.import_source.import_id !== source.import_source.import_id
           || data.import_source.sha256 !== source.import_source.sha256
-          || data.catalog.version_id !== catalogVersion
+          || data.catalog.version_id !== sourceSha || data.catalog.synthetic !== false
           || data.rows.length !== source.rows.length
           || new Set(data.rows.map(row => row.work_item_id)).size !== source.rows.length
           || data.rows.some(row => {
@@ -325,17 +329,17 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   // Run automatically once per Excel import, page, source revision and catalog.
   // Never create a synthetic catalog or accept a cost decision automatically.
   useEffect(() => {
-    if (!selection || !projectId || !importId || !catalogVersion || !authenticated || !ready || busy) return;
+    if (!selection || !projectId || !importId || !pdfSource?.present || !pdfSource.sha256 || !authenticated || !ready || busy) return;
     const key = [
       projectId, importId, selection.import_source.sha256,
-      offset, catalogVersion, ...selection.rows.map(row => row.work_item_id + ":" + (row.revision_id ?? "")),
+      offset, pdfSource.sha256, ...selection.rows.map(row => row.work_item_id + ":" + (row.revision_id ?? "")),
     ].join("|");
     if (automaticRunKeyRef.current === key) return;
     automaticRunKeyRef.current = key;
     findAutomaticCandidates();
     // The trigger is the verified source and catalog identity, not manual inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, projectId, importId, catalogVersion, offset, busy, authenticated, ready]);
+  }, [selection, projectId, importId, pdfSource, offset, busy, authenticated, ready]);
 
   function toggle(id: string, checked: boolean) {
     invalidate(); setSelected(prev => checked ? [...new Set([...prev, id])] : prev.filter(value => value !== id));
