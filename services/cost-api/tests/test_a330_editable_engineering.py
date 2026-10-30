@@ -122,9 +122,10 @@ def test_qualified_engineer_can_sign_current_revision_without_cost_unlock(
         verified_at=datetime.now(timezone.utc),
     ))
     db.commit()
+    engineer_email = engineer.email
     gen.close()
     login = client.post("/api/auth/login", json={
-        "email": engineer.email, "password": "secure-pilot-password",
+        "email": engineer_email, "password": "secure-pilot-password",
     })
     assert login.status_code == 200, login.text
     engineer_auth = {"Authorization": "Bearer " + login.json()["access_token"]}
