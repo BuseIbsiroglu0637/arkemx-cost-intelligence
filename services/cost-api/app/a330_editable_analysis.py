@@ -36,22 +36,36 @@ MONEY = Decimal("0.01")
 THICK = Decimal("0.0001")
 SOURCE_LINE_LIMIT = 30
 NUMBER = re.compile(r"^\d{1,9}(?:[.,]\d{1,4})?$")
+# Thousands are valid only with an explicit comma decimal marker, avoiding
+# misreading ambiguous "1.234" as either 1.234 or 1234.
+GROUPED_NUMBER = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d{1,4})$")
 
 
 class ProposedLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(min_length=2, max_length=80)
-    description: str = Field(min_length=3, max_length=250)
+    # The verified source-PDF parser can return an empty material description
+    # while still providing its code, quantity, unit, unit price and amount.
+    # Do not invent a material name or block saving a faithful source draft.
+    description: str = Field(max_length=250)
     unit: str = Field(min_length=1, max_length=30)
     quantity: str
     unit_price: str
 
-    @field_validator("code", "description", "unit")
+    @field_validator("code", "unit")
     @classmethod
     def strip_nonempty(cls, value: str) -> str:
         value = value.strip()
         if not value or any(ord(char) < 32 for char in value):
             raise ValueError("Invalid item field")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def preserve_missing_source_description(cls, value: str) -> str:
+        value = value.strip()
+        if any(ord(char) < 32 for char in value):
+            raise ValueError("Invalid description")
         return value
 
 
@@ -87,10 +101,14 @@ class SignoffRequest(BaseModel):
 
 def _number(value: str, scale: Decimal) -> Decimal:
     raw = value.strip()
-    if not NUMBER.fullmatch(raw):
-        raise HTTPException(422, "Enter a positive decimal number, without thousand separators")
+    if GROUPED_NUMBER.fullmatch(raw):
+        normalized = raw.replace(".", "").replace(",", ".")
+    elif NUMBER.fullmatch(raw):
+        normalized = raw.replace(",", ".")
+    else:
+        raise HTTPException(422, "Enter a positive decimal number (e.g. 1,03 or 1.250,00)")
     try:
-        number = Decimal(raw.replace(",", "."))
+        number = Decimal(normalized)
     except InvalidOperation:
         raise HTTPException(422, "Invalid decimal input") from None
     if number <= 0 or number.as_tuple().exponent < scale.as_tuple().exponent:

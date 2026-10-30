@@ -27,6 +27,35 @@ const API=(process.env.NEXT_PUBLIC_API_URL??"http://127.0.0.1:8000").replace(/\/
 const uuid=()=>crypto.randomUUID();
 const trim=(s:string)=>s.trim();
 const newRow=():InputLine=>({code:"",description:"",unit:"",quantity:"1",unit_price:"0,00"});
+const fieldNames:Record<string,string>={
+  code:"Poz/girdi kodu",description:"Açıklama",unit:"Birim",
+  quantity:"Miktar",unit_price:"Birim fiyatı",items:"Analiz girdileri",
+  expected_source_fingerprint:"Kaynak",request_key:"İşlem anahtarı",
+};
+function errorDetail(detail:unknown):string{
+  if(typeof detail==="string")return detail;
+  if(Array.isArray(detail)){
+    const lines=detail.slice(0,5).map((entry:unknown)=>{
+      if(!entry||typeof entry!=="object")return "Geçersiz analiz girdisi.";
+      const issue=entry as {loc?:unknown;msg?:unknown;type?:unknown};
+      const loc=Array.isArray(issue.loc)?issue.loc:[];
+      const index=loc.findIndex(x=>typeof x==="number");
+      const line=index>=0&&typeof loc[index]==="number"
+        ? "Girdi "+(Number(loc[index])+1):"";
+      const last=loc.length?String(loc[loc.length-1]):"";
+      const field=fieldNames[last]??last;
+      const message=typeof issue.msg==="string"?issue.msg:"Geçersiz veya eksik değer.";
+      return [line,field].filter(Boolean).join(" · ")+": "+message;
+    });
+    return lines.join(" | ");
+  }
+  if(detail&&typeof detail==="object"){
+    const value=detail as {msg?:unknown;message?:unknown};
+    if(typeof value.msg==="string")return value.msg;
+    if(typeof value.message==="string")return value.message;
+  }
+  return "Sunucu işlemi reddetti; analiz satırlarının zorunlu alanlarını kontrol et.";
+}
 
 export default function EditableEngineeringReview({projectId,importId,rowId,position}:{
   projectId:string;importId:string;rowId:string;position:Position;
@@ -55,7 +84,8 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     if(!res.ok){
       const info:unknown=await res.json().catch(()=>null);
       const detail=typeof info==="object"&&info!==null&&"detail" in info?
-        String((info as {detail?:unknown}).detail):"";
+        errorDetail((info as {detail?:unknown}).detail):
+        "İşlem tamamlanamadı (HTTP "+res.status+").";
       if(res.status===409)throw Error("Kaynak, poz veya önceki kayıt değişmiş. Yenile ve tekrar incele.");
       if(res.status===403)throw Error("Bu işlem için bağımsız doğrulanmış mühendis yetkisi gerekli.");
       throw Error(detail||"İşlem tamamlanamadı (HTTP "+res.status+").");
@@ -110,6 +140,12 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   }
   async function save(){
     if(!data||busy||lines.length<1)return;
+    const invalidIndex=lines.findIndex(line=>!trim(line.code)||!trim(line.unit)||
+      !trim(line.quantity)||!trim(line.unit_price));
+    if(invalidIndex!==-1){
+      setError("Girdi "+(invalidIndex+1)+": Kod, birim, miktar ve birim fiyatı doldur. Açıklama PDF'de yoksa boş bırakabilirsin.");
+      return;
+    }
     setBusy(true);setError("");setNotice("");
     try{
       await call<Revision>("/analysis/revisions",{
