@@ -9,9 +9,13 @@ import re
 
 from .excel import normalized
 from .matching import family
+from .a335_plaster_matching import plaster_stages, plaster_dosages
 
 LAYER_BEFORE = re.compile(
-    r"(?<!\w)(\d+(?:[.,]\d+)?)\s*(mm|cm)\s+(kaba|ince)\s+siva\b"
+    # Allow a short material qualifier, e.g. "20 mm çimento esaslı kaba sıva".
+    # Do not cross another layer name, an earlier "sıva", or sentence marks.
+    r"(?<!\w)(\d+(?:[.,]\d+)?)\s*(mm|cm)\s+"
+    r"(?:(?!(?:kaba|ince|siva)\b)\w+\s+){0,4}(kaba|ince)\s+siva\b"
 )
 LAYER_AFTER = re.compile(
     r"\b(kaba|ince)\s+siva\s+(\d+(?:[.,]\d+)?)\s*(mm|cm)\b"
@@ -53,7 +57,9 @@ def additional_matches(description: str, blocks: list[tuple[int, str]]) -> list[
     result: list[dict] = []
 
     if kind == "siva":
-        stages = set(re.findall(r"\b(kaba|ince)\s+siva\b", plain_description))
+        # Shared source extraction with A3.38. Both the old /a326/evidence
+        # and the new comparison must agree on exactly the same PDF blocks.
+        stages = plaster_stages(description)
         if len(stages) != 1:
             return []
         desired = next(iter(stages))
@@ -66,6 +72,16 @@ def additional_matches(description: str, blocks: list[tuple[int, str]]) -> list[
                         "page": page, "quote": text[:320],
                         "facts": {"layer_type": stage, "layer_thickness_mm": thickness},
                     })
+            # If both stages are mentioned in the same text block, a single
+            # dosage cannot safely be assigned to either stage. No guessing.
+            if plaster_stages(text) != stages:
+                continue
+            for amount in sorted(plaster_dosages(text)):
+                value = int(amount) if amount == amount.to_integral_value() else float(amount)
+                result.append({
+                    "page": page, "quote": text[:320],
+                    "facts": {"layer_type": desired, "cement_dosage_kg": value},
+                })
     elif kind == "beton":
         if not re.search(r"\bbeton\w*\b", plain_description):
             return []
