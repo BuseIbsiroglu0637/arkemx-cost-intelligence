@@ -18,7 +18,7 @@ LAYER_AFTER = re.compile(
     r"\bsiva\w*\s+(?:katmani\s+)?(kaba|ince)\b"
 )
 TOGETHER = re.compile(
-    r"\b(?:kaba\s+(?:ve|/)\s+ince|ince\s+(?:ve|/)\s+kaba)\s+siva\w*\b"
+    r"\b(?:kaba\s*(?:ve|/|\+)\s*ince|ince\s*(?:ve|/|\+)\s*kaba)\s+siva\w*\b"
 )
 CEMENT_DOSAGE = re.compile(
     r"(?<!\w)(\d+(?:[.,]\d+)?)\s*kg\s+cimento\s+dozlu\b"
