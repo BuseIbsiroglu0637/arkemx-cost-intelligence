@@ -35,7 +35,10 @@ router = APIRouter(
 MONEY = Decimal("0.01")
 THICK = Decimal("0.0001")
 SOURCE_LINE_LIMIT = 30
-NUMBER = re.compile(r"^\d{1,9}(?:[.,]\d{1,4})?$")
+NUMBER = re.compile(r"^\\d{1,9}(?:[.,]\\d{1,4})?$".replace("\\\\", "\\"))
+# Thousands are valid only with an explicit comma decimal marker, avoiding
+# misreading ambiguous "1.234" as either 1.234 or 1234.
+GROUPED_NUMBER = re.compile(r"^\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,4})$".replace("\\\\", "\\"))
 
 
 class ProposedLine(BaseModel):
@@ -98,10 +101,14 @@ class SignoffRequest(BaseModel):
 
 def _number(value: str, scale: Decimal) -> Decimal:
     raw = value.strip()
-    if not NUMBER.fullmatch(raw):
-        raise HTTPException(422, "Enter a positive decimal number, without thousand separators")
+    if GROUPED_NUMBER.fullmatch(raw):
+        normalized = raw.replace(".", "").replace(",", ".")
+    elif NUMBER.fullmatch(raw):
+        normalized = raw.replace(",", ".")
+    else:
+        raise HTTPException(422, "Enter a positive decimal number (e.g. 1,03 or 1.250,00)")
     try:
-        number = Decimal(raw.replace(",", "."))
+        number = Decimal(normalized)
     except InvalidOperation:
         raise HTTPException(422, "Invalid decimal input") from None
     if number <= 0 or number.as_tuple().exponent < scale.as_tuple().exponent:
