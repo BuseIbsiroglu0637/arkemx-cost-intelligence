@@ -4,7 +4,6 @@ import Link from "next/link";
 import { reviewFingerprint } from "../review-fingerprint";
 import { clearWorkspace, readWorkspace, rememberImport, rememberProject } from "../workspace-context";
 import WorkflowNav from "../workflow-nav";
-import workflow from "../workflow-nav.module.css";
 import { useEffect, useRef, useState } from "react";
 import styles from "./review.module.css";
 import AssessmentPanel from "./assessment-panel";
@@ -463,7 +462,6 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     <div className={styles.journey} aria-label="Proje çalışma adımları"><Link href="/#metraj">1. Metrajı hazırla</Link><strong aria-current="step">2. Pozları incele</strong><Link href="/#cost">3. Maliyet</Link></div>
     <Link href="/#technical">← Projedeki poz incelemesine dön</Link></>}
     {!projectScope && <div><span className={styles.eyebrow}>ARKEMX · TEKNİK İNCELEME</span><Heading>Pozları incele</Heading><p>Excel satırlarına uygun poz adaylarını bul; teknik farkları ve kaynak kanıtlarını incele.</p></div>}
-    <div className={styles.infoStrip} role="note">Pozlar otomatik önerilir; teknik onay verilmez. Maliyete geçmeden önce doğru adayları incelemek ve ayrıca mühendis kararı almak gerekir.</div>
     {!ready ? <p role="status">Oturum kontrol ediliyor…</p> : !authenticated ? <section className={styles.card}><h2>ARKEMX oturumu gerekli</h2><p>Tarayıcıdaki ana çalışma alanından giriş yapıp buraya dön. PowerShell oturumu tarayıcıya aktarılmaz.</p><Link href="/">Giriş ekranına git</Link></section> : <>
       <div className={styles.sourceCards}><section className={`${styles.card} ${styles.sourceMini}`} aria-labelledby="source-heading"><h3 id="source-heading">Excel kaynağı</h3><div className={projectScope ? styles.scopedFields : styles.fields}>
         {!projectScope && <label>Proje<select value={projectId} onChange={e => chooseProject(e.target.value)}><option value="">Proje seç</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
@@ -483,6 +481,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         {savedList && (savedList.records.length ? <ul className={styles.resultList}>{savedList.records.map(record => <li key={record.id}><strong>{record.title}</strong> · {record.row_count} satır · {new Date(record.created_at).toLocaleString("tr-TR")} <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => { setArchive(null); void request<SavedReview>(`/api/projects/${encodeURIComponent(projectId)}/a3/reviews/${encodeURIComponent(record.id)}`, acceptArchive, "archive"); }}>Kaydı aç</button></li>)}</ul> : <p>Bu Excel için kayıtlı inceleme yok.</p>)}
         {savedList?.next_offset !== null && savedList?.next_offset !== undefined && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => listSaved(savedList.next_offset!)}>Daha fazla kayıt getir</button>}
       </section>}</div>
+      <div className={styles.infoStrip} role="note">Pozlar otomatik önerilir; teknik onay verilmez. Maliyete geçmeden önce doğru adayları incelemek ve ayrıca mühendis kararı almak gerekir.</div>
       {archive && <section className={styles.card} aria-labelledby="archive-heading"><div className={styles.toolbar}><h2 id="archive-heading">Kaydedildiği andaki inceleme · {archive.record.title}</h2><button type="button" className="secondary" onClick={() => setArchive(null)}>Kayıt görünümünü kapat</button></div>
         <p><strong>{archive.currentness.status === "unchanged" ? "Kaydedilen girdilerde değişiklik saptanmadı." : archive.currentness.status === "changed" ? "Kaynak veya kurallar değişmiş. Bu sonuç eski çalışmaya aittir." : "Kaydın güncelliği tamamen doğrulanamadı."}</strong></p>
         <p>Bu bölüm tarihî kaydı gösterir; güncel teknik sonuç veya mühendis onayı değildir.</p>
@@ -630,7 +629,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         </div>
         <details className={styles.advancedReview}>
           <summary>Gelişmiş işlemler · Elle veya toplu aday girişi</summary>
-                  <details><summary>İsteğe bağlı: elle ve toplu poz kodu gir</summary><div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
+          <div className={styles.bulkPanel} role="group" aria-label="Toplu aday poz atama">
           <div className={styles.bulkFields}>
             <label>
               Toplu aday poz kodu
@@ -675,8 +674,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             Eski inceleme sonucu temizlenir.
             Mühendislik onayı verilmez.
           </p>
-        </div></details>
-
+        </div>
           <datalist id="supported-positions"><option value="15.275.1111" /><option value="DEMO-ARKEMX-SIVA-01" /></datalist>
         </details>
         <details className={styles.helpCard}><summary>Katalog / analiz özeti ve rehberli karar</summary>
