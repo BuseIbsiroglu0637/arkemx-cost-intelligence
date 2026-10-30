@@ -108,6 +108,9 @@ def test_api_serves_one_question_and_persists_only_candidate(client, auth, monke
     assert question is not None, row
     assert len(question["options"]) == 3
     assert row["saved_selection"] is None
+    assert row["triage"]["group"] == "needs_info"
+    assert row["triage"]["engineering_approved"] is False
+    assert row["triage"]["cost_allowed"] is False
     chosen = question["options"][1]["code"]
     saved = client.post(
         f"/api/projects/{pid}/a318/imports/{iid}/items/{row['work_item_id']}/candidate",
@@ -124,3 +127,5 @@ def test_api_serves_one_question_and_persists_only_candidate(client, auth, monke
     assert again["saved_selection"]["code"] == chosen
     assert again["clarification"] is not None
     assert again["clarification"]["approval_allowed"] is False
+    assert again["triage"]["group"] == "needs_info"
+    assert "Seramik türü (mimari şartname)" in again["triage"]["missing_fields"]
