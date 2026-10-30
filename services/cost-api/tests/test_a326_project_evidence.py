@@ -4,7 +4,9 @@ from io import BytesIO
 import pymupdf
 from openpyxl import Workbook
 
-from app.a326_project_evidence import _block_matches, _evidence_status
+from app.a326_project_evidence import (
+    _block_matches, _evidence_status, _position_consistency,
+)
 
 
 def pdf(*pages: str) -> bytes:
@@ -187,3 +189,40 @@ def test_conflict_after_first_six_source_excerpts_is_still_detected(client, auth
     assert len(result["evidence"]) == 6
     assert result["additional_evidence_count"] == 1
     assert result["engineering_approved"] is False
+
+
+def test_source_position_consistency_requires_all_critical_gazbeton_facts():
+    position = "10 cm gazbeton duvar 2,50 N/mm2 400 kg/m3"
+    only_strength = _block_matches(
+        "10 cm gazbeton duvar", [(1, "Gazbeton 10 cm 2,50 N/mm2")]
+    )
+    assert _position_consistency(only_strength, position) == "unverified"
+    full = _block_matches(
+        "10 cm gazbeton duvar",
+        [(1, "Gazbeton 10 cm 2,50 N/mm2 400 kg/m3")],
+    )
+    assert _position_consistency(full, position) == "matches_examined_facts"
+    mismatch = _block_matches(
+        "10 cm gazbeton duvar",
+        [(1, "Gazbeton 10 cm 3,50 N/mm2 400 kg/m3")],
+    )
+    assert _position_consistency(mismatch, position) == "conflicts"
+
+
+def test_source_position_consistency_requires_ceramic_finish_and_rectification():
+    position = "60x60 cm mat sirsiz rektifiyeli porselen seramik"
+    partial = _block_matches(
+        "60x60 cm porselen seramik",
+        [(1, "60x60 cm mat sirsiz porselen seramik")],
+    )
+    assert _position_consistency(partial, position) == "unverified"
+    matching = _block_matches(
+        "60x60 cm porselen seramik",
+        [(1, "60x60 cm mat sirsiz rektifiyeli porselen seramik")],
+    )
+    assert _position_consistency(matching, position) == "matches_examined_facts"
+    conflicting = _block_matches(
+        "60x60 cm porselen seramik",
+        [(1, "60x60 cm mat sirli rektifiyeli porselen seramik")],
+    )
+    assert _position_consistency(conflicting, position) == "conflicts"
