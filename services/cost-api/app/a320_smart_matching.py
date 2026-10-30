@@ -9,6 +9,7 @@ import re
 from decimal import Decimal
 
 from .excel import normalized
+from .a324_ceramic_features import ceramic_finish_conflict
 from .matching import dimensions, evaluate, family, find_candidates, similarity
 
 CONCRETE_CLASS = re.compile(r"(?<![a-z0-9])c\s*(\d{2})\s*/\s*(\d{2})(?!\d)")
@@ -91,19 +92,27 @@ def find_pdf_candidates(item, positions) -> list[dict]:
 
     Neither generic similarity nor a repeated quantity authorizes a priced match.
     """
-    initial = find_candidates(item, positions)
     desc = item.raw_description
+    initial = find_candidates(item, positions)
     cls = _concrete(desc)
     is_paint = _paint(desc)
     is_ceramic = family(desc) == "seramik"
     if not cls and not is_paint and not is_ceramic:
         return initial
     source_dims, _ = dimensions(desc)
-    keyed = {entry["position_id"]: entry for entry in initial}
+    lookup = {position.id: position for position in positions}
+    keyed = {
+        entry["position_id"]: entry for entry in initial
+        if not (is_ceramic and ceramic_finish_conflict(
+            desc, lookup[entry["position_id"]].description,
+        ))
+    }
     for position in positions:
         if position.id in keyed:
             continue
         position_desc = position.description
+        if is_ceramic and ceramic_finish_conflict(desc, position_desc):
+            continue
         score = similarity(desc, position_desc)
         if cls:
             if family(position_desc) != "beton" or _concrete(position_desc) != cls:
@@ -135,7 +144,6 @@ def find_pdf_candidates(item, positions) -> list[dict]:
                 "warnings": ["LOW_LEXICAL_SIMILARITY"], "approvable": False,
             }
         keyed[position.id] = result
-    lookup = {position.id: position for position in positions}
     ordered = list(keyed.values())
     ordered.sort(key=lambda entry: (
         # Explicit matching ceramic dimensions win over generic "kaplama"
