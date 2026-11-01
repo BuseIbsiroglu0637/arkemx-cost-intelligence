@@ -987,7 +987,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {expandedSuggestions.slice(0,1).map(option =>
               <div key={option.code} className={styles.simplePrimaryCandidate}>
                 <div>
-                  <strong>Poz: {option.code}</strong>
+                  <strong>İncelenen poz · {option.code}</strong>
                   <p>{option.description}</p>
                   <span className={styles.simpleStatus + " " +
                     (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
@@ -1020,7 +1020,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
                   <details>
                     <summary>PDF kanıtı ve analiz girdileri</summary>
-                    <p>Önce bu pozu kaydet; ardından analizi düzenleyip pilot kontrolü tamamla.</p>
+                    <p>Analiz tablosunu düzenleyebilmek için önce bu pozu kaynak PDF'ye bağlı şekilde kaydet. Bu işlem maliyet onayı değildir.</p>
                     {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
                     {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
                       <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
@@ -1028,7 +1028,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 {savedCandidates[expandedRow.work_item_id] !== option.code &&
                   <button type="button" disabled={Boolean(busy)}
                     onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
-                    Pozu kaydet
+                    Pozu seç ve analizi aç
                   </button>}
               </div>)}
             {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
@@ -1044,10 +1044,22 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                       onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>Bu pozu seç</button>}
                 </div>)}
             </details>}
-          </> : <p>Bu satır için uygun poz bulunamadı. Manuel numara girip kaynak PDF ile yeniden eşleştirebilirsin.</p>}
-          <div className={styles.projectEvidence} aria-label="Manuel poz numarası">
-            <strong>Manuel poz numarası</strong>
-            <p className={styles.a330Note}>Poz otomatik bulunamadıysa numarasını gir. Kayıt saklanır; kaynak PDF değiştiğinde yeniden aranır. Doğrulanmayan poz maliyete alınmaz.</p>
+          </> : <p className={styles.a343Empty}>Kaynak PDF'de doğrulanmış uygun poz bulunamadı. Manuel numara girerek daha sonra yeniden eşleştirebilirsin.</p>}
+          {Boolean(autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.excluded_positions?.length) &&
+            <details className={styles.otherCandidates}>
+              <summary>Teknik olarak elenen pozlar (bilgi amaçlı)</summary>
+              <p className={styles.a343SummaryNote}>İmalat kapsamına uymayan pozlar seçilemez ve maliyete aktarılmaz.</p>
+              {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.excluded_positions?.map(option =>
+                <div key={option.code} className={styles.otherCandidateRow}>
+                  <div><strong>{option.code}</strong> · {option.description}
+                    <small>{label(option.reason)} · PDF sayfa {option.source_page}</small>
+                  </div>
+                  <span className={styles.a343Rejected}>Uyumsuz</span>
+                </div>)}
+            </details>}
+          <div className={styles.a343Manual} aria-label="Manuel poz numarası">
+            <strong>Manuel poz numarası · PDF ile yeniden eşleştir</strong>
+            <p>Numara kaydedilir ve PDF'de tekrar aranır. Bulunamazsa bekleyenlerde kalır; diğer kalemlerin hesabını engellemez.</p>
             <div className={styles.projectEvidenceActions}>
               <label>Poz numarası
                 <input type="text" maxLength={80} disabled={Boolean(busy)}
