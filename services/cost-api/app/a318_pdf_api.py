@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from .a3_batch_review import NO_STORE, _source, _source_view
 from .a318_pdf_engine import PdfPosition, read_positions, verified_price_audit
 from .a324_ceramic_features import ceramic_finish_conflict, ceramic_question
+from .a343_work_scope import scope_blocker
 from .a325_review_queue import classify_row
 from .a335_plaster_matching import plaster_stages
 from .a320_smart_matching import (
@@ -159,6 +160,12 @@ def _pdf_candidate_check(current, position: PdfPosition,
         position_scope=position.scope,
         position_code=position.id,
     )
+    scope_issue = scope_blocker(current.raw_description, position.description)
+    if scope_issue:
+        check = {
+            **check, "blockers": sorted(set(check["blockers"]) | {scope_issue}),
+            "status": "blocked", "manual_approval_allowed": False,
+        }
     if "METRAJ_REVIEW_REQUIRED" in check["blockers"]:
         blockers = sorted(set(check["blockers"]) - {"METRAJ_REVIEW_REQUIRED"})
         flags = sorted(set(check["review_flags"]) | {"METRAJ_INPUT_REVIEW_REQUIRED"})
@@ -412,6 +419,7 @@ def suggestions_from_pdf(
         partners = partner_rows.get(str(current.id), [])
         candidates = find_pdf_candidates(current, positions)
         scored = []
+        excluded = []
         rejected = 0
         for result in candidates:
             position = by_code[result["position_id"]]
@@ -428,6 +436,18 @@ def suggestions_from_pdf(
                 )
             ):
                 rejected += 1
+                if len(excluded) < 3:
+                    excluded.append({
+                        "code": position.id,
+                        "description": position.description,
+                        "source_page": position.pdf_page,
+                        "reason": (
+                            check["blockers"][0] if check["blockers"]
+                            else "MATERIAL_FINISH_CONFLICT"
+                        ),
+                        "cost_allowed": False,
+                        "selectable": False,
+                    })
                 continue
             scored.append({
                 "code": position.id,
@@ -465,6 +485,7 @@ def suggestions_from_pdf(
             "clarification": question,
             "work_item_id": current.id, "source_row": current.source_row,
             "revision_id": current.revision_id, "suggestions": scored,
+            "excluded_positions": excluded,
             "saved_selection": (
                 _selected_view(
                     saved[str(current.id)],
