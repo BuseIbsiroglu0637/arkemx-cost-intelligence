@@ -947,35 +947,27 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             "Bu bölümde gösterilecek imalat yok."}
         </p>}
         {expandedRow && <div className={styles.simpleMatchDetail}>
-          <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · {expandedRow.effective_description}</h3>
-            <p>Pozu kontrol et → Analizi düzenle → Pilot kontrolü tamamla.</p></div></div>
-          <div className={styles.simpleStepTitle}><span>1</span><strong>Pozu kontrol et</strong>
-            <small>Poz bilgisi ve proje şartnamesini karşılaştır.</small></div>
-          {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && !expandedProof && (
-            <div className={styles.reviewReason} role="note">
-              {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
-              {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
-                <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
+          <div className={styles.a343DetailHeading}>
+            <div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
+              <p>{expandedRow.effective_description}</p>
+              <small>Excel miktarı: {expandedRow.quantity ?? "Belirtilmemiş"} {expandedRow.unit ?? ""}</small>
             </div>
-          )}
-          {!expandedIsPlaster && <div className={expandedProof ? styles.evidenceConfirmed : styles.missingFacts} role="note">
-            <strong>{expandedProof ? "Şartnameden doğrulanan bilgiler" : "Projeden doğrulanması gereken bilgiler"}</strong>
-            <span>{expandedProof
-              ? Object.entries(expandedProof.evidence_facts ?? {})
-                  .filter(([, value]) => value !== null)
-                  .map(([key, value]) => `${({
-                    gazbeton_strength_n_mm2: "Gazbeton dayanımı (N/mm²)",
-                    gazbeton_density_kg_m3: "Gazbeton yoğunluğu (kg/m³)",
-                    glaze: "Seramik yüzeyi", surface: "Yüzey", rectified: "Kenar",
-                  } as Record<string, string>)[key] ?? key}: ${value}`).join(" · ")
-              : triageFor(expandedRow.work_item_id)?.missing_fields.length
-                ? triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")
-                : triageFor(expandedRow.work_item_id)?.reason ??
-                  "Pozun uygulama ve fiyat kapsamı teknik belgeyle ayrıca incelenmeli."}</span>
-            <small>{expandedProof
-              ? `PDF sayfa ${expandedProof.evidence_page ?? "—"} · Sadece karşılaştırılan özellikler doğrulandı.`
-              : "Eksik bilgiler için şartnameyi kontrol et."}</small>
-          </div>}
+            <span className={styles.a343Pending}>{expandedProof ? "Teknik kanıt incelendi" : "İnceleme bekliyor"}</span>
+          </div>
+          <div className={styles.a343Decision} role="status">
+            <div className={styles.a343DecisionHead}>
+              <strong>{expandedSuggestions.length ? "Poz seçeneği bulundu · teknik kontrol gerekli" : "Uygun poz doğrulanamadı"}</strong>
+              <span>Hesap dışında · Sonra incelenebilir</span>
+            </div>
+            <p>{expandedSuggestions.length ?
+              (triageFor(expandedRow.work_item_id)?.reason ?? "Pozun imalat kapsamı ile Excel tarifi karşılaştırılmalı.") :
+              (autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.excluded_positions?.length
+                ? "Bulunan bazı pozların iş kapsamı metrajla uyuşmadı. Uygun poz için manuel numara girebilirsin."
+                : "Kaynak PDF'de doğrulanabilir uygun poz bulunamadı. Manuel numara girip yeniden arayabilirsin.")}</p>
+            {Boolean(autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
+              <small>İlişkili Excel satırları: {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş doğrulanmadan tutarlar birleştirilmez.</small>}
+            <small>Bu satır beklerken diğer onaylı metrajların maliyet hesabı devam edebilir.</small>
+          </div>
           {(
             <details className={styles.projectEvidence}>
               <summary>Proje şartnamesi PDF</summary>
