@@ -94,8 +94,9 @@ const handoffFactLabels: Record<string,string> = {
   coat_count: "Boya kat sayısı",
 };
 type ManualPosition = { position_code: string; current: boolean; pdf_found: boolean; can_select: boolean; technical_status: string | null; pdf_match: CandidateChoice | null; cost_allowed: false; engineering_approved: false };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; manual_position?: ManualPosition | null; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; excluded_positions?: ExcludedPosition[]; manual_position?: ManualPosition | null; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type ManualPositionResponse = { saved: true; manual_position: ManualPosition; engineering_approved: false; cost_allowed: false };
+type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -126,6 +127,9 @@ const LABELS: Record<string, string> = {
   LAYERS_NOT_EXTRACTED: "Tariflerden en az birinin katmanları ayrıştırılamadı.",
   LAYER_COUNT_UNVERIFIED: "İki tarifteki katman sayısı aynı değil; katmanlar incelenmeli.",
   CEMENT_DOSAGE_KG_UNASSIGNED: "Çimento miktarlarından biri katmana güvenilir biçimde bağlanamadı.",
+  WORK_SCOPE_DEMOLITION_MISMATCH: "Metraj söküm işi tarif etmiyor; bu poz söküm işine ait.",
+  WORK_SCOPE_MATERIAL_ONLY_MISMATCH: "Metraj yalnızca malzemeyi tarif ediyor; bu poz uygulama/imalat işini de içeriyor.",
+  WORK_SCOPE_LABOR_ONLY_MISMATCH: "Metraj yalnızca işçilik için; bu pozun kapsamına malzeme de dahil.",
 };
 function label(value: string): string {
   if (LABELS[value]) return LABELS[value];
@@ -834,7 +838,21 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       {saveNotice && <p className="success" role="status">{saveNotice}</p>}
       {(!selection && projectId && !busy && imports.length === 0) &&
         <p>Bu projede kayıtlı Excel bulunmuyor. Önce Metraj sayfasından Excel yükle.</p>}
-      {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-labelledby="rows-heading">
+      {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-label="Poz inceleme çalışma listesi">
+        <header className={styles.a343Overview}>
+          <div>
+            <h2>Poz inceleme</h2>
+            <p>Doğru pozları kontrol et; eksikleri beklet, diğerlerinin hesabını durdurma.</p>
+          </div>
+          <Link href="/#cost" className={styles.a343CostLink}>Kısmi maliyet ekranı →</Link>
+        </header>
+        <div className={styles.a343Summary} aria-label="Sayfa ve kaynak özeti">
+          <div><small>Toplam metraj</small><strong>{selection.import_source.row_count}</strong></div>
+          <div><small>Bu sayfada poz seçeneği</small><strong>{autoCandidates ? countSuggested : "—"}</strong></div>
+          <div><small>Bu sayfada bekleyen</small><strong>{autoCandidates ? countMissing : "—"}</strong></div>
+          <div className={styles.a343Source}><small>Kaynak PDF</small><strong>{pdfSource?.present ? "2026 analiz PDF bağlı" : "PDF bekleniyor"}</strong></div>
+        </div>
+        <p className={styles.a343SummaryNote}>Sayfa sayıları yalnızca ekrandaki {selection.rows.length} satır içindir. Poz seçeneği bulunması teknik onay veya maliyete dahil olma anlamına gelmez.</p>
         {!pdfSource?.present && <div className={styles.simpleMissingSource}>
           <strong>Önce poz analiz PDF kaynağını bağla</strong>
           <p>Gerçek poz adayları yalnızca yüklenen belge üzerinden aranır.</p>
@@ -856,7 +874,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
-            <th scope="col">İmalat</th><th scope="col">Bulunan poz</th><th scope="col">Durum</th><th scope="col">İşlem</th>
+            <th scope="col">Metraj imalatı</th><th scope="col">Poz kontrolü</th><th scope="col">Durum</th><th scope="col">İşlem</th>
           </tr></thead>
           <tbody>{visibleQueueRows.map(row => {
             const proposed = suggestionsFor(row.work_item_id);
@@ -866,7 +884,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
             const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
             const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
-            const visibleCandidate = selectedCode ? selectedCandidate : suitable ?? proposed[0] ?? null;
+            const visibleCandidate = selectedCandidate ?? suitable;
             const blocked = visibleCandidate?.technical_status === "blocked";
             const manuallyEntered = Boolean(selectedCode && !selectedCandidate);
             const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
@@ -882,13 +900,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const needsInformation = !visibleCandidate ||
               (!isSaved && reviewRow?.triage?.group === "needs_info");
             const statusText = blocked ? "Poz uyumsuz" :
-              pilotConfirmed ? "Pilot kontrol tamam" :
+              pilotConfirmed ? "Pilot inceleme kaydı var" :
               requiresNewReview ? "Yeniden kontrol" :
               manuallyEntered ? "Pozu doğrula" :
-              needsInformation ? "Bilgi eksik" : "Kontrol bekliyor";
+              needsInformation ? "Beklemede" : "Teknik kontrol bekliyor";
             const statusStyle = blocked ? styles.simpleStatusBlocked :
               pilotConfirmed ? styles.simpleStatusSuggested :
-              statusText === "Bilgi eksik" || statusText === "Yeniden kontrol" ?
+              statusText === "Beklemede" || statusText === "Yeniden kontrol" ?
                 styles.simpleStatusReview : styles.simpleStatusPending;
             const unresolvedCeramic = Boolean(
               reviewRow?.clarification && !isSaved && !selectedCode
@@ -910,7 +928,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 </div> : manuallyEntered ? <div className={styles.simpleMatchPosition}>
                   <strong>{selectedCode}</strong>
                   <small>PDF kaynak pozları arasında doğrulanmadı.</small>
-                </div> : <span className={styles.simpleNoCandidate}>Poz adayı bulunamadı</span>}
+                </div> : <span className={styles.simpleNoCandidate}>Uygun poz bulunamadı</span>}
               </td>
               <td><span role="status" className={styles.simpleStatus + " " + statusStyle}>
                 {statusText}
@@ -919,7 +937,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 aria-expanded={candidateDetailId === row.work_item_id}
                 onClick={() => setCandidateDetailId(old =>
                   old === row.work_item_id ? null : row.work_item_id)}>
-                {candidateDetailId === row.work_item_id ? "Kapat" : "Detay"}
+                {candidateDetailId === row.work_item_id ? "Kapat" : "İncele"}
               </button></td>
             </tr>;
           })}</tbody>
