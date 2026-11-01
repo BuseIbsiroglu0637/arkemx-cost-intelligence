@@ -968,79 +968,6 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <small>İlişkili Excel satırları: {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş doğrulanmadan tutarlar birleştirilmez.</small>}
             <small>Bu satır beklerken diğer onaylı metrajların maliyet hesabı devam edebilir.</small>
           </div>
-          {(
-            <details className={styles.projectEvidence}>
-              <summary>Proje şartnamesi PDF</summary>
-              <p>Şartnameyi yükle veya mevcut belgede ilgili bilgiyi ara.</p>
-              <div className={styles.projectEvidenceActions}>
-                <label>Şartname PDF (en fazla 8 MB)
-                  <input type="file" accept=".pdf,application/pdf"
-                    disabled={Boolean(busy)} onChange={event => setSpecFile(event.target.files?.[0] ?? null)} />
-                </label>
-                <button type="button" disabled={Boolean(busy) || !specFile} onClick={uploadSpecification}>
-                  Şartnameyi bağla
-                </button>
-                {!expandedIsPlaster && <button type="button" disabled={Boolean(busy)}
-                  className="secondary" onClick={() => findSpecificationEvidence(expandedRow.work_item_id)}>
-                  Belgede ara
-                </button>}
-              </div>
-              {projectSpec?.present && <small>Bağlı belge: {projectSpec.filename ?? "Proje şartnamesi PDF"} · Kaynak {projectSpec.sha256?.slice(0,12)}…</small>}
-              {expandedIsPlaster && <small>Sıva için PDF bilgileri aşağıdaki “Kaynaklı teknik bilgiler” tablosunda otomatik karşılaştırılır.</small>}
-              {!expandedIsPlaster && expandedEvidence && <div className={styles.projectEvidenceResult} role="status">
-                <strong>{expandedEvidence.status === "no_document" ? "Önce proje şartnamesi yükle" :
-                  expandedEvidence.status === "not_found" ? "Bilgi bulunamadı · Belge veya proje tarifi kontrol edilmeli" :
-                  expandedEvidence.status === "unreadable_text" ? "Bu PDF taranmış olabilir · okunabilir metin bulunamadı" :
-                  expandedEvidence.status === "conflicting" ? "Çelişkili teknik bilgiler bulundu" :
-                  "Belgede ilgili bilgi bulundu · İnceleme bekliyor"}</strong>
-                {(expandedEvidence.status === "found_for_review" || expandedEvidence.status === "conflicting") && (
-                  <div className={styles.projectPositionComparison} role="note">
-                    <strong>Belge–poz karşılaştırması{expandedEvidence.saved_candidate ? " · " + expandedEvidence.saved_candidate : ""}</strong>
-                    {expandedEvidence.status === "conflicting" ? (
-                      <p>Şartname içinde çelişkili bilgiler bulundu. Poz uyumu doğrulanamaz; mühendis incelemesi gerekli.</p>
-                    ) : expandedEvidence.candidate_link_status !== "current" ? (
-                      <p>{expandedEvidence.candidate_link_status === "source_or_revision_changed"
-                        ? "Kayıtlı pozun PDF kaynağı veya metraj revizyonu değişmiş. Pozu yeniden incelemek gerekiyor."
-                        : expandedEvidence.candidate_link_status === "analysis_pdf_missing"
-                        ? "Poz analiz PDF kaynağı bulunamadı; belge ile kayıtlı poz karşılaştırılamıyor."
-                        : expandedEvidence.candidate_link_status === "candidate_not_in_pdf"
-                        ? "Kayıtlı poz güncel analiz PDF dosyasında bulunamadı."
-                        : "Belgede bilgi bulundu fakat bu satıra bağlı güncel ve doğrulanabilir kayıtlı poz bulunamadı. Önce poz adayını kaydet."}</p>
-                    ) : !expandedEvidence.saved_candidate ||
-                      expandedEvidence.saved_candidate !== expandedSelectedCode ||
-                      expandedEvidence.saved_candidate !== expandedSavedCode ? (
-                      <p>Belgeyle karşılaştırılan kayıtlı poz, ekranda seçili pozla aynı değil. Kaydedilmiş pozu yenileyip tekrar “Belgede ara” işlemini çalıştır.</p>
-                    ) : expandedEvidence.candidate_consistency === "conflicts" ? (
-                      <p>Belge ve kayıtlı pozun açık teknik özellikleri uyuşmuyor. İnceleme gerekli.</p>
-                    ) : currentEvidenceMatch ? (
-                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; mühendis kararını aşağıdaki bölümden kontrol et.</p>
-                    ) : (
-                      <p>Belgede ilgili bilgiler bulundu ancak pozla gereken tüm özellikler karşılaştırılamadı. Eksikler incelemede kalır.</p>
-                    )}
-                    <small>Bu karşılaştırma tek başına mühendis onayı veya maliyet yetkisi vermez.</small>
-                  </div>
-                )}
-                {expandedEvidence.evidence.map((record, index) => (
-                  <div key={record.page + "-" + index} className={styles.projectEvidenceQuote}>
-                    <strong>PDF sayfa {record.page}</strong>
-                    <p>{record.quote}</p>
-                    <small>{Object.entries(record.facts).filter(([,value]) => value !== null).map(([key,value]) =>
-                      `${({
-                        gazbeton_strength_n_mm2: "Dayanım",
-                        gazbeton_density_kg_m3: "Yoğunluk",
-                        glaze: "Seramik yüzeyi",
-                        color: "Renk",
-                        surface: "Bitiş",
-                        rectified: "Kenar",
-                      } as Record<string, string>)[key] ?? key}: ${value}`).join(" · ")}</small>
-                  </div>
-                ))}
-                {Boolean(expandedEvidence.additional_evidence_count) &&
-                  <small>Belgede {expandedEvidence.additional_evidence_count} ek ilgili ifade var; tüm belge incelenmeli.</small>}
-                <small>Belgede bilgi bulmak, eksik şartnameyi tamamlamak veya mühendis onayı vermek anlamına gelmez.</small>
-              </div>}
-            </details>
-          )}
           {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
             <strong>{expandedClarification.prompt}</strong>
             <p>{expandedClarification.hint}</p>
@@ -1147,6 +1074,82 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   </button>
                 )}
             </div>}
+          </div>
+          <div className={styles.a343Advanced}>
+          {(
+            <details className={styles.projectEvidence}>
+              <summary>Teknik belge / şartname kanıtları (isteğe bağlı)</summary>
+              <p>Belgeyi bir kez bağla; yalnız gerektiğinde ilgili satırın kanıtlarını incele.</p>
+              <div className={styles.projectEvidenceActions}>
+                <label>Şartname PDF (en fazla 8 MB)
+                  <input type="file" accept=".pdf,application/pdf"
+                    disabled={Boolean(busy)} onChange={event => setSpecFile(event.target.files?.[0] ?? null)} />
+                </label>
+                <button type="button" disabled={Boolean(busy) || !specFile} onClick={uploadSpecification}>
+                  Şartnameyi bağla
+                </button>
+                {!expandedIsPlaster && <button type="button" disabled={Boolean(busy)}
+                  className="secondary" onClick={() => findSpecificationEvidence(expandedRow.work_item_id)}>
+                  Belgede ara
+                </button>}
+              </div>
+              {projectSpec?.present && <small>Bağlı belge: {projectSpec.filename ?? "Proje şartnamesi PDF"} · Kaynak {projectSpec.sha256?.slice(0,12)}…</small>}
+              {expandedIsPlaster && <small>Sıva için PDF bilgileri aşağıdaki “Kaynaklı teknik bilgiler” tablosunda otomatik karşılaştırılır.</small>}
+              {!expandedIsPlaster && expandedEvidence && <div className={styles.projectEvidenceResult} role="status">
+                <strong>{expandedEvidence.status === "no_document" ? "Önce proje şartnamesi yükle" :
+                  expandedEvidence.status === "not_found" ? "Bilgi bulunamadı · Belge veya proje tarifi kontrol edilmeli" :
+                  expandedEvidence.status === "unreadable_text" ? "Bu PDF taranmış olabilir · okunabilir metin bulunamadı" :
+                  expandedEvidence.status === "conflicting" ? "Çelişkili teknik bilgiler bulundu" :
+                  "Belgede ilgili bilgi bulundu · İnceleme bekliyor"}</strong>
+                {(expandedEvidence.status === "found_for_review" || expandedEvidence.status === "conflicting") && (
+                  <div className={styles.projectPositionComparison} role="note">
+                    <strong>Belge–poz karşılaştırması{expandedEvidence.saved_candidate ? " · " + expandedEvidence.saved_candidate : ""}</strong>
+                    {expandedEvidence.status === "conflicting" ? (
+                      <p>Şartname içinde çelişkili bilgiler bulundu. Poz uyumu doğrulanamaz; mühendis incelemesi gerekli.</p>
+                    ) : expandedEvidence.candidate_link_status !== "current" ? (
+                      <p>{expandedEvidence.candidate_link_status === "source_or_revision_changed"
+                        ? "Kayıtlı pozun PDF kaynağı veya metraj revizyonu değişmiş. Pozu yeniden incelemek gerekiyor."
+                        : expandedEvidence.candidate_link_status === "analysis_pdf_missing"
+                        ? "Poz analiz PDF kaynağı bulunamadı; belge ile kayıtlı poz karşılaştırılamıyor."
+                        : expandedEvidence.candidate_link_status === "candidate_not_in_pdf"
+                        ? "Kayıtlı poz güncel analiz PDF dosyasında bulunamadı."
+                        : "Belgede bilgi bulundu fakat bu satıra bağlı güncel ve doğrulanabilir kayıtlı poz bulunamadı. Önce poz adayını kaydet."}</p>
+                    ) : !expandedEvidence.saved_candidate ||
+                      expandedEvidence.saved_candidate !== expandedSelectedCode ||
+                      expandedEvidence.saved_candidate !== expandedSavedCode ? (
+                      <p>Belgeyle karşılaştırılan kayıtlı poz, ekranda seçili pozla aynı değil. Kaydedilmiş pozu yenileyip tekrar “Belgede ara” işlemini çalıştır.</p>
+                    ) : expandedEvidence.candidate_consistency === "conflicts" ? (
+                      <p>Belge ve kayıtlı pozun açık teknik özellikleri uyuşmuyor. İnceleme gerekli.</p>
+                    ) : currentEvidenceMatch ? (
+                      <p>Kaydedilmiş poz ile teknik şartnamede karşılaştırılan zorunlu özellikler aynı. Excel tarifindeki eksik alanlar belgeyle desteklendi; mühendis kararını aşağıdaki bölümden kontrol et.</p>
+                    ) : (
+                      <p>Belgede ilgili bilgiler bulundu ancak pozla gereken tüm özellikler karşılaştırılamadı. Eksikler incelemede kalır.</p>
+                    )}
+                    <small>Bu karşılaştırma tek başına mühendis onayı veya maliyet yetkisi vermez.</small>
+                  </div>
+                )}
+                {expandedEvidence.evidence.map((record, index) => (
+                  <div key={record.page + "-" + index} className={styles.projectEvidenceQuote}>
+                    <strong>PDF sayfa {record.page}</strong>
+                    <p>{record.quote}</p>
+                    <small>{Object.entries(record.facts).filter(([,value]) => value !== null).map(([key,value]) =>
+                      `${({
+                        gazbeton_strength_n_mm2: "Dayanım",
+                        gazbeton_density_kg_m3: "Yoğunluk",
+                        glaze: "Seramik yüzeyi",
+                        color: "Renk",
+                        surface: "Bitiş",
+                        rectified: "Kenar",
+                      } as Record<string, string>)[key] ?? key}: ${value}`).join(" · ")}</small>
+                  </div>
+                ))}
+                {Boolean(expandedEvidence.additional_evidence_count) &&
+                  <small>Belgede {expandedEvidence.additional_evidence_count} ek ilgili ifade var; tüm belge incelenmeli.</small>}
+                <small>Belgede bilgi bulmak, eksik şartnameyi tamamlamak veya mühendis onayı vermek anlamına gelmez.</small>
+              </div>}
+            </details>
+          )}
+
           </div>
         </div>}
         <div className={styles.tableFooter}>
