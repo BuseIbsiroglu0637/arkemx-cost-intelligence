@@ -29,7 +29,7 @@ SURFACES = {
     "tavan": (r"\btavan\b",),
 }
 METHODS = {
-    "sokum": (r"\bsokum\b", r"\bsokme\b", r"\bdemontaj\b"),
+    "sokum": (r"\bsokum\b", r"\bsokme\b", r"\bsokul\w*\b", r"\bdemontaj\b"),
     "montaj": (r"\bmontaj\b", r"\btakilmasi\b", r"\bkurulum\b"),
     "dokum": (r"\bdokum\b", r"\bdokulmesi\b"),
     "kaplama": (r"\bkaplama\b", r"\bkaplanmasi\b"),
