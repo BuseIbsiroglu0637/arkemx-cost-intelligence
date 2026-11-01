@@ -929,7 +929,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         {pdfSource?.present && <div className={styles.a344ScanBar}>
           <div><strong>Toplu poz incelemesi</strong>
             <small>{coverage ? `Tüm ${coverage.scanned_rows} satır kaynak PDF ile tarandı.` :
-              "408 dahil bütün metraj kalemlerini tek seferde sınıflandır."}</small>
+              `Toplam ${selection.import_source.row_count} metraj kalemini kaynak PDF ile sınıflandır.`}</small>
           </div>
           <button type="button" disabled={coverageLoading || Boolean(busy)}
             onClick={() => void scanFullImport()}>
@@ -997,9 +997,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 const saved = item?.saved_selection?.current === true &&
                   item?.saved_selection?.stale !== true;
                 const code = saved ? item?.saved_selection?.code : options[0]?.code;
-                const status = item?.triage.group === "needs_info" ? "Bilgi eksik" :
+                const status = item?.triage?.group === "needs_info" ? "Bilgi eksik" :
                   !options.length ? "Poz bulunamadı" :
-                  item?.triage.group === "prechecked" ? "Kural ön kontrolü" : "İnceleme bekliyor";
+                  item?.triage?.group === "prechecked" ? "Kural ön kontrolü" : "İnceleme bekliyor";
                 return <button type="button" key={row.work_item_id}
                   aria-pressed={candidateDetailId === row.work_item_id}
                   className={styles.a344ListRow}
