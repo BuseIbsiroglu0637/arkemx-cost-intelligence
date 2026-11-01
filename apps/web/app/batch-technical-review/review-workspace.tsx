@@ -96,6 +96,16 @@ const handoffFactLabels: Record<string,string> = {
 type ManualPosition = { position_code: string; current: boolean; pdf_found: boolean; can_select: boolean; technical_status: string | null; pdf_match: CandidateChoice | null; cost_allowed: false; engineering_approved: false };
 type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; excluded_positions?: ExcludedPosition[]; manual_position?: ManualPosition | null; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type ManualPositionResponse = { saved: true; manual_position: ManualPosition; engineering_approved: false; cost_allowed: false };
+type ReviewCoverage = {
+  schema: "arkemx.a344.review_coverage.v1";
+  read_only: true; approval_allowed: false; cost_allowed: false;
+  source_sha256: string; import_id: string; import_sha256: string;
+  total_rows: number; scanned_rows: number; complete: boolean;
+  counts: {no_match: number; needs_info: number; needs_review: number; rule_prechecked: number; manual_codes: number; rows_with_exclusions: number};
+  top_reasons: {reason: string; count: number}[];
+  rows: {work_item_id: string; source_row: number; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
+  cost_note: string;
+};
 type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
@@ -221,6 +231,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
+  const [coverage, setCoverage] = useState<ReviewCoverage | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState("");
+  const coverageAbortRef = useRef<AbortController | null>(null);
+  const jumpToRowRef = useRef<string | null>(null);
   const [manualCodes, setManualCodes] = useState<Record<string, string>>({});
   const [queueView, setQueueView] = useState<QueueView>("all");
   const [autoMessage, setAutoMessage] = useState("");
@@ -333,6 +348,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     }, "imports");
   }
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
+    if (id !== importId || sourceProject !== projectId) {
+      coverageAbortRef.current?.abort();
+      setCoverage(null); setCoverageLoading(false); setCoverageError("");
+    }
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(pageOffset);
     setAutoCandidates(null); setAutoMessage(""); setSpecEvidence(null); setEngineerHandoff(null); automaticRunKeyRef.current = "";
@@ -349,6 +368,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function loadPdfSource(id: string) {
     void request<PdfSource>(`/api/projects/${encodeURIComponent(id)}/a318/source`, data => {
       if (data.read_only !== true) throw new Error("PDF kaynak doğrulaması başarısız.");
+      setCoverage(old => old && data.sha256 === old.source_sha256 ? old : null);
       setPdfSource(data);
     }, "pdf-source");
   }
@@ -432,7 +452,49 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
     }, "pdf-upload", { method: "POST", body: form });
   }
-  function findAutomaticCandidates() {
+  async function scanFullImport() {
+    if (!selection || !projectId || !importId || !pdfSource?.sha256 || coverageLoading) return;
+    coverageAbortRef.current?.abort();
+    const controller = new AbortController();
+    coverageAbortRef.current = controller;
+    const source = selection.import_source;
+    const sourceSha = pdfSource.sha256;
+    const token = sessionStorage.getItem("arkemx_dev_token");
+    if (!token) { setCoverageError("Oturum gerekli."); return; }
+    setCoverageLoading(true); setCoverageError("");
+    try {
+      const response = await fetch(
+        `${API}/api/projects/${encodeURIComponent(projectId)}/a318/imports/${encodeURIComponent(importId)}/review-coverage`,
+        {cache: "no-store", signal: controller.signal, headers: {Authorization: "Bearer " + token}},
+      );
+      if (!response.ok) throw new Error(
+        response.status === 422 ? "Proje, toplu tarama sınırını aşıyor; sayfa bazında incele." :
+        "Toplu tarama tamamlanamadı (HTTP " + response.status + ")."
+      );
+      const result = await response.json() as ReviewCoverage;
+      if (controller.signal.aborted) return;
+      if (result.schema !== "arkemx.a344.review_coverage.v1" ||
+          result.read_only !== true || result.approval_allowed !== false ||
+          result.cost_allowed !== false || !result.complete ||
+          result.import_id !== importId || result.import_sha256 !== source.sha256 ||
+          result.source_sha256 !== sourceSha || result.total_rows !== source.row_count ||
+          result.scanned_rows !== result.total_rows || result.rows.length !== result.total_rows ||
+          result.rows.some(row => row.cost_allowed !== false || row.engineering_approved !== false)) {
+        throw new Error("Tam proje incelemesi kaynak kimliğiyle uyuşmuyor.");
+      }
+      setCoverage(result);
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setCoverageError(error instanceof Error ? error.message : "Toplu tarama başarısız.");
+    } finally {
+      if (coverageAbortRef.current === controller) {
+        coverageAbortRef.current = null;
+        setCoverageLoading(false);
+      }
+    }
+  }
+
+    function findAutomaticCandidates() {
     if (!selection || !projectId || !importId || !pdfSource?.present || !pdfSource.sha256 || busy) return;
     const source = selection;
     const sourceSha = pdfSource.sha256;
@@ -463,7 +525,15 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setManualCodes(old => Object.fromEntries(data.rows.map(row => [
           row.work_item_id, row.manual_position?.position_code ?? old[row.work_item_id] ?? "",
         ])));
-        setCandidateDetailId(prev => prev && data.rows.some(row => row.work_item_id === prev) ? prev : null);
+        setCandidateDetailId(prev => {
+          const jump = jumpToRowRef.current;
+          if (jump && data.rows.some(row => row.work_item_id === jump)) {
+            jumpToRowRef.current = null;
+            return jump;
+          }
+          return prev && data.rows.some(row => row.work_item_id === prev) ?
+            prev : data.rows[0]?.work_item_id ?? null;
+        });
         setAutoFilter("all");
         const restored = data.rows.flatMap(row => {
           const saved = row.saved_selection;
