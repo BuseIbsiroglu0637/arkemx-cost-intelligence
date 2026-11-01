@@ -918,11 +918,54 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         </header>
         <div className={styles.a343Summary} aria-label="Sayfa ve kaynak özeti">
           <div><small>Toplam metraj</small><strong>{selection.import_source.row_count}</strong></div>
-          <div><small>Bu sayfada poz seçeneği</small><strong>{autoCandidates ? countSuggested : "—"}</strong></div>
-          <div><small>Bu sayfada bekleyen</small><strong>{autoCandidates ? countMissing : "—"}</strong></div>
+          <div><small>{coverage ? "Tüm projede poz seçenekli" : "Bu sayfada poz seçenekli"}</small><strong>{coverage ? coverage.total_rows - coverage.counts.no_match : autoCandidates ? countSuggested : "—"}</strong></div>
+          <div><small>{coverage ? "Tüm projede poz bulunamayan" : "Bu sayfada poz bulunamayan"}</small><strong>{coverage ? coverage.counts.no_match : autoCandidates ? countMissing : "—"}</strong></div>
           <div className={styles.a343Source}><small>Kaynak PDF</small><strong>{pdfSource?.present ? "2026 analiz PDF bağlı" : "PDF bekleniyor"}</strong></div>
         </div>
-        <p className={styles.a343SummaryNote}>Sayfa sayıları yalnızca ekrandaki {selection.rows.length} satır içindir. Poz seçeneği bulunması teknik onay veya maliyete dahil olma anlamına gelmez.</p>
+        <p className={styles.a343SummaryNote}>{coverage ?
+  "Tüm proje tarandı. Sayılar bütün metrajın PDF bazlı ön değerlendirmesidir." :
+  `Tüm proje henüz taranmadı; mevcut sayılar yalnızca ekrandaki ${selection.rows.length} satır içindir.`}
+  Poz seçeneği bulunması teknik onay veya maliyete alınma anlamına gelmez.</p>
+        {pdfSource?.present && <div className={styles.a344ScanBar}>
+          <div><strong>Toplu poz incelemesi</strong>
+            <small>{coverage ? `Tüm ${coverage.scanned_rows} satır kaynak PDF ile tarandı.` :
+              "408 dahil bütün metraj kalemlerini tek seferde sınıflandır."}</small>
+          </div>
+          <button type="button" disabled={coverageLoading || Boolean(busy)}
+            onClick={() => void scanFullImport()}>
+            {coverageLoading ? "Tüm satırlar taranıyor…" : coverage ? "Taramayı yenile" : "Tüm metrajı tara"}
+          </button>
+        </div>}
+        {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
+        {coverage && <div className={styles.a344Coverage} aria-label="Tüm metraj inceleme özeti">
+          <div className={styles.a344CoverageCounts}>
+            <div><small>PDF'de poz bulunamadı</small><strong>{coverage.counts.no_match}</strong></div>
+            <div><small>Teknik bilgi eksik</small><strong>{coverage.counts.needs_info}</strong></div>
+            <div><small>İnceleme bekleyen</small><strong>{coverage.counts.needs_review}</strong></div>
+            <div><small>Kural ön kontrolü</small><strong>{coverage.counts.rule_prechecked}</strong></div>
+          </div>
+          <p>Bu dört durumun toplamı {coverage.total_rows} metraj kalemidir.
+            <strong> Maliyete aktarım ayrı bir onay ve fiyatlandırma aşamasıdır.</strong>
+            Hiçbir bekleyen kalem 0 TL kabul edilmez.</p>
+          <details className={styles.a344AllResults}>
+            <summary>Tüm {coverage.total_rows} satırın durumu ve bekleme nedenleri</summary>
+            <div className={styles.a344AllScroll}>
+              {coverage.rows.map((row, index) =>
+                <button key={row.work_item_id} type="button"
+                  onClick={() => {
+                    jumpToRowRef.current = row.work_item_id;
+                    loadItems(importId, Math.floor(index / 20) * 20);
+                  }}>
+                  <span>Excel {row.source_row}</span>
+                  <strong>{row.state === "no_match" ? "Poz yok" :
+                    row.state === "needs_info" ? "Bilgi eksik" :
+                    row.state === "rule_prechecked" ? "Ön kontrol" : "İnceleme"}</strong>
+                  <span>{row.reason}</span>
+                  <span>{row.suggested_code ?? row.manual_code ?? "—"}</span>
+                </button>)}
+            </div>
+          </details>
+        </div>}
         {!pdfSource?.present && <div className={styles.simpleMissingSource}>
           <strong>Önce poz analiz PDF kaynağını bağla</strong>
           <p>Gerçek poz adayları yalnızca yüklenen belge üzerinden aranır.</p>
@@ -941,82 +984,52 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               automaticRunKeyRef.current = ""; findAutomaticCandidates();
             }}>Tekrar dene</button>}
         </div>}
-        <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
-          <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
-          <thead><tr>
-            <th scope="col">Metraj imalatı</th><th scope="col">Poz kontrolü</th><th scope="col">Durum</th><th scope="col">İşlem</th>
-          </tr></thead>
-          <tbody>{visibleQueueRows.map(row => {
-            const proposed = suggestionsFor(row.work_item_id);
-            const reviewRow = autoCandidates?.rows.find(item => item.work_item_id === row.work_item_id);
-            const suitable = proposed.find(item => item.technical_status !== "blocked") ?? null;
-            const selectedCode = candidates[row.work_item_id]?.trim() ?? "";
-            const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
-            const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
-            const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
-            const visibleCandidate = selectedCandidate ?? suitable;
-            const blocked = visibleCandidate?.technical_status === "blocked";
-            const manuallyEntered = Boolean(selectedCode && !selectedCandidate);
-            const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
-              evidenceProofFor(row.work_item_id, selectedCode) : null;
-            const pilotRow = engineerHandoff?.rows.find(item => item.work_item_id === row.work_item_id);
-            // A list 'completed' state is only a current, source-linked pilot record.
-            // It is never a verified engineer signoff or an M5 cost permission.
-            const pilotConfirmed = Boolean(isSaved && !blocked && !hasStaleChoice &&
-              validatedEvidence && pilotRow?.pilot_confirmed === true &&
-              pilotRow?.pilot_status === "confirmed");
-            const requiresNewReview = hasStaleChoice ||
-              (isSaved && pilotRow?.pilot_status === "stale");
-            const needsInformation = !visibleCandidate ||
-              (!isSaved && reviewRow?.triage?.group === "needs_info");
-            const statusText = blocked ? "Poz uyumsuz" :
-              pilotConfirmed ? "Pilot inceleme kaydı var" :
-              requiresNewReview ? "Yeniden kontrol" :
-              manuallyEntered ? "Pozu doğrula" :
-              needsInformation ? "Beklemede" : "Teknik kontrol bekliyor";
-            const statusStyle = blocked ? styles.simpleStatusBlocked :
-              pilotConfirmed ? styles.simpleStatusSuggested :
-              statusText === "Beklemede" || statusText === "Yeniden kontrol" ?
-                styles.simpleStatusReview : styles.simpleStatusPending;
-            const unresolvedCeramic = Boolean(
-              reviewRow?.clarification && !isSaved && !selectedCode
-            );
-            return <tr key={row.work_item_id}>
-              <td className={styles.simpleMatchDescription}>
-                <strong>{row.effective_description}</strong>
-                <small>Excel {row.source_row} · {row.quantity ?? "Miktar eksik"} {row.unit ?? ""}</small>
-              </td>
-              <td>
-                {visibleCandidate ? <div className={styles.simpleMatchPosition}>
-                  {unresolvedCeramic ? <>
-                    <strong>Seramik pozunu seç</strong>
-                    <small>Şartnamedeki seramik türüyle karşılaştır.</small>
-                  </> : <>
-                    <strong>{visibleCandidate.code}</strong>
-                    <small title={visibleCandidate.description}>{visibleCandidate.description}</small>
-                  </>}
-                </div> : manuallyEntered ? <div className={styles.simpleMatchPosition}>
-                  <strong>{selectedCode}</strong>
-                  <small>PDF kaynak pozları arasında doğrulanmadı.</small>
-                </div> : <span className={styles.simpleNoCandidate}>Uygun poz bulunamadı</span>}
-              </td>
-              <td><span role="status" className={styles.simpleStatus + " " + statusStyle}>
-                {statusText}
-              </span></td>
-              <td><button type="button" className={styles.showCandidates}
-                aria-expanded={candidateDetailId === row.work_item_id}
-                onClick={() => setCandidateDetailId(old =>
-                  old === row.work_item_id ? null : row.work_item_id)}>
-                {candidateDetailId === row.work_item_id ? "Kapat" : "İncele"}
-              </button></td>
-            </tr>;
-          })}</tbody>
-        </table></div>
+        <div className={styles.a344Workspace}>
+          <section className={styles.a344List} aria-label="Metraj listesi">
+            <div className={styles.a344ListHeading}>
+              <strong>Metraj kalemleri</strong>
+              <small>Satırı seç, ayrıntısını sağda incele.</small>
+            </div>
+            <div className={styles.a344ListItems}>
+              {visibleQueueRows.map(row => {
+                const item = autoCandidates?.rows.find(x => x.work_item_id === row.work_item_id);
+                const options = item?.suggestions ?? [];
+                const saved = item?.saved_selection?.current === true &&
+                  item?.saved_selection?.stale !== true;
+                const code = saved ? item?.saved_selection?.code : options[0]?.code;
+                const status = item?.triage.group === "needs_info" ? "Bilgi eksik" :
+                  !options.length ? "Poz bulunamadı" :
+                  item?.triage.group === "prechecked" ? "Kural ön kontrolü" : "İnceleme bekliyor";
+                return <button type="button" key={row.work_item_id}
+                  aria-pressed={candidateDetailId === row.work_item_id}
+                  className={styles.a344ListRow}
+                  onClick={() => setCandidateDetailId(row.work_item_id)}>
+                  <span className={styles.a344ListRowTop}>
+                    <span>Excel {row.source_row}</span><em>{status}</em>
+                  </span>
+                  <strong>{row.effective_description}</strong>
+                  <small>{row.quantity ?? "Miktar eksik"} {row.unit ?? ""} · {code ?
+                    `Poz: ${code}` : item?.manual_position?.position_code ?
+                    `Manuel poz: ${item.manual_position.position_code}` : "Poz belirlenmedi"}</small>
+                </button>;
+              })}
+            </div>
         {autoCandidates && visibleQueueRows.length === 0 && <p className={styles.queueEmpty}>
           {queueView === "prechecked" ? "Henüz ön kontrolü tamamlanmış poz yok. Bu, teknik uygunluk onayı verilmediği anlamına gelmez; eksik bilgiler incelenmeli." :
             "Bu bölümde gösterilecek imalat yok."}
         </p>}
-        {expandedRow && <div className={styles.simpleMatchDetail}>
+            <div className={styles.tableFooter}>
+          <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
+          <div className={styles.pager}>
+            <button type="button" className="secondary" disabled={Boolean(busy) || offset === 0}
+              onClick={() => loadItems(importId, Math.max(0,offset-20))}>← Önceki</button>
+            <button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null}
+              onClick={() => loadItems(importId,selection.next_offset ?? 0)}>Sonraki →</button>
+          </div>
+        </div>
+          </section>
+          <section className={styles.a344Review} aria-label="Seçilen metraj teknik inceleme">
+            {expandedRow && <div className={styles.simpleMatchDetail}>
           <div className={styles.a343DetailHeading}>
             <div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
               <p>{expandedRow.effective_description}</p>
@@ -1234,14 +1247,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
 
           </div>
         </div>}
-        <div className={styles.tableFooter}>
-          <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
-          <div className={styles.pager}>
-            <button type="button" className="secondary" disabled={Boolean(busy) || offset === 0}
-              onClick={() => loadItems(importId, Math.max(0,offset-20))}>← Önceki</button>
-            <button type="button" className="secondary" disabled={Boolean(busy) || selection.next_offset === null}
-              onClick={() => loadItems(importId,selection.next_offset ?? 0)}>Sonraki →</button>
-          </div>
+
+            {!expandedRow && <div className={styles.a344Placeholder}>
+              <strong>İncelemek istediğin metraj satırını seç.</strong>
+              <p>PDF poz seçenekleri, eksik teknik bilgiler, analiz girdileri ve manuel numara burada açılacak.</p>
+            </div>}
+          </section>
         </div>
       </section>}
     </>}
