@@ -438,6 +438,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         throw new Error("PDF analizi doğrulanamadı.");
       }
       automaticRunKeyRef.current = "";
+      coverageAbortRef.current?.abort();
+      setCoverage(null); setCoverageLoading(false); setCoverageError("");
       setPdfSource(data);
       setPdfFile(null);
       setPdfRightsConfirmed(false);
@@ -642,6 +644,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {...row, manual_position: data.manual_position} : row),
         } : old);
         setManualCodes(old => ({...old, [id]: code}));
+        setCoverage(null);
         setSaveNotice(data.manual_position.can_select ?
           "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
           "Manuel poz numarası inceleme için kaydedildi. PDF'de doğrulanana kadar maliyet hesabına alınmayacak.");
@@ -672,6 +675,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
+        setCoverage(null);
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
