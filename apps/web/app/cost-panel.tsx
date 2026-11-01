@@ -4,7 +4,8 @@ import CostAnalysisPanel from "./cost-analysis-panel";
 
 type Candidate = {candidate_id:string;source_row:number;description:string;position_code:string;
  quantity:string;unit:string;evidence_sha256:string};
-type Eligible = {run_id:string;row_count:number;eligible_count:number;items:Candidate[]};
+type Pending = {work_item_id:string;source_row:number;description:string;reason:string;status:"pending";amount:null};
+type Eligible = {run_id:string;row_count:number;eligible_count:number;pending_count:number;is_partial:boolean;pending_items:Pending[];items:Candidate[]};
 type Estimate = {id:string;title:string;total:string;line_count:number;created_at:string;currency:string;status:string;snapshot_sha256:string};
 type CostLine = {source_row:number;description:string;position_code:string;quantity:string;
  unit:string;unit_price:string;amount:string;price_source:string};
@@ -80,7 +81,7 @@ export default function CostPanel({token,project}:{token:string|null;project:str
    setDetailPage(1);
    setDetail(await request<Detail>("/api/projects/"+project+"/m5/estimates/"+e.id,token));
    setChosen({});
-   setNotice("Taslak kaydedildi. Nihai teklif veya otomatik mühendis onayı oluşturulmadı.");
+   setNotice("Kısmi maliyet taslağı kaydedildi. Bekleyen kalemlere sıfır fiyat atanmadı; nihai teklif veya otomatik mühendis onayı oluşturulmadı.");
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  }
@@ -125,7 +126,16 @@ export default function CostPanel({token,project}:{token:string|null;project:str
      <button type="button" className="secondary" disabled={busy||loading} onClick={()=>setRefresh(v=>v+1)}>Yenile</button>
    </div>
    {eligible&&<div className="stack">
-     <p className="hint">İncelenen çalışmada {eligible.row_count} metraj satırı var; {eligible.eligible_count} aday maliyet hesabına alınabilir. Taslak aşağıda seçtiğiniz satırları kapsar. İncelemesi tamamlanmayan satırlar fiyatlandırılmaz.</p>
+     <p className="hint">İncelenen çalışmada {eligible.row_count} metraj satırı var; {eligible.eligible_count} poz maliyet hesabına alınabilir, {eligible.pending_count} kalem incelemeye bırakıldı. Bu hesap kısmi bir taslaktır; bekleyenler sıfır TL kabul edilmez ve hesabı durdurmaz.</p>
+     {eligible.is_partial&&<details className="card" aria-label="Maliyet dışında bekleyen metrajlar">
+       <summary>Sonra incelenecek kalemler ({eligible.pending_count})</summary>
+       <p className="hint">Bu kalemler maliyet hesabına dahil değildir. Eksikleri tamamlandığında yeniden eşleştirilip onaylanabilirler.</p>
+       <div className="table-scroll"><table><thead><tr><th>Excel satırı</th><th>İmalat</th><th>Bekleme nedeni</th></tr></thead>
+         <tbody>{eligible.pending_items.slice(0,50).map(item=><tr key={item.work_item_id}>
+           <td>{item.source_row}</td><td>{item.description}</td><td>{item.reason}</td>
+         </tr>)}</tbody></table></div>
+       {eligible.pending_count>50&&<p className="hint">İlk 50 bekleyen kalem gösteriliyor. Diğerleri poz inceleme aşamasında takip edilmeli.</p>}
+     </details>}
      <label>Taslak başlığı<input maxLength={160} value={title}
        onChange={e=>setTitle(e.target.value)} placeholder="Örn. Kaba inşaat maliyeti"/></label>
      <label>Fiyat kaynağı (tüm seçili satırlar için; en az 10 karakter)

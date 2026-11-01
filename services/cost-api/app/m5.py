@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .security import current_user
 from .models import (
-    User, MatchCandidate, MatchDecision, MatchRunItemSnapshot, WorkItem,
+    User, MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot, WorkItem,
     CatalogPosition, ImportBatch, TechnicalEvidence, CostEstimate, CostEstimateLine
 )
 from .m42 import _context, _proof, _latest_decision_id
@@ -147,14 +147,65 @@ def _display(row):
     return {**row, "quantity": str(row["quantity"])}
 
 
+def _pending_rows(db: Session, run: MatchRun, eligible: dict) -> list[dict]:
+    """List every unpriced metraj once, including rows without any candidate.
+
+    Pending rows are informational only. They never become zero-TL estimate
+    lines and do not prevent independently approved rows from being priced.
+    An invalid *approved* candidate still fails closed in _snapshot.
+    """
+    approved_work_ids = {row["work_item_id"] for row in eligible.values()}
+    snapshots = db.execute(
+        select(MatchRunItemSnapshot, WorkItem)
+        .join(WorkItem, WorkItem.id == MatchRunItemSnapshot.work_item_id)
+        .where(MatchRunItemSnapshot.run_id == run.id)
+        .order_by(WorkItem.source_row, WorkItem.id)
+    ).all()
+    decisions = db.execute(
+        select(MatchCandidate.work_item_id, MatchDecision.action)
+        .outerjoin(MatchDecision, MatchDecision.id == _latest_decision_id())
+        .where(MatchCandidate.run_id == run.id)
+    ).all()
+    actions: dict[str, list[str | None]] = {}
+    for work_id, action in decisions:
+        actions.setdefault(work_id, []).append(action)
+
+    pending = []
+    for snapshot, item in snapshots:
+        if item.id in approved_work_ids:
+            continue
+        found = actions.get(item.id, [])
+        if snapshot.review_required or snapshot.quantity is None or snapshot.quantity <= 0 or not snapshot.unit:
+            reason = "Metraj miktarı veya ölçü birimi incelemesi gerekli"
+        elif not found:
+            reason = "Bu metraj için poz adayı bulunamadı"
+        elif all(action == "reject" for action in found):
+            reason = "Poz adayları reddedildi; yeni eşleştirme gerekli"
+        else:
+            reason = "Poz eşleştirme veya teknik onay bekliyor"
+        pending.append({
+            "work_item_id": item.id,
+            "source_row": item.source_row,
+            "description": snapshot.description,
+            "reason": reason,
+            "status": "pending",
+            "amount": None,
+        })
+    return pending
+
+
 @router.get("/eligible")
 def eligible_lines(project_id: str, user: User = Depends(current_user),
                    db: Session = Depends(get_db)):
     run, version, imported, eligible = _snapshot(db, user, project_id)
+    pending = _pending_rows(db, run, eligible)
     return {
         "run_id": run.id, "currency": "TRY", "row_count": run.row_count,
         "source_file_sha256": imported.sha256, "catalog_sha256": version.sha256,
         "eligible_count": len(eligible),
+        "pending_count": len(pending),
+        "is_partial": bool(pending),
+        "pending_items": pending,
         "items": [_display(v) for v in eligible.values()],
         "note": "Yalniz muhendis onayli pozlar. Birim fiyatlar elle ve kaynak aciklamasiyla girilir."
     }
