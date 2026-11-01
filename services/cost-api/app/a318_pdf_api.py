@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .a3_batch_review import NO_STORE, _source, _source_view
@@ -377,15 +377,11 @@ async def attach_pdf(
     return _summary((digest, positions))
 
 
-@router.get("/imports/{import_id}/suggestions")
-def suggestions_from_pdf(
-    project_id: UUID,
-    import_id: UUID,
-    response: Response,
-    user: Annotated[User, Depends(current_user)],
-    db: Annotated[Session, Depends(get_db)],
-    offset: Annotated[int, Query(ge=0)] = 0,
+def _suggestions_result(
+    project_id: UUID, import_id: UUID, response: Response,
+    user: User, db: Session, offset: int, limit: int,
 ):
+    """One matching pipeline for a 20-row page and a full-import review summary."""
     batch: ImportBatch = _source(db, user, str(project_id), str(import_id))
     found = _read(user)
     if not found:
@@ -403,10 +399,10 @@ def suggestions_from_pdf(
         PdfCandidateSelection.organization_id == user.organization_id,
         PdfCandidateSelection.project_id == batch.project_id,
         PdfCandidateSelection.import_id == batch.id,
-        PdfCandidateSelection.work_item_id.in_([item.id for item in effective[offset:offset + MAX_ROWS]]),
+        PdfCandidateSelection.work_item_id.in_([item.id for item in effective[offset:offset + limit]]),
     )).all()
     saved = {row.work_item_id: row for row in saved_rows}
-    visible_ids = [item.id for item in effective[offset:offset + MAX_ROWS]]
+    visible_ids = [item.id for item in effective[offset:offset + limit]]
     manual_rows = db.scalars(select(ManualPositionRequest).where(
         ManualPositionRequest.organization_id == user.organization_id,
         ManualPositionRequest.project_id == batch.project_id,
@@ -415,7 +411,7 @@ def suggestions_from_pdf(
     )).all()
     manual_by_id = {row.work_item_id: row for row in manual_rows}
     rows = []
-    for current in effective[offset:offset + MAX_ROWS]:
+    for current in effective[offset:offset + limit]:
         partners = partner_rows.get(str(current.id), [])
         candidates = find_pdf_candidates(current, positions)
         scored = []
@@ -512,7 +508,7 @@ def suggestions_from_pdf(
         for row in rows if row["suggestions"]
         and row["suggestions"][0]["technical_status"] != "blocked"
     )
-    by_item = {str(item.id): item for item in effective[offset:offset + MAX_ROWS]}
+    by_item = {str(item.id): item for item in effective[offset:offset + limit]}
     for row in rows:
         for candidate in row["suggestions"]:
             candidate["possible_shared_scope"] = top_codes[candidate["code"]] > 1
@@ -536,4 +532,108 @@ def suggestions_from_pdf(
             "institution": "CSB (kullanıcı PDF kaynağı)", "year": 2026,
         },
         "rows": rows, "page_offset": offset,
+    }
+
+
+MAX_FULL_REVIEW_ROWS = 2000
+
+
+@router.get("/imports/{import_id}/suggestions")
+def suggestions_from_pdf(
+    project_id: UUID,
+    import_id: UUID,
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    return _suggestions_result(project_id, import_id, response, user, db, offset, MAX_ROWS)
+
+
+@router.get("/imports/{import_id}/review-coverage")
+def full_import_review_coverage(
+    project_id: UUID, import_id: UUID, response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """On-demand, source-bound, read-only overview of every imported metraj row.
+
+    This is a *matching review* overview, never a cost-eligibility decision.
+    A PDF candidate or even 'prechecked' status does not create an M5 estimate.
+    """
+    batch = _source(db, user, str(project_id), str(import_id))
+    total = db.scalar(select(func.count()).select_from(WorkItem).where(
+        WorkItem.import_id == batch.id,
+    )) or 0
+    if total > MAX_FULL_REVIEW_ROWS:
+        raise HTTPException(422, "Import exceeds the full-review limit; use paged review")
+    result = _suggestions_result(project_id, import_id, response, user, db, 0, MAX_FULL_REVIEW_ROWS)
+    counters = Counter()
+    causes = Counter()
+    items = []
+    for row in result["rows"]:
+        options = row["suggestions"]
+        triage = row["triage"]
+        group = triage["group"]
+        if not options:
+            state = "no_match"
+        elif group == "needs_info":
+            state = "needs_info"
+        elif group == "prechecked":
+            state = "rule_prechecked"
+        else:
+            state = "needs_review"
+        counters[state] += 1
+        if row["manual_position"] and row["manual_position"].get("current"):
+            counters["manual_codes"] += 1
+        if row["excluded_positions"]:
+            counters["rows_with_exclusions"] += 1
+        cause = triage["reason"] if options else (
+            "Teknik uyumsuz pozlar elendi" if row["rejected_candidate_count"]
+            else "Kaynak PDF'de uygun poz bulunamadı"
+        )
+        causes[cause] += 1
+        items.append({
+            "work_item_id": row["work_item_id"],
+            "source_row": row["source_row"],
+            "state": state,
+            "reason": cause,
+            "suggested_code": options[0]["code"] if options else None,
+            "candidate_count": len(options),
+            "manual_code": (
+                row["manual_position"]["position_code"]
+                if row["manual_position"] else None
+            ),
+            "cost_allowed": False,
+            "engineering_approved": False,
+        })
+    response.headers.update(NO_STORE)
+    return {
+        "schema": "arkemx.a344.review_coverage.v1",
+        "read_only": True,
+        "approval_allowed": False,
+        "cost_allowed": False,
+        "source_sha256": result["catalog"]["sha256"],
+        "import_id": str(import_id),
+        "import_sha256": result["import_source"]["sha256"],
+        "total_rows": total,
+        "scanned_rows": len(items),
+        "complete": len(items) == total,
+        "counts": {
+            "no_match": counters["no_match"],
+            "needs_info": counters["needs_info"],
+            "needs_review": counters["needs_review"],
+            "rule_prechecked": counters["rule_prechecked"],
+            "manual_codes": counters["manual_codes"],
+            "rows_with_exclusions": counters["rows_with_exclusions"],
+        },
+        "top_reasons": [
+            {"reason": reason, "count": count}
+            for reason, count in causes.most_common(8)
+        ],
+        "rows": items,
+        "cost_note": (
+            "PDF poz taraması mühendis onayı veya M5 maliyet yetkisi vermez. "
+            "Yalnızca ayrıca onaylanmış fiyatlandırılabilir kalemler M5'e alınır."
+        ),
     }
