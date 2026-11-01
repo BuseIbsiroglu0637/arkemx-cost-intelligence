@@ -93,7 +93,9 @@ const handoffFactLabels: Record<string,string> = {
   paint_base: "Boya türü",
   coat_count: "Boya kat sayısı",
 };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type ManualPosition = { position_code: string; current: boolean; pdf_found: boolean; can_select: boolean; technical_status: string | null; pdf_match: CandidateChoice | null; cost_allowed: false; engineering_approved: false };
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; manual_position?: ManualPosition | null; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type ManualPositionResponse = { saved: true; manual_position: ManualPosition; engineering_approved: false; cost_allowed: false };
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -214,6 +216,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogs, setCatalogs] = useState<CandidateCatalog[]>([]);
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
+  const [manualCodes, setManualCodes] = useState<Record<string, string>>({});
   const [queueView, setQueueView] = useState<QueueView>("all");
   const [autoMessage, setAutoMessage] = useState("");
   const [rowSearch, setRowSearch] = useState("");
@@ -452,6 +455,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           })
         ) throw new Error("Öneriler özgün Excel kaynağıyla uyuşmuyor.");
         setAutoCandidates(data);
+        setManualCodes(old => Object.fromEntries(data.rows.map(row => [
+          row.work_item_id, row.manual_position?.position_code ?? old[row.work_item_id] ?? "",
+        ])));
         setCandidateDetailId(prev => prev && data.rows.some(row => row.work_item_id === prev) ? prev : null);
         setAutoFilter("all");
         const restored = data.rows.flatMap(row => {
@@ -539,7 +545,40 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function toggle(id: string, checked: boolean) {
     invalidate(); setSelected(prev => checked ? [...new Set([...prev, id])] : prev.filter(value => value !== id));
   }
-  function saveCandidate(id: string, code: string) {
+  function saveManualPosition(id: string) {
+    if (!selection || !projectId || !importId || busy) return;
+    const item = selection.rows.find(row => row.work_item_id === id);
+    const code = (manualCodes[id] ?? "").trim().toUpperCase();
+    if (!item) return;
+    if (!/^[A-Z0-9][A-Z0-9./_-]{3,79}$/.test(code)) {
+      setError("Poz numarasını kontrol et (örnek: 15.123.4567).");
+      return;
+    }
+    void request<ManualPositionResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/a318/imports/${encodeURIComponent(importId)}/items/${encodeURIComponent(id)}/manual-position`,
+      data => {
+        if (!data.saved || data.cost_allowed !== false || data.engineering_approved !== false ||
+            data.manual_position.position_code !== code || !data.manual_position.current ||
+            data.manual_position.cost_allowed !== false) {
+          throw Error("Manuel poz kaydı doğrulanamadı.");
+        }
+        setAutoCandidates(old => old ? {
+          ...old, rows: old.rows.map(row => row.work_item_id === id ?
+            {...row, manual_position: data.manual_position} : row),
+        } : old);
+        setManualCodes(old => ({...old, [id]: code}));
+        setSaveNotice(data.manual_position.can_select ?
+          "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
+          "Manuel poz numarası inceleme için kaydedildi. PDF'de doğrulanana kadar maliyet hesabına alınmayacak.");
+      }, "manual-position", {
+        method: "POST", body: JSON.stringify({
+          position_code: code, expected_revision_id: item.revision_id,
+        }),
+      }
+    );
+  }
+
+    function saveCandidate(id: string, code: string) {
     if (!selection || !projectId || !importId || !pdfSource?.sha256 || busy) return;
     const item = selection.rows.find(row => row.work_item_id === id);
     if (!item || !code.trim()) return;
@@ -740,18 +779,25 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     const flags = [...option.blockers, ...option.review_flags];
     const matching = currentEvidenceMatch &&
       option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate);
-    if (!matching) return flags;
+    if (!matching) return flags.filter(flag => flag !== "MATERIAL_UNVERIFIED");
     // These two flags come solely from missing attributes in the original Excel,
     // not from any source/poz contradiction. A3.27 separately verifies both.
     return flags.filter(flag => ![
+      "MATERIAL_UNVERIFIED",
       "GAZBETON_STRENGTH_N_MM2_UNVERIFIED",
       "GAZBETON_DENSITY_KG_M3_UNVERIFIED",
     ].includes(flag));
   };
-  const expandedSuggestions = expandedRow
-    ? [...suggestionsFor(expandedRow.work_item_id)].sort((a, b) =>
-        Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode))
-    : [];
+  const expandedManual = expandedRow
+    ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.manual_position
+    : null;
+  const expandedSuggestions = expandedRow ? (() => {
+    const suggestions = suggestionsFor(expandedRow.work_item_id);
+    const extra = expandedManual?.pdf_match && !suggestions.some(p => p.code === expandedManual.pdf_match?.code)
+      ? [expandedManual.pdf_match] : [];
+    return [...extra, ...suggestions].sort((a, b) =>
+      Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode));
+  })() : [];
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
   const Container = projectScope ? "div" : "main";
   const Heading = projectScope ? "h2" : "h1";
@@ -1048,7 +1094,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   </button>}
               </div>)}
             {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
-              <summary>Diğer {expandedSuggestions.length - 1} adayı göster</summary>
+              <summary>Diğer poz seçenekleri ({expandedSuggestions.length - 1})</summary>
               {expandedSuggestions.slice(1).map(option =>
                 <div key={option.code} className={styles.otherCandidateRow}>
                   <div><strong>{option.code}</strong> · {option.description}
@@ -1060,7 +1106,37 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                       onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>Bu pozu seç</button>}
                 </div>)}
             </details>}
-          </> : <p>Bu satır için uygun poz doğrulanamadı. Teknik tarif veya poz ayrıca incelenmeli.</p>}
+          </> : <p>Bu satır için uygun poz bulunamadı. Manuel numara girip kaynak PDF ile yeniden eşleştirebilirsin.</p>}
+          <div className={styles.projectEvidence} aria-label="Manuel poz numarası">
+            <strong>Manuel poz numarası</strong>
+            <p className={styles.a330Note}>Poz otomatik bulunamadıysa numarasını gir. Kayıt saklanır; kaynak PDF değiştiğinde yeniden aranır. Doğrulanmayan poz maliyete alınmaz.</p>
+            <div className={styles.projectEvidenceActions}>
+              <label>Poz numarası
+                <input type="text" maxLength={80} disabled={Boolean(busy)}
+                  placeholder="Ör. 15.123.4567"
+                  value={manualCodes[expandedRow.work_item_id] ?? ""}
+                  onChange={event => setManualCodes(old => ({
+                    ...old, [expandedRow.work_item_id]: event.target.value,
+                  }))}/>
+              </label>
+              <button type="button" disabled={Boolean(busy) || !(manualCodes[expandedRow.work_item_id] ?? "").trim()}
+                onClick={() => saveManualPosition(expandedRow.work_item_id)}>Numarayı kaydet ve PDF'de ara</button>
+            </div>
+            {expandedManual && <div role="status" className={styles.a330Note}>
+              <strong>{expandedManual.position_code}</strong> ·
+              {!expandedManual.current ? "Metraj değişti; yeniden kaydet" :
+                !expandedManual.pdf_found ? " PDF'de bulunamadı, bekleyen poz" :
+                !expandedManual.can_select ? " PDF'de bulundu ancak teknik olarak uyumsuz" :
+                " PDF'de bulundu; eşleştirme incelemesi yapılabilir"}
+              {expandedManual.current && expandedManual.can_select && expandedManual.pdf_match &&
+                savedCandidates[expandedRow.work_item_id] !== expandedManual.position_code && (
+                  <button type="button" className="secondary" disabled={Boolean(busy)}
+                    onClick={() => saveCandidate(expandedRow.work_item_id, expandedManual.position_code)}>
+                    PDF'deki pozu kaydet
+                  </button>
+                )}
+            </div>}
+          </div>
         </div>}
         <div className={styles.tableFooter}>
           <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
