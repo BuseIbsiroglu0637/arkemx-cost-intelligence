@@ -11,7 +11,7 @@ from .excel import normalized
 DEMOLITION = re.compile(r"\b(?:sokul\w*|sokum\w*|sokme\w*|demontaj\w*|kiril\w*|yikim\w*)\b")
 MATERIAL_ONLY = re.compile(r"\b(?:malzeme(?:si|leri|lerin)?|temin(?:i)?|satin\s*alma)\b")
 LABOR_ONLY = re.compile(r"\b(?:iscilik|is\s*cilik)\b")
-EXECUTION = re.compile(r"\b(?:yapil\w*|uygulan\w*|dos(en|e)n\w*|montaj\w*|kaplan\w*|kaplama\w*|seril\w*|imalat\w*|yerlestiril\w*)\b")
+EXECUTION = re.compile(r"\b(?:yapil\w*|uygulan\w*|dosen\w*|dos(e|en)\w*|montaj\w*|kaplan\w*|seril\w*|yerlestiril\w*|takil\w*)\b")
 
 
 def scope_blocker(metraj: str, position: str) -> str | None:
