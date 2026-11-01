@@ -462,3 +462,44 @@
   .a343Overview,.a343DecisionHead,.a343DetailHeading{align-items:flex-start;flex-direction:column}
   .a343Pending{align-self:flex-start}
 }
+
+
+/* A3.44 — full-import status and side-by-side row review. */
+.a344ScanBar{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid #cddff3;border-radius:10px;padding:12px 15px;margin-bottom:12px;background:#f4f8ff}
+.a344ScanBar>div{display:grid;gap:4px}
+.a344ScanBar strong{font-size:13px;color:#214d82}
+.a344ScanBar small{font-size:11px;color:#617994;line-height:1.5}
+.a344ScanBar button{white-space:nowrap;min-height:36px}
+.a344Coverage{margin:0 0 15px;border:1px solid #d5e2f1;border-radius:11px;background:#fff;padding:13px}
+.a344CoverageCounts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.a344CoverageCounts>div{background:#f7f9fd;border:1px solid #e3eaf3;border-radius:9px;display:grid;gap:3px;padding:11px}
+.a344CoverageCounts small{color:#60748a;font-size:11px;line-height:1.4}
+.a344CoverageCounts strong{color:#204a81;font-size:20px;line-height:1.2;font-variant-numeric:tabular-nums}
+.a344Coverage>p{font-size:11px;color:#657990;margin:10px 0;line-height:1.55}
+.a344AllResults{border-top:1px solid #e0e8f2;padding-top:10px}
+.a344AllResults>summary{font-size:12px;font-weight:700;color:#24538b;cursor:pointer}
+.a344AllScroll{margin-top:10px;max-height:270px;overflow-y:auto;border:1px solid #dce6f1;border-radius:8px}
+.a344AllScroll>button{display:grid;grid-template-columns:70px 105px minmax(0,1fr) 100px;gap:8px;width:100%;padding:9px;border:0;border-bottom:1px solid #e8edf4;background:#fff;color:#465e7a;text-align:left;align-items:center;font-size:11px}
+.a344AllScroll>button:hover{background:#eff6ff}
+.a344AllScroll>button strong{color:#205084}
+.a344Workspace{display:grid;grid-template-columns:minmax(300px,.84fr) minmax(0,1.55fr);gap:16px;align-items:start}
+.a344List{position:sticky;top:12px;display:grid;gap:10px;min-width:0;min-height:150px;max-height:calc(100vh - 32px);overflow-y:auto;border:1px solid #d7e2ef;border-radius:11px;background:#f9fbff;padding:12px}
+.a344ListHeading{display:grid;gap:3px;padding:4px 5px 8px;border-bottom:1px solid #dde6f1}
+.a344ListHeading strong{font-size:13px;color:#254a78}
+.a344ListHeading small{font-size:11px;color:#637b95}
+.a344ListItems{display:grid;gap:7px}
+.a344ListRow{display:grid;gap:5px;border:1px solid #d8e3ef;border-radius:9px;background:#fff;color:#2e4967;padding:11px 12px;text-align:left;cursor:pointer;width:100%;min-width:0}
+.a344ListRow:hover{border-color:#9fbbe3;background:#f7fbff}
+.a344ListRow[aria-pressed="true"]{border-color:#2f67bc;background:#eff6ff;box-shadow:inset 3px 0 0 #2f67bc}
+.a344ListRowTop{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;color:#56718e}
+.a344ListRowTop em{font-size:10px;font-weight:650;color:#865b19;background:#fff3de;padding:4px 7px;border-radius:6px;font-style:normal;white-space:nowrap}
+.a344ListRow>strong{font-size:12px;line-height:1.45;color:#23466d;overflow-wrap:anywhere}
+.a344ListRow>small{font-size:10px;color:#6c7d90;line-height:1.5;overflow-wrap:anywhere}
+.a344List>.tableFooter{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-top:5px;padding-top:10px;border-top:1px solid #e0e8f2}
+.a344Review{border:1px solid #d5e1ef;border-radius:11px;background:#fff;padding:16px;min-width:0}
+.a344Review .simpleMatchDetail{border:0;padding:0;margin:0;min-width:0}
+.a344Placeholder{padding:26px 18px;display:grid;gap:8px;align-content:center;min-height:220px;text-align:center}
+.a344Placeholder strong{color:#214b7a;font-size:14px}
+.a344Placeholder p{color:#6a7e92;font-size:12px;line-height:1.5}
+@media(max-width:1100px){.a344Workspace{grid-template-columns:minmax(250px,.9fr) minmax(0,1.25fr)}.a344CoverageCounts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:850px){.a344Workspace{grid-template-columns:1fr}.a344List{position:static;max-height:390px}.a344ScanBar{align-items:flex-start;flex-direction:column}.a344AllScroll>button{grid-template-columns:60px 90px minmax(0,1fr)}.a344AllScroll>button span:last-child{display:none}}
