@@ -191,7 +191,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
       onPilotChanged?.(); // A new draft invalidates any pilot accept on the previous revision.
       setEditOpen(true);
       setReviewOpen(true);
-      setNotice("Analiz taslağı kaydedildi. Şimdi 3. adımda pilot kontrolü tamamlayabilirsin.");
+      setNotice("Analiz taslağı kaydedildi. Analizi kaydettik. Teknik inceleme kaydı istersen aşağıdaki ayrıntıda devam edebilir.");
       setEditReason("");
     }catch(e){setError(e instanceof Error?e.message:"Taslak kaydedilemedi.");}
     finally{setBusy(false)}
@@ -225,7 +225,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   return <>
     <details className={styles.projectEvidence} open={editOpen}
       onToggle={e=>setEditOpen(e.currentTarget.open)}>
-      <summary>2 · Analizi düzenle</summary>
+      <summary>Analiz girdilerini düzenle</summary>
       <p>Malzeme, işçilik, miktar ve fiyatları düzenle. Orijinal PDF değişmez.</p>
       <details className={styles.a330SourceDetails}>
         <summary>Orijinal PDF kanıtını göster</summary>
@@ -287,7 +287,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     </details>
     <details className={styles.a330Approval} open={reviewOpen}
       onToggle={e=>setReviewOpen(e.currentTarget.open)}>
-      <summary>3 · Pilot kontrolü tamamla</summary>
+      <summary>Teknik inceleme kaydı (isteğe bağlı)</summary>
       {!data||!pilot ? <p role={error?"alert":"status"}>
         {busy?"Teknik kontrol yükleniyor…":error||"Analiz kaynağı yüklenemedi. 2. adımda tekrar yükle."}
       </p> : <>
@@ -297,13 +297,13 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
               ? "Önceki kontrol güncel değil" : "Kontrol bekliyor"}.
         </p>
         {hasUnsavedChanges&&<p className={styles.a330Warning}>
-          Analizde kaydedilmemiş değişiklikler var. Önce 2. adımda kaydet.
+          Analizde kaydedilmemiş değişiklikler var. Önce analizi kaydet.
         </p>}
         {!pilot.evidence_ready&&<p className={styles.a330Warning}>
-          Önce 1. adımda şartname ile poz uyumunu doğrula.
+          Poz ve şartname uyumunu doğruladığında bu kontrolü tamamlayabilirsin.
         </p>}
         {!data.latest_revision?.source_current&&<p className={styles.a330Warning}>
-          Önce 2. adımda analizi kaydet.
+          Analizi kaydettikten sonra teknik inceleme kaydı oluşturulabilir.
         </p>}
         <label className={styles.a330Label}>İnceleme notu (isteğe bağlı)
           <textarea rows={2} maxLength={1000} disabled={busy} value={reviewReason}
