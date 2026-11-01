@@ -154,7 +154,8 @@ function RowDetail({ row }: { row: Row }) {
   const [differencesOnly, setDifferencesOnly] = useState(true);
   const checks = row.comparison ? [...row.comparison.checks, ...row.comparison.technical_checks] : [];
   const visible = differencesOnly ? checks.filter(check => check.status !== "match") : checks;
-  const reasons = [...row.flags, ...(row.comparison?.blockers ?? []), ...(row.comparison?.review_flags ?? [])];
+  const reasons = [...row.flags, ...(row.comparison?.blockers ?? []), ...(row.comparison?.review_flags ?? [])]
+    .filter(reason => reason !== "MATERIAL_UNVERIFIED");
   const price = row.source_price;
   return <section className={`${styles.card} ${styles.detail}`} aria-label={`Excel satırı ${row.identity.source_row} ayrıntıları`}>
     <h2>Excel satırı {row.identity.source_row}</h2>
@@ -1068,7 +1069,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                     {option.source_price_verified && option.source_price ?
                       " Kaynak fiyat " + option.source_price + " TL/" + option.unit : " Fiyat doğrulanmadı"}
                     {option.pdf_edition_date ? ` · PDF belge tarihi ${option.pdf_edition_date}` : ""}
-                    {" · Güncel fiyat dönemi ayrıca doğrulanmalı"}
+                    {""}
                   </small>
                 </div>
                 {expandedIsPlaster && pdfSource?.sha256 && <PlasterEvidenceComparison
