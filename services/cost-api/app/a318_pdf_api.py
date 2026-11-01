@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
@@ -32,9 +33,10 @@ from .a320_smart_matching import (
 from .database import get_db
 from .m2 import tenant_project
 from .matching import family
-from .models import ImportBatch, PdfCandidateSelection, User, WorkItem, now_utc
+from .models import ImportBatch, PdfCandidateSelection, ManualPositionRequest, User, WorkItem, now_utc
 from .revisions import effective_item
 from .security import current_user
+from sqlalchemy.exc import IntegrityError
 from .technical import compare
 
 router = APIRouter(prefix="/api/projects/{project_id}/a318", tags=["A3.18 Local PDF Analysis"])
@@ -47,6 +49,95 @@ class SavePdfCandidateRequest(BaseModel):
     position_code: str = Field(pattern=r"^15\.\d{3}\.\d{4}$")
     expected_revision_id: UUID | None
     expected_pdf_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class SaveManualPositionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # A manually entered code is not a verified PDF poz until an exact lookup.
+    position_code: str = Field(min_length=4, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9./_-]{3,79}$")
+    expected_revision_id: UUID | None
+
+
+def _manual_view(entry: ManualPositionRequest | None, current, found) -> dict | None:
+    if entry is None:
+        return None
+    is_current = entry.revision_id == current.revision_id
+    digest, positions = found if found else (None, ())
+    position = next((p for p in positions if p.id == entry.position_code), None)
+    check = _pdf_candidate_check(current, position) if position else None
+    allowed = bool(is_current and position and check and check["status"] != "blocked")
+    match = ({
+        "code": position.id,
+        "description": position.description,
+        "unit": position.unit,
+        "similarity": 0.0,
+        "technical_status": check["status"],
+        "blockers": check["blockers"],
+        "review_flags": check["review_flags"],
+        "source_version_id": digest,
+        "possible_shared_scope": False,
+        "source_page": position.pdf_page,
+        "source_price": str(position.price) if position.price_verified else None,
+        "source_price_verified": position.price_verified,
+        "analysis_inputs": position.ingredients if position.price_verified else (),
+        "scope_excerpt": position.scope,
+        "pdf_edition_date": "1.01.2026",
+        "price_audit": verified_price_audit(position),
+    } if is_current and position else None)
+    return {
+        "position_code": entry.position_code,
+        "current": is_current,
+        "pdf_found": bool(position),
+        "can_select": allowed,
+        "technical_status": check["status"] if check else None,
+        "pdf_match": match,
+        "cost_allowed": False,
+        "engineering_approved": False,
+    }
+
+
+@router.post("/imports/{import_id}/items/{work_item_id}/manual-position", status_code=200)
+def save_manual_position(
+    project_id: UUID, import_id: UUID, work_item_id: UUID,
+    payload: SaveManualPositionRequest, response: Response,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    batch = _source(db, user, str(project_id), str(import_id))
+    item = db.scalar(select(WorkItem).where(
+        WorkItem.id == str(work_item_id), WorkItem.import_id == batch.id,
+    ))
+    if item is None:
+        raise HTTPException(404, "Metraj row not found", headers=NO_STORE)
+    current = effective_item(db, item)
+    if current.revision_id != (str(payload.expected_revision_id) if payload.expected_revision_id else None):
+        raise HTTPException(409, "Metraj revision changed; reload before saving", headers=NO_STORE)
+    entry = db.scalar(select(ManualPositionRequest).where(
+        ManualPositionRequest.organization_id == user.organization_id,
+        ManualPositionRequest.project_id == batch.project_id,
+        ManualPositionRequest.import_id == batch.id,
+        ManualPositionRequest.work_item_id == item.id,
+    ).with_for_update())
+    if entry is None:
+        entry = ManualPositionRequest(
+            organization_id=user.organization_id,
+            project_id=batch.project_id, import_id=batch.id, work_item_id=item.id,
+        )
+        db.add(entry)
+    entry.revision_id = current.revision_id
+    entry.position_code = payload.position_code.strip().upper()
+    entry.recorded_by_id = user.id
+    entry.updated_at = now_utc()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Concurrent manual poz edit; refresh", headers=NO_STORE) from None
+    response.headers.update(NO_STORE)
+    return {
+        "saved": True, "manual_position": _manual_view(entry, current, _read(user)),
+        "cost_allowed": False, "engineering_approved": False,
+    }
 
 
 def _pdf_candidate_check(current, position: PdfPosition,
@@ -308,6 +399,14 @@ def suggestions_from_pdf(
         PdfCandidateSelection.work_item_id.in_([item.id for item in effective[offset:offset + MAX_ROWS]]),
     )).all()
     saved = {row.work_item_id: row for row in saved_rows}
+    visible_ids = [item.id for item in effective[offset:offset + MAX_ROWS]]
+    manual_rows = db.scalars(select(ManualPositionRequest).where(
+        ManualPositionRequest.organization_id == user.organization_id,
+        ManualPositionRequest.project_id == batch.project_id,
+        ManualPositionRequest.import_id == batch.id,
+        ManualPositionRequest.work_item_id.in_(visible_ids),
+    )).all()
+    manual_by_id = {row.work_item_id: row for row in manual_rows}
     rows = []
     for current in effective[offset:offset + MAX_ROWS]:
         partners = partner_rows.get(str(current.id), [])
@@ -377,6 +476,7 @@ def suggestions_from_pdf(
                 ) if str(current.id) in saved else None
             ),
             "related_excel_rows": partners,
+            "manual_position": _manual_view(manual_by_id.get(current.id), current, found),
             "rejected_candidate_count": rejected,
             "review_summary": (
                 issue_summary(current.raw_description, scored, partners)

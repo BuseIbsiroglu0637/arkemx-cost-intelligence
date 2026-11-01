@@ -8,7 +8,7 @@ from .matching import similarity
 from .measurement_context import extract_measurements
 from .excel import normalized
 
-VERSION = "technical-rules-v0.4"
+VERSION = "technical-rules-v0.5"
 MATERIAL_ALIASES = {
     "gazbeton": (r"\bgazbeton\b",),
     "seramik": (r"\bseramik\w*\b", r"\bporselen\w*\b", r"\bkaro(?:s\w*|l\w*|n\w*|d\w*)?\b", r"\bfayans\w*\b"),
@@ -29,7 +29,7 @@ SURFACES = {
     "tavan": (r"\btavan\b",),
 }
 METHODS = {
-    "sokum": (r"\bsokum\b", r"\bsokme\b", r"\bdemontaj\b"),
+    "sokum": (r"\bsokum\b", r"\bsokme\b", r"\bsokul\w*\b", r"\bdemontaj\b"),
     "montaj": (r"\bmontaj\b", r"\btakilmasi\b", r"\bkurulum\b"),
     "dokum": (r"\bdokum\b", r"\bdokulmesi\b"),
     "kaplama": (r"\bkaplama\b", r"\bkaplanmasi\b"),
@@ -105,7 +105,13 @@ def compare(description: str, unit: str | None,
         a, b = left[key], right[key]
         missing_a = a is None or a == []
         missing_b = b is None or b == []
-        if key == "joint_width_mm" and missing_a:
+        if key == "material" and (missing_a or missing_b):
+            # Unknown material labels are not evidence of incompatibility.
+            # Never fabricate a MATERIAL_UNVERIFIED blocking flag. Explicit
+            # opposing materials still yield MATERIAL_MISMATCH below; ceramic
+            # uncertainty is handled by the dedicated finish rule.
+            status = "not_specified"
+        elif key == "joint_width_mm" and missing_a:
             # PDF may describe its standard grout spacing even when the
             # metraj leaves grout choice open. Don't mislabel this as a
             # missing tile-thickness requirement. If metraj explicitly

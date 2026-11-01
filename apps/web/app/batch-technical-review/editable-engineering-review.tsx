@@ -26,7 +26,16 @@ type Position = {
 const API=(process.env.NEXT_PUBLIC_API_URL??"http://127.0.0.1:8000").replace(/\/$/,"");
 const uuid=()=>crypto.randomUUID();
 const trim=(s:string)=>s.trim();
-const newRow=():InputLine=>({code:"",description:"",unit:"",quantity:"1",unit_price:"0,00"});
+const newRow=():InputLine=>({code:"",description:"",unit:"",quantity:"1",unit_price:""});
+function parseDecimal(text:string):number|null{
+  const input=text.trim();
+  const trGrouped=/^\d{1,3}(?:\.\d{3})+(?:,\d{1,4})$/;
+  const plain=/^\d+(?:[.,]\d{1,4})?$/;
+  if(!trGrouped.test(input)&&!plain.test(input))return null;
+  const value=Number(trGrouped.test(input)?input.replace(/\./g,"").replace(",","."):input.replace(",","."));
+  return Number.isFinite(value)&&value>0?value:null;
+}
+const asTry=(value:number)=>value.toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" TL";
 const fieldNames:Record<string,string>={
   code:"Poz/girdi kodu",description:"Açıklama",unit:"Birim",
   quantity:"Miktar",unit_price:"Birim fiyatı",items:"Analiz girdileri",
@@ -64,7 +73,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
   const [data,setData]=useState<State|null>(null);
   const [pilot,setPilot]=useState<PilotState|null>(null);
   const [lines,setLines]=useState<InputLine[]>([]);
-  const [editOpen,setEditOpen]=useState(false);
+  const [editOpen,setEditOpen]=useState(true);
   const [reviewOpen,setReviewOpen]=useState(false);
   const [editReason,setEditReason]=useState("");
   const [reviewReason,setReviewReason]=useState("");
@@ -78,6 +87,12 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
     trim(row.code),trim(row.description),trim(row.unit),
     trim(row.quantity),trim(row.unit_price),
   ];
+  const previewAmounts=lines.map(line=>{
+    const qty=parseDecimal(line.quantity), price=parseDecimal(line.unit_price);
+    return qty!==null&&price!==null?qty*price:null;
+  });
+  const previewValid=previewAmounts.length>0&&previewAmounts.every(value=>value!==null);
+  const previewSubtotal=previewValid?previewAmounts.reduce<number>((sum,value)=>sum+(value??0),0):null;
   const hasUnsavedChanges=Boolean(data) &&
     JSON.stringify(lines.map(essentialFields)) !==
     JSON.stringify(originalLines.map(essentialFields));
@@ -174,7 +189,7 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
       });
       await reload();
       onPilotChanged?.(); // A new draft invalidates any pilot accept on the previous revision.
-      setEditOpen(false);
+      setEditOpen(true);
       setReviewOpen(true);
       setNotice("Analiz taslağı kaydedildi. Şimdi 3. adımda pilot kontrolü tamamlayabilirsin.");
       setEditReason("");
@@ -234,6 +249,12 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
           {data.latest_revision.source_current ? "Analiz kayıtlı" : "Analizi yeniden kontrol et"} ·
           Sürüm {data.latest_revision.version} · Taslak tutar {data.latest_revision.proposed_amount} TL
         </p>}
+        {data&&<div className={styles.a330Note} role="status">
+          <strong>Düzenlenebilir analiz taslağı</strong>
+          <p>{previewSubtotal===null ? "Tutarı görmek için tüm girdilerin miktar ve fiyatlarını doldur." :
+            "Girdi ara toplamı: "+asTry(previewSubtotal)+" · Kâr ve genel gider varsayımı (%25) ile: "+asTry(previewSubtotal*1.25)}</p>
+          <small>Bu ekrandaki hesap önizlemedir. Kaydettiğinde tutar sunucuda yeniden hesaplanır; PDF'deki resmî analiz değişmez.</small>
+        </div>}
         {data&&lines.map((line,i)=><div className={styles.a330Line} key={i}>
           <label>Kod<input value={line.code} maxLength={80} disabled={busy}
             onChange={e=>change(i,"code",e.target.value)} /></label>
@@ -246,7 +267,8 @@ export default function EditableEngineeringReview({projectId,importId,rowId,posi
           <label>Birim fiyat (TL)<input inputMode="decimal" value={line.unit_price} disabled={busy}
             onChange={e=>change(i,"unit_price",e.target.value)} /></label>
           <button type="button" className="secondary" disabled={busy||lines.length===1}
-            onClick={()=>setLines(x=>x.filter((_,n)=>n!==i))}>Çıkar</button>
+            onClick={()=>setLines(x=>x.filter((_,n)=>n!==i))}>Girdiyi çıkar</button>
+          <small>{previewAmounts[i]===null?"Miktar ve birim fiyatı gir": "Girdi tutarı (önizleme): "+asTry(previewAmounts[i]!)}</small>
         </div>)}
         {data&&<div className={styles.a330Actions}>
           <button type="button" className="secondary" disabled={busy||lines.length>=30}

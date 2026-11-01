@@ -376,3 +376,20 @@ class PdfCandidateSelection(Base):
     position_code: Mapped[str] = mapped_column(String(80), nullable=False)
     selected_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class ManualPositionRequest(Base):
+    """User-entered poz awaiting exact source PDF validation; never a cost approval."""
+    __tablename__ = "a342_manual_position_requests"
+    __table_args__ = (
+        UniqueConstraint("work_item_id", name="uq_a342_manual_work_item"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
+    import_id: Mapped[str] = mapped_column(ForeignKey("imports.id"), nullable=False)
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True, nullable=False)
+    revision_id: Mapped[str | None] = mapped_column(ForeignKey("work_item_revisions.id"))
+    position_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    recorded_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)

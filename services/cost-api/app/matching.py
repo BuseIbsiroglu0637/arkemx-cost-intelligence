@@ -109,8 +109,8 @@ def evaluate(item, position) -> dict | None:
             reasons.append("Kalınlık uyumlu")
     if pos_thicks and not item_thicks:
         issues.append("THICKNESS_NOT_SPECIFIED_IN_METRAJ")
-    if not item_family or not candidate_family:
-        issues.append("MATERIAL_UNVERIFIED")
+    # Unknown material labels do not automatically block a possible poz.
+    # Explicit material contradictions above remain excluded.
     if item.review_required or item.quantity is None:
         issues.append("METRAJ_REVIEW_REQUIRED")
     if score < 0.27:
