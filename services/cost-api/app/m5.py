@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .security import current_user
 from .models import (
-    User, MatchCandidate, MatchDecision, MatchRunItemSnapshot, WorkItem,
+    User, MatchRun, MatchCandidate, MatchDecision, MatchRunItemSnapshot, WorkItem,
     CatalogPosition, ImportBatch, TechnicalEvidence, CostEstimate, CostEstimateLine
 )
 from .m42 import _context, _proof, _latest_decision_id
