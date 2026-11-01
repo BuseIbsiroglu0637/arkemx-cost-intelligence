@@ -94,8 +94,9 @@ const handoffFactLabels: Record<string,string> = {
   coat_count: "Boya kat sayısı",
 };
 type ManualPosition = { position_code: string; current: boolean; pdf_found: boolean; can_select: boolean; technical_status: string | null; pdf_match: CandidateChoice | null; cost_allowed: false; engineering_approved: false };
-type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; manual_position?: ManualPosition | null; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
+type CandidateResponse = { read_only: boolean; approval_allowed: boolean; cost_allowed: boolean; import_source: Source; catalog: { version_id: string; synthetic: boolean }; rows: { work_item_id: string; source_row: number; revision_id: string | null; suggestions: CandidateChoice[]; excluded_positions?: ExcludedPosition[]; manual_position?: ManualPosition | null; saved_selection?: SavedCandidate | null; clarification?: CeramicClarification | null; triage?: ReviewTriage; related_excel_rows?: number[]; review_summary?: string | null }[] };
 type ManualPositionResponse = { saved: true; manual_position: ManualPosition; engineering_approved: false; cost_allowed: false };
+type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -126,6 +127,9 @@ const LABELS: Record<string, string> = {
   LAYERS_NOT_EXTRACTED: "Tariflerden en az birinin katmanları ayrıştırılamadı.",
   LAYER_COUNT_UNVERIFIED: "İki tarifteki katman sayısı aynı değil; katmanlar incelenmeli.",
   CEMENT_DOSAGE_KG_UNASSIGNED: "Çimento miktarlarından biri katmana güvenilir biçimde bağlanamadı.",
+  WORK_SCOPE_DEMOLITION_MISMATCH: "Metraj söküm işi tarif etmiyor; bu poz söküm işine ait.",
+  WORK_SCOPE_MATERIAL_ONLY_MISMATCH: "Metraj yalnızca malzemeyi tarif ediyor; bu poz uygulama/imalat işini de içeriyor.",
+  WORK_SCOPE_LABOR_ONLY_MISMATCH: "Metraj yalnızca işçilik için; bu pozun kapsamına malzeme de dahil.",
 };
 function label(value: string): string {
   if (LABELS[value]) return LABELS[value];
@@ -834,7 +838,21 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       {saveNotice && <p className="success" role="status">{saveNotice}</p>}
       {(!selection && projectId && !busy && imports.length === 0) &&
         <p>Bu projede kayıtlı Excel bulunmuyor. Önce Metraj sayfasından Excel yükle.</p>}
-      {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-labelledby="rows-heading">
+      {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-label="Poz inceleme çalışma listesi">
+        <header className={styles.a343Overview}>
+          <div>
+            <h2>Poz inceleme</h2>
+            <p>Doğru pozları kontrol et; eksikleri beklet, diğerlerinin hesabını durdurma.</p>
+          </div>
+          <Link href="/#cost" className={styles.a343CostLink}>Kısmi maliyet ekranı →</Link>
+        </header>
+        <div className={styles.a343Summary} aria-label="Sayfa ve kaynak özeti">
+          <div><small>Toplam metraj</small><strong>{selection.import_source.row_count}</strong></div>
+          <div><small>Bu sayfada poz seçeneği</small><strong>{autoCandidates ? countSuggested : "—"}</strong></div>
+          <div><small>Bu sayfada bekleyen</small><strong>{autoCandidates ? countMissing : "—"}</strong></div>
+          <div className={styles.a343Source}><small>Kaynak PDF</small><strong>{pdfSource?.present ? "2026 analiz PDF bağlı" : "PDF bekleniyor"}</strong></div>
+        </div>
+        <p className={styles.a343SummaryNote}>Sayfa sayıları yalnızca ekrandaki {selection.rows.length} satır içindir. Poz seçeneği bulunması teknik onay veya maliyete dahil olma anlamına gelmez.</p>
         {!pdfSource?.present && <div className={styles.simpleMissingSource}>
           <strong>Önce poz analiz PDF kaynağını bağla</strong>
           <p>Gerçek poz adayları yalnızca yüklenen belge üzerinden aranır.</p>
@@ -856,7 +874,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         <div className={styles.tableScroll}><table className={styles.simpleMatchTable}>
           <caption className={styles.srOnly}>Metraj kalemlerine ait otomatik poz adayları ve teknik durumları</caption>
           <thead><tr>
-            <th scope="col">İmalat</th><th scope="col">Bulunan poz</th><th scope="col">Durum</th><th scope="col">İşlem</th>
+            <th scope="col">Metraj imalatı</th><th scope="col">Poz kontrolü</th><th scope="col">Durum</th><th scope="col">İşlem</th>
           </tr></thead>
           <tbody>{visibleQueueRows.map(row => {
             const proposed = suggestionsFor(row.work_item_id);
@@ -866,7 +884,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const isSaved = Boolean(selectedCode && savedCandidates[row.work_item_id] === selectedCode);
             const hasStaleChoice = Boolean(reviewRow?.saved_selection?.stale);
             const selectedCandidate = proposed.find(item => item.code === selectedCode) ?? null;
-            const visibleCandidate = selectedCode ? selectedCandidate : suitable ?? proposed[0] ?? null;
+            const visibleCandidate = selectedCandidate ?? suitable;
             const blocked = visibleCandidate?.technical_status === "blocked";
             const manuallyEntered = Boolean(selectedCode && !selectedCandidate);
             const validatedEvidence = isSaved && !hasStaleChoice && selectedCode ?
@@ -882,13 +900,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             const needsInformation = !visibleCandidate ||
               (!isSaved && reviewRow?.triage?.group === "needs_info");
             const statusText = blocked ? "Poz uyumsuz" :
-              pilotConfirmed ? "Pilot kontrol tamam" :
+              pilotConfirmed ? "Pilot inceleme kaydı var" :
               requiresNewReview ? "Yeniden kontrol" :
               manuallyEntered ? "Pozu doğrula" :
-              needsInformation ? "Bilgi eksik" : "Kontrol bekliyor";
+              needsInformation ? "Beklemede" : "Teknik kontrol bekliyor";
             const statusStyle = blocked ? styles.simpleStatusBlocked :
               pilotConfirmed ? styles.simpleStatusSuggested :
-              statusText === "Bilgi eksik" || statusText === "Yeniden kontrol" ?
+              statusText === "Beklemede" || statusText === "Yeniden kontrol" ?
                 styles.simpleStatusReview : styles.simpleStatusPending;
             const unresolvedCeramic = Boolean(
               reviewRow?.clarification && !isSaved && !selectedCode
@@ -910,7 +928,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 </div> : manuallyEntered ? <div className={styles.simpleMatchPosition}>
                   <strong>{selectedCode}</strong>
                   <small>PDF kaynak pozları arasında doğrulanmadı.</small>
-                </div> : <span className={styles.simpleNoCandidate}>Poz adayı bulunamadı</span>}
+                </div> : <span className={styles.simpleNoCandidate}>Uygun poz bulunamadı</span>}
               </td>
               <td><span role="status" className={styles.simpleStatus + " " + statusStyle}>
                 {statusText}
@@ -919,7 +937,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 aria-expanded={candidateDetailId === row.work_item_id}
                 onClick={() => setCandidateDetailId(old =>
                   old === row.work_item_id ? null : row.work_item_id)}>
-                {candidateDetailId === row.work_item_id ? "Kapat" : "Detay"}
+                {candidateDetailId === row.work_item_id ? "Kapat" : "İncele"}
               </button></td>
             </tr>;
           })}</tbody>
@@ -929,39 +947,151 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             "Bu bölümde gösterilecek imalat yok."}
         </p>}
         {expandedRow && <div className={styles.simpleMatchDetail}>
-          <div className={styles.suggestionTop}><div><h3>Satır {expandedRow.source_row} · {expandedRow.effective_description}</h3>
-            <p>Pozu kontrol et → Analizi düzenle → Pilot kontrolü tamamla.</p></div></div>
-          <div className={styles.simpleStepTitle}><span>1</span><strong>Pozu kontrol et</strong>
-            <small>Poz bilgisi ve proje şartnamesini karşılaştır.</small></div>
-          {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary && !expandedProof && (
-            <div className={styles.reviewReason} role="note">
-              {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.review_summary}
-              {Boolean(autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
-                <small>İlgili Excel satırı: {autoCandidates.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş olduğu doğrulanmadan fiyatlar birleştirilmeyecek.</small>}
+          <div className={styles.a343DetailHeading}>
+            <div><h3>Satır {expandedRow.source_row} · Teknik inceleme</h3>
+              <p>{expandedRow.effective_description}</p>
+              <small>Excel miktarı: {expandedRow.quantity ?? "Belirtilmemiş"} {expandedRow.unit ?? ""}</small>
             </div>
-          )}
-          {!expandedIsPlaster && <div className={expandedProof ? styles.evidenceConfirmed : styles.missingFacts} role="note">
-            <strong>{expandedProof ? "Şartnameden doğrulanan bilgiler" : "Projeden doğrulanması gereken bilgiler"}</strong>
-            <span>{expandedProof
-              ? Object.entries(expandedProof.evidence_facts ?? {})
-                  .filter(([, value]) => value !== null)
-                  .map(([key, value]) => `${({
-                    gazbeton_strength_n_mm2: "Gazbeton dayanımı (N/mm²)",
-                    gazbeton_density_kg_m3: "Gazbeton yoğunluğu (kg/m³)",
-                    glaze: "Seramik yüzeyi", surface: "Yüzey", rectified: "Kenar",
-                  } as Record<string, string>)[key] ?? key}: ${value}`).join(" · ")
-              : triageFor(expandedRow.work_item_id)?.missing_fields.length
-                ? triageFor(expandedRow.work_item_id)?.missing_fields.join(" · ")
-                : triageFor(expandedRow.work_item_id)?.reason ??
-                  "Pozun uygulama ve fiyat kapsamı teknik belgeyle ayrıca incelenmeli."}</span>
-            <small>{expandedProof
-              ? `PDF sayfa ${expandedProof.evidence_page ?? "—"} · Sadece karşılaştırılan özellikler doğrulandı.`
-              : "Eksik bilgiler için şartnameyi kontrol et."}</small>
-          </div>}
+            <span className={styles.a343Pending}>{expandedProof ? "Teknik kanıt incelendi" : "İnceleme bekliyor"}</span>
+          </div>
+          <div className={styles.a343Decision} role="status">
+            <div className={styles.a343DecisionHead}>
+              <strong>{expandedSuggestions.length ? "Poz seçeneği bulundu · teknik kontrol gerekli" : "Uygun poz doğrulanamadı"}</strong>
+              <span>Hesap dışında · Sonra incelenebilir</span>
+            </div>
+            <p>{expandedSuggestions.length ?
+              (triageFor(expandedRow.work_item_id)?.reason ?? "Pozun imalat kapsamı ile Excel tarifi karşılaştırılmalı.") :
+              (autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.excluded_positions?.length
+                ? "Bulunan bazı pozların iş kapsamı metrajla uyuşmadı. Uygun poz için manuel numara girebilirsin."
+                : "Kaynak PDF'de doğrulanabilir uygun poz bulunamadı. Manuel numara girip yeniden arayabilirsin.")}</p>
+            {Boolean(autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.length) &&
+              <small>İlişkili Excel satırları: {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş doğrulanmadan tutarlar birleştirilmez.</small>}
+            <small>Bu satır beklerken diğer onaylı metrajların maliyet hesabı devam edebilir.</small>
+          </div>
+          {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
+            <strong>{expandedClarification.prompt}</strong>
+            <p>{expandedClarification.hint}</p>
+            <div className={styles.simpleCeramicChoices}>
+              {expandedClarification.options.map(option => <button type="button"
+                key={option.code} disabled={Boolean(busy)}
+                aria-pressed={savedCandidates[expandedRow.work_item_id] === option.code}
+                onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
+                <span>{option.label}</span>
+                <small>{option.code} · PDF sayfa {option.source_page ?? "—"}</small>
+                {savedCandidates[expandedRow.work_item_id] === option.code && <em>Seçili poz</em>}
+              </button>)}
+            </div>
+            <small>Projede özellik belirtilmemişse hiçbirini seçme. Poz kaydı teknik onay değildir.</small>
+          </section>}
+          {expandedSuggestions.length ? <>
+            {expandedSuggestions.slice(0,1).map(option =>
+              <div key={option.code} className={styles.simplePrimaryCandidate}>
+                <div>
+                  <strong>İncelenen poz · {option.code}</strong>
+                  <p>{option.description}</p>
+                  <span className={styles.simpleStatus + " " +
+                    (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
+                    {option.technical_status === "blocked" ? "Teknik uyumsuzluk" :
+                      currentEvidenceMatch && option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate)
+                        ? "Şartname uyumlu" :
+                      option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
+                      "Belge kontrolü gerekli"}
+                  </span>
+                  {!expandedIsPlaster && remainingCandidateFlags(option).length > 0 && (
+                    <p className={styles.issues}>
+                      {remainingCandidateFlags(option).map(value => label(value)).join(" · ")}
+                    </p>
+                  )}
+                  <small>PDF sayfa {option.source_page ?? "—"} ·
+                    {option.source_price_verified && option.source_price ?
+                      " Kaynak fiyat " + option.source_price + " TL/" + option.unit : " Fiyat doğrulanmadı"}
+                    {option.pdf_edition_date ? ` · PDF belge tarihi ${option.pdf_edition_date}` : ""}
+                    {""}
+                  </small>
+                </div>
+                {expandedIsPlaster && pdfSource?.sha256 && <PlasterEvidenceComparison
+                  projectId={projectId} importId={importId} rowId={expandedRow.work_item_id}
+                  candidateCode={option.code} pdfSha={pdfSource.sha256}
+                  revisionId={expandedRow.revision_id} specSha={projectSpec?.sha256??null} />}
+                {savedCandidates[expandedRow.work_item_id] === option.code ?
+                  <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
+                    projectId={projectId} importId={importId}
+                    rowId={expandedRow.work_item_id} position={option}
+                    onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
+                  <details>
+                    <summary>PDF kanıtı ve analiz girdileri</summary>
+                    <p>Analiz tablosunu düzenleyebilmek için önce bu pozu kaynak PDF'ye bağlı şekilde kaydet. Bu işlem maliyet onayı değildir.</p>
+                    {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
+                    {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
+                      <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
+                  </details>}
+                {savedCandidates[expandedRow.work_item_id] !== option.code &&
+                  <button type="button" disabled={Boolean(busy)}
+                    onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
+                    Pozu seç ve analizi aç
+                  </button>}
+              </div>)}
+            {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
+              <summary>Diğer poz seçenekleri ({expandedSuggestions.length - 1})</summary>
+              {expandedSuggestions.slice(1).map(option =>
+                <div key={option.code} className={styles.otherCandidateRow}>
+                  <div><strong>{option.code}</strong> · {option.description}
+                    <small>{option.technical_status === "blocked" ? "Teknik uyumsuzluk" : "Teknik inceleme gerekli"} · PDF sayfa {option.source_page ?? "—"}</small>
+                  </div>
+                  {savedCandidates[expandedRow.work_item_id] === option.code ?
+                    <span className={styles.selectedCandidateLabel}>Seçili poz</span> :
+                    <button type="button" className="secondary" disabled={Boolean(busy)}
+                      onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>Bu pozu seç</button>}
+                </div>)}
+            </details>}
+          </> : <p className={styles.a343Empty}>Kaynak PDF'de doğrulanmış uygun poz bulunamadı. Manuel numara girerek daha sonra yeniden eşleştirebilirsin.</p>}
+          {Boolean(autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.excluded_positions?.length) &&
+            <details className={styles.otherCandidates}>
+              <summary>Teknik olarak elenen pozlar (bilgi amaçlı)</summary>
+              <p className={styles.a343SummaryNote}>İmalat kapsamına uymayan pozlar seçilemez ve maliyete aktarılmaz.</p>
+              {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.excluded_positions?.map(option =>
+                <div key={option.code} className={styles.otherCandidateRow}>
+                  <div><strong>{option.code}</strong> · {option.description}
+                    <small>{label(option.reason)} · PDF sayfa {option.source_page}</small>
+                  </div>
+                  <span className={styles.a343Rejected}>Uyumsuz</span>
+                </div>)}
+            </details>}
+          <div className={styles.a343Manual} aria-label="Manuel poz numarası">
+            <strong>Manuel poz numarası · PDF ile yeniden eşleştir</strong>
+            <p>Numara kaydedilir ve PDF'de tekrar aranır. Bulunamazsa bekleyenlerde kalır; diğer kalemlerin hesabını engellemez.</p>
+            <div className={styles.projectEvidenceActions}>
+              <label>Poz numarası
+                <input type="text" maxLength={80} disabled={Boolean(busy)}
+                  placeholder="Ör. 15.123.4567"
+                  value={manualCodes[expandedRow.work_item_id] ?? ""}
+                  onChange={event => setManualCodes(old => ({
+                    ...old, [expandedRow.work_item_id]: event.target.value,
+                  }))}/>
+              </label>
+              <button type="button" disabled={Boolean(busy) || !(manualCodes[expandedRow.work_item_id] ?? "").trim()}
+                onClick={() => saveManualPosition(expandedRow.work_item_id)}>Numarayı kaydet ve PDF'de ara</button>
+            </div>
+            {expandedManual && <div role="status" className={styles.a330Note}>
+              <strong>{expandedManual.position_code}</strong> ·
+              {!expandedManual.current ? "Metraj değişti; yeniden kaydet" :
+                !expandedManual.pdf_found ? " PDF'de bulunamadı, bekleyen poz" :
+                !expandedManual.can_select ? " PDF'de bulundu ancak teknik olarak uyumsuz" :
+                " PDF'de bulundu; eşleştirme incelemesi yapılabilir"}
+              {expandedManual.current && expandedManual.can_select && expandedManual.pdf_match &&
+                savedCandidates[expandedRow.work_item_id] !== expandedManual.position_code && (
+                  <button type="button" className="secondary" disabled={Boolean(busy)}
+                    onClick={() => saveCandidate(expandedRow.work_item_id, expandedManual.position_code)}>
+                    PDF'deki pozu kaydet
+                  </button>
+                )}
+            </div>}
+          </div>
+          <div className={styles.a343Advanced}>
           {(
             <details className={styles.projectEvidence}>
-              <summary>Proje şartnamesi PDF</summary>
-              <p>Şartnameyi yükle veya mevcut belgede ilgili bilgiyi ara.</p>
+              <summary>Teknik belge / şartname kanıtları (isteğe bağlı)</summary>
+              <p>Belgeyi bir kez bağla; yalnız gerektiğinde ilgili satırın kanıtlarını incele.</p>
               <div className={styles.projectEvidenceActions}>
                 <label>Şartname PDF (en fazla 8 MB)
                   <input type="file" accept=".pdf,application/pdf"
@@ -1031,112 +1161,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               </div>}
             </details>
           )}
-          {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
-            <strong>{expandedClarification.prompt}</strong>
-            <p>{expandedClarification.hint}</p>
-            <div className={styles.simpleCeramicChoices}>
-              {expandedClarification.options.map(option => <button type="button"
-                key={option.code} disabled={Boolean(busy)}
-                aria-pressed={savedCandidates[expandedRow.work_item_id] === option.code}
-                onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
-                <span>{option.label}</span>
-                <small>{option.code} · PDF sayfa {option.source_page ?? "—"}</small>
-                {savedCandidates[expandedRow.work_item_id] === option.code && <em>Seçili poz</em>}
-              </button>)}
-            </div>
-            <small>Projede özellik belirtilmemişse hiçbirini seçme. Poz kaydı teknik onay değildir.</small>
-          </section>}
-          {expandedSuggestions.length ? <>
-            {expandedSuggestions.slice(0,1).map(option =>
-              <div key={option.code} className={styles.simplePrimaryCandidate}>
-                <div>
-                  <strong>Poz: {option.code}</strong>
-                  <p>{option.description}</p>
-                  <span className={styles.simpleStatus + " " +
-                    (option.technical_status === "blocked" ? styles.simpleStatusBlocked : styles.simpleStatusReview)}>
-                    {option.technical_status === "blocked" ? "Teknik uyumsuzluk" :
-                      currentEvidenceMatch && option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate)
-                        ? "Şartname uyumlu" :
-                      option.review_flags.some(flag => flag.startsWith("GAZBETON_")) ? "Dayanım / yoğunluk kontrolü gerekli" :
-                      "Belge kontrolü gerekli"}
-                  </span>
-                  {!expandedIsPlaster && remainingCandidateFlags(option).length > 0 && (
-                    <p className={styles.issues}>
-                      {remainingCandidateFlags(option).map(value => label(value)).join(" · ")}
-                    </p>
-                  )}
-                  <small>PDF sayfa {option.source_page ?? "—"} ·
-                    {option.source_price_verified && option.source_price ?
-                      " Kaynak fiyat " + option.source_price + " TL/" + option.unit : " Fiyat doğrulanmadı"}
-                    {option.pdf_edition_date ? ` · PDF belge tarihi ${option.pdf_edition_date}` : ""}
-                    {""}
-                  </small>
-                </div>
-                {expandedIsPlaster && pdfSource?.sha256 && <PlasterEvidenceComparison
-                  projectId={projectId} importId={importId} rowId={expandedRow.work_item_id}
-                  candidateCode={option.code} pdfSha={pdfSource.sha256}
-                  revisionId={expandedRow.revision_id} specSha={projectSpec?.sha256??null} />}
-                {savedCandidates[expandedRow.work_item_id] === option.code ?
-                  <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
-                    projectId={projectId} importId={importId}
-                    rowId={expandedRow.work_item_id} position={option}
-                    onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
-                  <details>
-                    <summary>PDF kanıtı ve analiz girdileri</summary>
-                    <p>Önce bu pozu kaydet; ardından analizi düzenleyip pilot kontrolü tamamla.</p>
-                    {option.scope_excerpt && <p>{option.scope_excerpt}</p>}
-                    {option.analysis_inputs && <ul>{option.analysis_inputs.map((input, k) =>
-                      <li key={input.code + "-" + k}>{input.code} · {input.description}: {input.quantity} {input.unit} × {input.unit_price} TL = {input.amount} TL</li>)}</ul>}
-                  </details>}
-                {savedCandidates[expandedRow.work_item_id] !== option.code &&
-                  <button type="button" disabled={Boolean(busy)}
-                    onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>
-                    Pozu kaydet
-                  </button>}
-              </div>)}
-            {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
-              <summary>Diğer poz seçenekleri ({expandedSuggestions.length - 1})</summary>
-              {expandedSuggestions.slice(1).map(option =>
-                <div key={option.code} className={styles.otherCandidateRow}>
-                  <div><strong>{option.code}</strong> · {option.description}
-                    <small>{option.technical_status === "blocked" ? "Teknik uyumsuzluk" : "Teknik inceleme gerekli"} · PDF sayfa {option.source_page ?? "—"}</small>
-                  </div>
-                  {savedCandidates[expandedRow.work_item_id] === option.code ?
-                    <span className={styles.selectedCandidateLabel}>Seçili poz</span> :
-                    <button type="button" className="secondary" disabled={Boolean(busy)}
-                      onClick={() => saveCandidate(expandedRow.work_item_id, option.code)}>Bu pozu seç</button>}
-                </div>)}
-            </details>}
-          </> : <p>Bu satır için uygun poz bulunamadı. Manuel numara girip kaynak PDF ile yeniden eşleştirebilirsin.</p>}
-          <div className={styles.projectEvidence} aria-label="Manuel poz numarası">
-            <strong>Manuel poz numarası</strong>
-            <p className={styles.a330Note}>Poz otomatik bulunamadıysa numarasını gir. Kayıt saklanır; kaynak PDF değiştiğinde yeniden aranır. Doğrulanmayan poz maliyete alınmaz.</p>
-            <div className={styles.projectEvidenceActions}>
-              <label>Poz numarası
-                <input type="text" maxLength={80} disabled={Boolean(busy)}
-                  placeholder="Ör. 15.123.4567"
-                  value={manualCodes[expandedRow.work_item_id] ?? ""}
-                  onChange={event => setManualCodes(old => ({
-                    ...old, [expandedRow.work_item_id]: event.target.value,
-                  }))}/>
-              </label>
-              <button type="button" disabled={Boolean(busy) || !(manualCodes[expandedRow.work_item_id] ?? "").trim()}
-                onClick={() => saveManualPosition(expandedRow.work_item_id)}>Numarayı kaydet ve PDF'de ara</button>
-            </div>
-            {expandedManual && <div role="status" className={styles.a330Note}>
-              <strong>{expandedManual.position_code}</strong> ·
-              {!expandedManual.current ? "Metraj değişti; yeniden kaydet" :
-                !expandedManual.pdf_found ? " PDF'de bulunamadı, bekleyen poz" :
-                !expandedManual.can_select ? " PDF'de bulundu ancak teknik olarak uyumsuz" :
-                " PDF'de bulundu; eşleştirme incelemesi yapılabilir"}
-              {expandedManual.current && expandedManual.can_select && expandedManual.pdf_match &&
-                savedCandidates[expandedRow.work_item_id] !== expandedManual.position_code && (
-                  <button type="button" className="secondary" disabled={Boolean(busy)}
-                    onClick={() => saveCandidate(expandedRow.work_item_id, expandedManual.position_code)}>
-                    PDF'deki pozu kaydet
-                  </button>
-                )}
-            </div>}
+
           </div>
         </div>}
         <div className={styles.tableFooter}>
