@@ -62,3 +62,9 @@ def test_legitimate_demolition_is_not_blocked_by_scope():
     left = "Eski seramik kaplamanın sökülmesi"
     right = "Seramik ve fayans kaplamasının sökülmesi"
     assert scope_blocker(left, right) is None
+
+
+def test_material_supply_description_is_not_mistaken_for_installation():
+    left = "Seramik zemin kaplama malzemesi"
+    right = "Seramik zemin kaplama malzemesi"
+    assert scope_blocker(left, right) is None
