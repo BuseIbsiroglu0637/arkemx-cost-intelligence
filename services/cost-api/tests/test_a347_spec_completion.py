@@ -94,3 +94,12 @@ def test_no_other_organization_access(client):
     pid, iid, ids = project_with_metraj(client, owner)
     url = f"/api/projects/{pid}/a347/imports/{iid}/items/{ids[0]}/completion"
     assert client.get(url, headers=outsider).status_code == 404
+
+
+def test_scope_splits_material_labor_demolition_and_combined():
+    from app.a347_spec_completion import work_scope
+    assert work_scope("PVC zemin kaplaması malzeme temini") == "material_only"
+    assert work_scope("PVC zemin kaplaması işçiliği (malzeme hariç)") == "labor_only"
+    assert work_scope("Gazbeton duvar yapılması malzeme ve işçilik dahil") == "material_and_labor"
+    assert work_scope("Mevcut seramik zemin kaplaması sökülmesi") == "demolition"
+    assert work_scope("Bilinmeyen ürün") == "unspecified"
