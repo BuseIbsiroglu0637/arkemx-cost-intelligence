@@ -389,6 +389,10 @@ app.include_router(a348_catalog_library_router)
 from .a348_analysis_library_api import router as a348_analysis_library_router
 app.include_router(a348_analysis_library_router)
 
+# A3.49.1: read-only understanding of imported Excel rows before matching.
+from .a349_metraj_understanding import router as a349_metraj_understanding_router
+app.include_router(a349_metraj_understanding_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
