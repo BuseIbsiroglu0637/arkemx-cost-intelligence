@@ -1100,6 +1100,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             <button type="button" disabled={coverageLoading||Boolean(busy)} onClick={()=>void scanFullImport()}>
               {coverageLoading?"Pozlar taranıyor…":coverage?"Taramayı yenile":"Tüm metrajı tara"}
             </button>
+            <button type="button" className="secondary"
+              disabled={auditLoading||Boolean(busy)} onClick={()=>void runMatchingAudit()}>
+              {auditLoading?"Kaynak ve eşleştirme denetleniyor…":audit?"Denetimi yenile":"Eşleştirmeyi denetle"}
+            </button>
             <button type="button" className="secondary" disabled={costLoading||Boolean(busy)}
               onClick={()=>void calculateSignedPartialCost()}>
               {costLoading?"Hesaplanıyor…":"Onaylı maliyeti hesapla"}
@@ -1122,7 +1126,86 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           </div>}
           {costPreview.pending_count>0 && <p>{costPreview.pending_count} kalem onay, kaynak veya analiz doğrulaması bekliyor.</p>}
         </details>}
-        {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
+        {auditError && <p role="alert" className={styles.a330Warning}>{auditError}</p>}
+        {audit && <section className={styles.a346Audit} aria-label="Kaynak ve eşleştirme doğruluk denetimi">
+          <div className={styles.a346Header}>
+            <div>
+              <h3>Kaynak ve eşleştirme denetimi</h3>
+              <p>Bu PDF'de {audit.total_rows} satır incelendi:
+                {" "}<strong>{audit.missing_count} eşleşmeyen</strong>,
+                {" "}<strong>{audit.candidate_count} poz seçenekli.</strong>
+              </p>
+            </div>
+            <span>Salt okunur · Maliyet dışı</span>
+          </div>
+          <div className={styles.a346AuditSource}>
+            <strong>PDF ayrıştırma kontrolü</strong>
+            <span>{audit.source_pdf.year} / Cilt {audit.source_pdf.volume} ·
+              {" "}{audit.source_pdf.parsed_position_count} poz ayrıştırıldı ·
+              {" "}{audit.source_pdf.verified_price_count} analiz fiyatı doğrulandı</span>
+            <small>{audit.source_pdf.raw_code_scan_available?
+              `Ham PDF metnindeki 15.x numaralarının ${audit.source_pdf.codes_in_text_not_extracted_count} tanesi ayrıştırılmış poz listesinde yok. Bunların hepsi poz başlığı olmayabilir.`:
+              "PDF ham metin taraması yapılamadı; ayrıştırıcının kaçırdığı numaralar belirlenemedi."}
+              {" "}Diğer ciltler veya branş katalogları bu denetime dahil değil.</small>
+          </div>
+          <div className={styles.a346ReasonGrid}>
+            {(Object.keys(auditReasonLabels) as AuditReason[]).map(key=>
+              <button key={key} type="button"
+                aria-pressed={auditReasonFilter===key}
+                className={styles.a346Reason}
+                onClick={()=>setAuditReasonFilter(old=>old===key?"all":key)}>
+                <strong>{audit.missing_reason_counts[key]}</strong>
+                <span>{auditReasonLabels[key]}</span>
+              </button>)}
+          </div>
+          <details className={styles.a346Rows}>
+            <summary>Eşleşmeyenleri nedenleriyle incele ({auditReasonFilter==="all"?
+              audit.missing_count:audit.missing_reason_counts[auditReasonFilter]})</summary>
+            <div className={styles.a346Filter}>
+              <label>Gösterilen grup
+                <select value={auditReasonFilter}
+                  onChange={e=>setAuditReasonFilter(e.target.value as AuditReason|"all")}>
+                  <option value="all">Tüm eşleşmeyenler</option>
+                  {(Object.keys(auditReasonLabels) as AuditReason[]).map(key=>
+                    <option value={key} key={key}>{auditReasonLabels[key]}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className={styles.a346RowList}>
+              {audit.missing_rows.filter(row=>
+                auditReasonFilter==="all"||row.reason_code===auditReasonFilter
+              ).map(row=><button type="button" key={row.work_item_id}
+                onClick={()=>openAuditedRow(row)}>
+                <span>Excel {row.source_row} · {auditReasonLabels[row.reason_code]}</span>
+                <strong>{row.description}</strong>
+                <small>{row.reason}
+                  {row.diagnostic_leads.length>0?
+                    ` · PDF'de kontrol edilebilecek numaralar: ${row.diagnostic_leads.map(x=>x.code+" (s."+x.pdf_page+")").join(", ")}`:""}
+                </small>
+              </button>)}
+            </div>
+          </details>
+          <details className={styles.a346Rows}>
+            <summary>Poz seçeneklerinin teknik ve fiyat riskleri ({audit.candidate_count})</summary>
+            <p className={styles.a346Help}>Poz seçeneği olması uygunluk veya mühendis onayı anlamına gelmez. Aşağıdaki PDF seçeneklerini tek tek kontrol et.</p>
+            <div className={styles.a346RowList}>
+              {audit.candidate_rows.map(row=><button type="button" key={row.work_item_id}
+                onClick={()=>openAuditedRow(row)}>
+                <span>Excel {row.source_row} · {row.source_options[0]?.code??"Poz"}</span>
+                <strong>{row.description}</strong>
+                <small>{row.reason}
+                  {row.source_options[0]?
+                    ` · PDF s. ${row.source_options[0].pdf_page} · ${row.source_options[0].source_price_verified?"Analiz fiyatı doğrulandı":"Analiz fiyatı belirsiz"}`:""}
+                </small>
+              </button>)}
+            </div>
+          </details>
+          <p className={styles.a346Help}>
+            Denetim yalnızca yüklenen Cilt 1 kaynağına dayanır. Benzerlik önerileri maliyete alınmaz;
+            kesin uygunluk, PDF kanıtı ve mühendis incelemesi gerekir.
+          </p>
+        </section>}
+                {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
         {coverage && <div className={styles.a344Coverage} aria-label="Tüm metraj inceleme özeti">
           <div className={styles.a344CoverageCounts}>
             <div><small>PDF'de poz bulunamadı</small><strong>{coverage.counts.no_match}</strong></div>
