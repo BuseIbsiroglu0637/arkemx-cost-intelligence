@@ -106,6 +106,33 @@ type ReviewCoverage = {
   rows: {work_item_id: string; source_row: number; description: string; quantity: string|null; unit: string|null; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
   cost_note: string;
 };
+type AuditRowRef = {work_item_id:string;source_row:number;row_index:number;description:string;cost_allowed:false;engineer_approved:false};
+type AuditReason = "metraj_input_gap"|"technical_conflict"|"manual_code_in_pdf_not_parsed"|"manual_code_outside_loaded_pdf"|"possible_retrieval_gap"|"source_scope_or_description_unknown";
+type MatchingAudit = {
+  schema:"arkemx.a346.matching_audit.v1";read_only:true;approval_allowed:false;cost_allowed:false;
+  source_pdf_sha256:string;import_id:string;import_sha256:string;total_rows:number;
+  missing_count:number;candidate_count:number;
+  missing_reason_counts:Record<AuditReason,number>;
+  candidate_risk_counts:Record<string,number>;
+  source_pdf:{volume:number;year:number;parsed_position_count:number;verified_price_count:number;
+    raw_code_scan_available:boolean;raw_text_position_codes:number|null;
+    codes_in_text_not_extracted_count:number|null;codes_in_text_not_extracted_sample:string[];note:string};
+  missing_rows:(AuditRowRef&{reason_code:AuditReason;reason:string;manual_code:string|null;
+    diagnostic_leads:{code:string;description:string;pdf_page:number;lexical_similarity:number;selectable:false;cost_allowed:false}[];
+    excluded_examples:ExcludedPosition[];technical_exclusions:number})[];
+  candidate_rows:(AuditRowRef&{risk:string;reason:string;excluded_count:number;
+    source_options:{code:string;description:string;pdf_page:number;technical_status:string;
+      source_price_verified:boolean;review_flags:string[];selectable_for_review:true;cost_allowed:false}[]})[];
+  note:string;
+};
+const auditReasonLabels:Record<AuditReason,string>={
+  metraj_input_gap:"Metraj bilgisi eksik",
+  technical_conflict:"Teknik nedenle elendi",
+  manual_code_in_pdf_not_parsed:"PDF metninde var, analiz çıkarılamadı",
+  manual_code_outside_loaded_pdf:"Manuel numara bu PDF'de yok",
+  possible_retrieval_gap:"Arama kaçırmış olabilir",
+  source_scope_or_description_unknown:"Katalog kapsamı veya tarif belirsiz",
+};
 type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
 type PartialCostPreview = {
   schema: "arkemx.a345.partial_cost_preview.v1"; read_only: true; creates_estimate: false;
@@ -239,6 +266,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
   const [coverage, setCoverage] = useState<ReviewCoverage | null>(null);
+  const [audit, setAudit] = useState<MatchingAudit|null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [auditReasonFilter, setAuditReasonFilter] = useState<AuditReason|"all">("all");
+  const auditAbortRef=useRef<AbortController|null>(null);
   const [listSearch, setListSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all"|"approved"|"no_match"|"needs_info"|"needs_review"|"rule_prechecked">("all");
   const [costPreview, setCostPreview] = useState<PartialCostPreview|null>(null);
@@ -361,8 +393,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   }
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     if (id !== importId || sourceProject !== projectId) {
-      coverageAbortRef.current?.abort();
+      coverageAbortRef.current?.abort(); auditAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setAudit(null); setAuditLoading(false); setAuditError("");
       setCostPreview(null); setCostLoading(false); setCostError("");
     }
     setArchive(null); setSavedList(null); setArchiveRow(null);
@@ -382,6 +415,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     void request<PdfSource>(`/api/projects/${encodeURIComponent(id)}/a318/source`, data => {
       if (data.read_only !== true) throw new Error("PDF kaynak doğrulaması başarısız.");
       setCoverage(old => old && data.sha256 === old.source_sha256 ? old : null);
+      setAudit(old => old && data.sha256 === old.source_pdf_sha256 ? old : null);
       setCostPreview(old => old && data.sha256 === old.source_pdf_sha256 ? old : null);
       setPdfSource(data);
     }, "pdf-source");
@@ -452,8 +486,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         throw new Error("PDF analizi doğrulanamadı.");
       }
       automaticRunKeyRef.current = "";
-      coverageAbortRef.current?.abort();
+      coverageAbortRef.current?.abort(); auditAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setAudit(null); setAuditLoading(false); setAuditError("");
       setCostPreview(null); setCostLoading(false); setCostError("");
       setPdfSource(data);
       setPdfFile(null);
@@ -469,7 +504,60 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
     }, "pdf-upload", { method: "POST", body: form });
   }
-  async function scanFullImport() {
+  async function runMatchingAudit() {
+    if (!selection || !projectId || !importId || !pdfSource?.sha256 || auditLoading || busy) return;
+    auditAbortRef.current?.abort();
+    const controller=new AbortController();
+    auditAbortRef.current=controller;
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if(!token){setAuditError("Oturum gerekli.");return;}
+    const source=selection.import_source;
+    const sha=pdfSource.sha256;
+    setAuditLoading(true);setAuditError("");setAudit(null);
+    try{
+      const res=await fetch(
+        `${API}/api/projects/${encodeURIComponent(projectId)}/a346/imports/${encodeURIComponent(importId)}/audit`,
+        {cache:"no-store",signal:controller.signal,headers:{Authorization:"Bearer "+token}}
+      );
+      if(!res.ok)throw Error("Eşleştirme denetimi başarısız (HTTP "+res.status+").");
+      const data=await res.json() as MatchingAudit;
+      if(controller.signal.aborted)return;
+      if(data.schema!=="arkemx.a346.matching_audit.v1" ||
+        data.read_only!==true || data.approval_allowed!==false || data.cost_allowed!==false ||
+        data.source_pdf_sha256!==sha || data.import_id!==importId ||
+        data.import_sha256!==source.sha256 || data.total_rows!==source.row_count ||
+        data.missing_count+data.candidate_count!==data.total_rows ||
+        data.missing_rows.length!==data.missing_count ||
+        data.candidate_rows.length!==data.candidate_count ||
+        Object.values(data.missing_reason_counts).reduce((a,b)=>a+b,0)!==data.missing_count ||
+        Object.values(data.candidate_risk_counts).reduce((a,b)=>a+b,0)!==data.candidate_count ||
+        [...data.missing_rows,...data.candidate_rows].some(row=>
+          row.cost_allowed!==false||row.engineer_approved!==false||
+          row.row_index<0||row.row_index>=data.total_rows)) {
+        throw Error("Denetim kaynak bilgisi veya satır toplamı doğrulanamadı.");
+      }
+      setAudit(data);
+    }catch(e){
+      if(!controller.signal.aborted)setAuditError(e instanceof Error?e.message:"Denetim başarısız.");
+    }finally{
+      if(auditAbortRef.current===controller){
+        auditAbortRef.current=null;setAuditLoading(false);
+      }
+    }
+  }
+
+  function openAuditedRow(row:AuditRowRef) {
+    if(!selection)return;
+    jumpToRowRef.current=row.work_item_id;
+    if(selection.rows.some(x=>x.work_item_id===row.work_item_id)){
+      setCandidateDetailId(row.work_item_id);
+      jumpToRowRef.current=null;
+    }else{
+      loadItems(importId,Math.floor(row.row_index/20)*20);
+    }
+  }
+
+    async function scanFullImport() {
     if (!selection || !projectId || !importId || !pdfSource?.sha256 || coverageLoading) return;
     coverageAbortRef.current?.abort();
     const controller = new AbortController();
@@ -687,7 +775,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {...row, manual_position: data.manual_position} : row),
         } : old);
         setManualCodes(old => ({...old, [id]: code}));
-        setCoverage(null); setCostPreview(null);
+        auditAbortRef.current?.abort();
+        setCoverage(null); setAudit(null); setCostPreview(null);
         setSaveNotice(data.manual_position.can_select ?
           "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
           "Manuel poz numarası inceleme için kaydedildi. PDF'de doğrulanana kadar maliyet hesabına alınmayacak.");
@@ -718,11 +807,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
-        setCoverage(null); setCostPreview(null);
+        auditAbortRef.current?.abort();
+        setCoverage(null); setAudit(null); setCostPreview(null);
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
-        setSaveNotice(`${targetCode} poz seçimi onaylandı. Teknik kontrol ve mühendis onayı bekliyor.`);
+        setSaveNotice(`${targetCode} poz seçimi kaydedildi. Teknik kontrol ve mühendis onayı bekliyor.`);
         automaticRunKeyRef.current = ""; // Read current triage from the server after saving.
       }, "candidate-save", {
         method: "POST", body: JSON.stringify({
@@ -1012,6 +1102,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             <button type="button" disabled={coverageLoading||Boolean(busy)} onClick={()=>void scanFullImport()}>
               {coverageLoading?"Pozlar taranıyor…":coverage?"Taramayı yenile":"Tüm metrajı tara"}
             </button>
+            <button type="button" className="secondary"
+              disabled={auditLoading||Boolean(busy)} onClick={()=>void runMatchingAudit()}>
+              {auditLoading?"Kaynak ve eşleştirme denetleniyor…":audit?"Denetimi yenile":"Eşleştirmeyi denetle"}
+            </button>
             <button type="button" className="secondary" disabled={costLoading||Boolean(busy)}
               onClick={()=>void calculateSignedPartialCost()}>
               {costLoading?"Hesaplanıyor…":"Onaylı maliyeti hesapla"}
@@ -1034,7 +1128,86 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           </div>}
           {costPreview.pending_count>0 && <p>{costPreview.pending_count} kalem onay, kaynak veya analiz doğrulaması bekliyor.</p>}
         </details>}
-        {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
+        {auditError && <p role="alert" className={styles.a330Warning}>{auditError}</p>}
+        {audit && <section className={styles.a346Audit} aria-label="Kaynak ve eşleştirme doğruluk denetimi">
+          <div className={styles.a346Header}>
+            <div>
+              <h3>Kaynak ve eşleştirme denetimi</h3>
+              <p>Bu PDF'de {audit.total_rows} satır incelendi:
+                {" "}<strong>{audit.missing_count} eşleşmeyen</strong>,
+                {" "}<strong>{audit.candidate_count} poz seçenekli.</strong>
+              </p>
+            </div>
+            <span>Salt okunur · Maliyet dışı</span>
+          </div>
+          <div className={styles.a346AuditSource}>
+            <strong>PDF ayrıştırma kontrolü</strong>
+            <span>{audit.source_pdf.year} / Cilt {audit.source_pdf.volume} ·
+              {" "}{audit.source_pdf.parsed_position_count} poz ayrıştırıldı ·
+              {" "}{audit.source_pdf.verified_price_count} analiz fiyatı doğrulandı</span>
+            <small>{audit.source_pdf.raw_code_scan_available?
+              `Ham PDF metnindeki 15.x numaralarının ${audit.source_pdf.codes_in_text_not_extracted_count} tanesi ayrıştırılmış poz listesinde yok. Bunların hepsi poz başlığı olmayabilir.`:
+              "PDF ham metin taraması yapılamadı; ayrıştırıcının kaçırdığı numaralar belirlenemedi."}
+              {" "}Diğer ciltler veya branş katalogları bu denetime dahil değil.</small>
+          </div>
+          <div className={styles.a346ReasonGrid}>
+            {(Object.keys(auditReasonLabels) as AuditReason[]).map(key=>
+              <button key={key} type="button"
+                aria-pressed={auditReasonFilter===key}
+                className={styles.a346Reason}
+                onClick={()=>setAuditReasonFilter(old=>old===key?"all":key)}>
+                <strong>{audit.missing_reason_counts[key]}</strong>
+                <span>{auditReasonLabels[key]}</span>
+              </button>)}
+          </div>
+          <details className={styles.a346Rows}>
+            <summary>Eşleşmeyenleri nedenleriyle incele ({auditReasonFilter==="all"?
+              audit.missing_count:audit.missing_reason_counts[auditReasonFilter]})</summary>
+            <div className={styles.a346Filter}>
+              <label>Gösterilen grup
+                <select value={auditReasonFilter}
+                  onChange={e=>setAuditReasonFilter(e.target.value as AuditReason|"all")}>
+                  <option value="all">Tüm eşleşmeyenler</option>
+                  {(Object.keys(auditReasonLabels) as AuditReason[]).map(key=>
+                    <option value={key} key={key}>{auditReasonLabels[key]}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className={styles.a346RowList}>
+              {audit.missing_rows.filter(row=>
+                auditReasonFilter==="all"||row.reason_code===auditReasonFilter
+              ).map(row=><button type="button" key={row.work_item_id}
+                onClick={()=>openAuditedRow(row)}>
+                <span>Excel {row.source_row} · {auditReasonLabels[row.reason_code]}</span>
+                <strong>{row.description}</strong>
+                <small>{row.reason}
+                  {row.diagnostic_leads.length>0?
+                    ` · PDF'de kontrol edilebilecek numaralar: ${row.diagnostic_leads.map(x=>x.code+" (s."+x.pdf_page+")").join(", ")}`:""}
+                </small>
+              </button>)}
+            </div>
+          </details>
+          <details className={styles.a346Rows}>
+            <summary>Poz seçeneklerinin teknik ve fiyat riskleri ({audit.candidate_count})</summary>
+            <p className={styles.a346Help}>Poz seçeneği olması uygunluk veya mühendis onayı anlamına gelmez. Aşağıdaki PDF seçeneklerini tek tek kontrol et.</p>
+            <div className={styles.a346RowList}>
+              {audit.candidate_rows.map(row=><button type="button" key={row.work_item_id}
+                onClick={()=>openAuditedRow(row)}>
+                <span>Excel {row.source_row} · {row.source_options[0]?.code??"Poz"}</span>
+                <strong>{row.description}</strong>
+                <small>{row.reason}
+                  {row.source_options[0]?
+                    ` · PDF s. ${row.source_options[0].pdf_page} · ${row.source_options[0].source_price_verified?"Analiz fiyatı doğrulandı":"Analiz fiyatı belirsiz"}`:""}
+                </small>
+              </button>)}
+            </div>
+          </details>
+          <p className={styles.a346Help}>
+            Denetim yalnızca yüklenen Cilt 1 kaynağına dayanır. Benzerlik önerileri maliyete alınmaz;
+            kesin uygunluk, PDF kanıtı ve mühendis incelemesi gerekir.
+          </p>
+        </section>}
+                {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
         {coverage && <div className={styles.a344Coverage} aria-label="Tüm metraj inceleme özeti">
           <div className={styles.a344CoverageCounts}>
             <div><small>PDF'de poz bulunamadı</small><strong>{coverage.counts.no_match}</strong></div>

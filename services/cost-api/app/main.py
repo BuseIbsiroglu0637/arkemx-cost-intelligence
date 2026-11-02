@@ -373,6 +373,10 @@ app.include_router(a330_editable_analysis_router)
 from .a345_cost_preview import router as a345_cost_preview_router
 app.include_router(a345_cost_preview_router)
 
+# A3.46 source-grounded matching diagnostics, never a cost or approval action.
+from .a346_matching_audit import router as a346_matching_audit_router
+app.include_router(a346_matching_audit_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
