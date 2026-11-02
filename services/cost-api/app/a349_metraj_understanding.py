@@ -41,7 +41,7 @@ FAMILIES = {
     "tugla": r"\btugla\b",
     "celik": r"\bcelik\b",
     "ahsap": r"\bahsap\b",
-    "yalitim": r"\byalitim\b",
+    "yalitim": r"\byalitim\w*\b",
 }
 BINDERS = {
     "cimento": r"\bcimento\b",
