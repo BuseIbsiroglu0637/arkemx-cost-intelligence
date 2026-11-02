@@ -208,3 +208,66 @@ export function PdfAnalysisDetail({token, code, priceListSourceSha, revision}: {
     <small>Bu bağlantı sadece iki PDF'deki aynı poz numarasını birleştirir; teknik onay veya maliyet hesabı değildir.</small>
   </section>;
 }
+
+
+type LinkageAudit = {
+  ready: boolean; read_only: true; approval_allowed: false; cost_allowed: false;
+  price_list_present: boolean; analysis_present: boolean;
+  price_list_sha256?: string; analysis_source_sha256?: string;
+  catalog_total: number; analysis_total: number; linked_count: number;
+  catalog_without_cilt1_analysis_count?: number;
+  analyses_without_catalog_code_count?: number;
+  linked_without_list_price_count?: number; linked_price_difference_count?: number;
+  example_link?: string | null;
+};
+
+export function PdfLinkageAudit({token, priceListSha, revision}: {
+  token: string; priceListSha: string | null; revision: number;
+}) {
+  const [audit, setAudit] = useState<LinkageAudit | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    setAudit(null); setError(""); setLoading(true);
+    void fetch(API + "/api/a348/catalog/linkage", {
+      headers: {Authorization: "Bearer " + token},
+      cache: "no-store", signal: controller.signal,
+    }).then(async res => {
+      if (!res.ok) throw Error(await failure(res));
+      return await res.json() as LinkageAudit;
+    }).then(data => {
+      if (controller.signal.aborted) return;
+      if (!checkSafety(data) || data.price_list_present !== Boolean(priceListSha) ||
+          (priceListSha && data.price_list_sha256 && data.price_list_sha256 !== priceListSha)) {
+        throw Error("PDF kaynakları değişti; bağlantı denetimi yenilenmeli.");
+      }
+      setAudit(data);
+    }).catch(err => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "PDF bağlantıları kontrol edilemedi.");
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [token, priceListSha, revision]);
+
+  return <section className={styles.linkageAudit} aria-label="İki PDF arası bağlantı kontrolü">
+    <strong>İki PDF'nin gerçek bağlantı sonucu</strong>
+    {loading && <p role="status">Poz numaraları karşılaştırılıyor…</p>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    {audit && !audit.ready && <p>
+      Bağlantı kontrolü için hem fiyat listesi hem analiz PDF'si yüklenmiş olmalı.
+    </p>}
+    {audit?.ready && <>
+      <div className={styles.linkStats}>
+        <span>Fiyat listesi: <b>{audit.catalog_total.toLocaleString("tr-TR")}</b></span>
+        <span>Analiz Cilt 1: <b>{audit.analysis_total.toLocaleString("tr-TR")}</b></span>
+        <span>Gerçekten bağlanan: <b>{audit.linked_count.toLocaleString("tr-TR")}</b></span>
+      </div>
+      <p>
+        Cilt 1 analizi bulunmayan liste kayıtları: {audit.catalog_without_cilt1_analysis_count?.toLocaleString("tr-TR")} ·
+        Fiyat listesinde kodu olmayan analiz: {audit.analyses_without_catalog_code_count?.toLocaleString("tr-TR")} ·
+        Fiyatı farklı bağlı poz: {audit.linked_price_difference_count?.toLocaleString("tr-TR")}
+      </p>
+      <small>Yalnız birebir poz numarası bağlantısı sayılır; teknik onay anlamına gelmez.</small>
+    </>}
+  </section>;
+}

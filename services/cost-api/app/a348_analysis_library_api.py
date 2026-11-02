@@ -280,3 +280,53 @@ def get_position_analysis(
         "list_analysis_price_equal": equal_price if list_price is not None else None,
         "price_comparison_is_approval": False,
     }
+
+
+@router.get("/linkage")
+def get_pdf_linkage_audit(response: Response, user: Annotated[User, Depends(current_user)]):
+    """Actual exact-code join report, not just imported PDF counts.
+
+    Works without a project or metraj, and does not write any decisions or
+    mutate either PDF index. If one source is absent, returns a clear status.
+    """
+    price_data = price_list_source(user)
+    analysis_data = _source(user)
+    response.headers.update(NO_STORE)
+    if price_data is None or analysis_data is None:
+        return {
+            "read_only": True, "approval_allowed": False, "cost_allowed": False,
+            "ready": False, "price_list_present": price_data is not None,
+            "analysis_present": analysis_data is not None,
+            "linked_count": 0, "catalog_total": len(price_data["records"]) if price_data else 0,
+            "analysis_total": len(analysis_data["records"]) if analysis_data else 0,
+        }
+
+    prices = {row["code"]: row for row in price_data["records"]}
+    analyses = {row["code"]: row for row in analysis_data["records"]}
+    linked = sorted(prices.keys() & analyses.keys())
+    unlinked_analyses = sorted(analyses.keys() - prices.keys())
+    different_prices = []
+    unpriced = 0
+    for code in linked:
+        price_value = prices[code]["unit_price"]
+        if price_value is None:
+            unpriced += 1
+        elif Decimal(price_value) != Decimal(analyses[code]["analysis_price"]):
+            different_prices.append(code)
+    return {
+        "read_only": True, "approval_allowed": False, "cost_allowed": False,
+        "ready": True,
+        "price_list_present": True, "analysis_present": True,
+        "price_list_sha256": price_data["source_sha256"],
+        "analysis_source_sha256": analysis_data["source_sha256"],
+        "catalog_total": len(prices), "analysis_total": len(analyses),
+        "linked_count": len(linked),
+        "catalog_without_cilt1_analysis_count": len(prices) - len(linked),
+        "analyses_without_catalog_code_count": len(unlinked_analyses),
+        "analyses_without_catalog_code_sample": unlinked_analyses[:12],
+        "linked_without_list_price_count": unpriced,
+        "linked_price_difference_count": len(different_prices),
+        "linked_price_difference_sample": different_prices[:12],
+        "example_link": next((code for code in ("15.225.1004", "15.100.1001") if code in linked), linked[0] if linked else None),
+        "note": "A numeric-code match shows a PDF document link, not technical approval or M5 pricing.",
+    }

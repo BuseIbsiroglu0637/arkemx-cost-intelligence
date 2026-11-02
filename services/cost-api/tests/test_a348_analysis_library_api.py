@@ -124,3 +124,37 @@ def test_analysis_is_private_to_organization_and_wrong_pdf_rejected(client, monk
     bad = client.post(ANALYSIS, headers=other, files={"file": ("notpdf.pdf", b"NOT PDF")})
     assert bad.status_code == 422
     assert client.get(ANALYSIS, headers=other).json()["present"] is False
+
+
+def test_explicit_pdf_linkage_audit_counts_real_code_intersection(client, auth, monkeypatch):
+    from app import a348_analysis_library_api as mod
+    audit_path = "/api/a348/catalog/linkage"
+    empty = client.get(audit_path, headers=auth)
+    assert empty.status_code == 200
+    assert empty.json()["ready"] is False
+    assert empty.json()["linked_count"] == 0
+    assert client.get(audit_path).status_code == 401
+
+    monkeypatch.setattr(mod, "read_positions", lambda raw: [sample_position()])
+    assert client.post(PRICE, headers=auth,
+                       files={"file": ("price.pdf", source_pdf())}).status_code == 201
+    one_source = client.get(audit_path, headers=auth).json()
+    assert not one_source["ready"] and one_source["catalog_total"] == 3
+    assert one_source["analysis_total"] == 0
+
+    assert client.post(ANALYSIS, headers=auth,
+                       files={"file": ("analysis.pdf", fake_analysis_pdf())}).status_code == 201
+    linkage = client.get(audit_path, headers=auth)
+    assert linkage.status_code == 200
+    data = linkage.json()
+    assert data["ready"] is True
+    assert data["catalog_total"] == 3
+    assert data["analysis_total"] == 1
+    assert data["linked_count"] == 1
+    assert data["catalog_without_cilt1_analysis_count"] == 2
+    assert data["analyses_without_catalog_code_count"] == 0
+    assert data["linked_price_difference_count"] == 0
+    assert data["example_link"] == "15.225.1004"
+    assert data["approval_allowed"] is False and data["cost_allowed"] is False
+    assert linkage.headers["cache-control"] == "private, no-store"
+    assert client.get("/api/projects", headers=auth).json() == []
