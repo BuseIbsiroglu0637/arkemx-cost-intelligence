@@ -178,8 +178,13 @@ export default function MetrajUnderstandingPreview({
         "/items/" + row.work_item_id + "/candidates";
       const data = await getJson<CandidateSearch>(url, token, controller.signal);
       if (controller.signal.aborted) return;
-      if (data.version !== "a3492-safe-context-v2" ||
-          data.read_only !== true || data.approval_allowed !== false ||
+      if (data.version !== "a3492-safe-context-v2") {
+        throw Error(
+          "Eski API sürümü çalışıyor (" + (data.version || "bilinmiyor") +
+          "). API'yi 8000 portunda güncel klasörden yeniden başlat."
+        );
+      }
+      if (data.read_only !== true || data.approval_allowed !== false ||
           data.cost_allowed !== false || data.candidate_selected !== false ||
           data.catalog_matching_performed !== true ||
           data.excel.work_item_id !== row.work_item_id ||
