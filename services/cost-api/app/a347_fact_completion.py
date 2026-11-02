@@ -8,6 +8,7 @@ position. They cannot sign an analysis, alter the Excel or create M5 prices.
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from uuid import UUID
 
@@ -87,6 +88,11 @@ def _siva_without_layer(description: str, blocks: list[tuple[int, str]]):
         plain = normalized(text)
         if "siva" not in plain:
             continue
+        if scope_blocker(description, text):
+            continue
+        source_place = extract(text)["environment"]
+        if left["environment"] and source_place and left["environment"] != source_place:
+            continue
         # A project spec can contain several independent plaster layers.
         if plaster_stages(text):
             continue
@@ -103,7 +109,12 @@ def _siva_without_layer(description: str, blocks: list[tuple[int, str]]):
 
 
 def _matches(description: str, blocks: list[tuple[int, str]]):
-    matches = _block_matches(description, blocks)
+    # Reject obviously different operations even when the source repeats
+    # the same material words (demolition vs laying, material vs labour).
+    matches = [
+        match for match in _block_matches(description, blocks)
+        if not scope_blocker(description, match["quote"])
+    ]
     if matches:
         return matches
     return _siva_without_layer(description, blocks)
@@ -138,6 +149,19 @@ def _candidate_facts(description: str, kind: str | None):
     return _metraj_facts(description, kind)
 
 
+def _canonical(value):
+    """Compare 400 and 400.0, or 2.50 and 2,5, without losing textual classes."""
+    if isinstance(value, (int, float, Decimal)):
+        return "numeric:" + str(Decimal(str(value)).normalize())
+    text = str(value)
+    try:
+        if text.replace(",", ".").replace(".", "", 1).lstrip("-").isdigit():
+            return "numeric:" + str(Decimal(text.replace(",", ".")).normalize())
+    except (InvalidOperation, ValueError):
+        pass
+    return "text:" + normalized(text)
+
+
 def _compare_fields(kind, description, matches, position):
     excel = _metraj_facts(description, kind)
     candidate = _candidate_facts(position.description, kind) if position else {}
@@ -154,18 +178,19 @@ def _compare_fields(kind, description, matches, position):
     for key in NEEDED.get(kind, ()):
         records = observed.get(key, [])
         distinct = {str(record["value"]) for record in records}
+        comparable = {_canonical(record["value"]) for record in records}
         from_excel = excel.get(key)
         from_position = candidate.get(key)
-        conflict = len(distinct)>1 or (len(distinct)==1 and (
-            (from_excel is not None and str(from_excel) not in distinct) or
-            (from_position is not None and str(from_position) not in distinct)
+        conflict = len(comparable)>1 or (len(comparable)==1 and (
+            (from_excel is not None and _canonical(from_excel) not in comparable) or
+            (from_position is not None and _canonical(from_position) not in comparable)
         ))
         has_conflict = has_conflict or conflict
-        source = records[0] if len(distinct)==1 else None
+        source = records[0] if len(comparable)==1 else None
         status = (
             "conflict" if conflict else
             "missing" if not records else
-            "supported" if from_position is not None and str(from_position) in distinct else
+            "supported" if from_position is not None and _canonical(from_position) in comparable else
             "candidate_unverified"
         )
         if status in ("missing", "candidate_unverified"):
