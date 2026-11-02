@@ -89,6 +89,7 @@ def _summarize_facts(description: str, matches: list[dict], position=None) -> li
             if extra["key"] == "cement_dosage_kg" and extra["key"] not in expected:
                 expected = (*expected, extra["key"])
     original = _explicit_excel_facts(description, kind)
+    candidate_facts = _explicit_excel_facts(position.description, kind) if position else {}
     values = defaultdict(list)
     for row in matches:
         for key, value in row["facts"].items():
@@ -107,10 +108,15 @@ def _summarize_facts(description: str, matches: list[dict], position=None) -> li
             state, fact_value = "missing", None
         else:
             fact_value = records[0]["value"]
-            state = "conflict" if explicit is not None and _clean(explicit) != _clean(fact_value) else "found_for_review"
+            compared = [value for value in (explicit, candidate_facts.get(key)) if value is not None]
+            state = (
+                "conflict" if any(_clean(value) != _clean(fact_value) for value in compared)
+                else "found_for_review"
+            )
         results.append({
             "key": key, "label": FACT_LABELS.get(key, key),
-            "value": fact_value, "excel_value": explicit, "state": state,
+            "value": fact_value, "excel_value": explicit,
+            "position_value": candidate_facts.get(key), "state": state,
             "evidence": records[:4],
             "additional_evidence_count": max(0, len(records)-4),
         })
