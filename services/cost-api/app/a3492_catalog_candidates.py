@@ -238,6 +238,13 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
         # in the PDF library, but not shown as a compatible metraj candidate.
         if not record["unit"]:
             blockers = sorted(set(blockers + ["PDF_UNIT_MISSING"]))
+        # A rayiç (10.*) prices an input, not the complete execution of the
+        # work. Do not present raw material prices as turnkey construction
+        # imalat candidates when Excel explicitly describes application.
+        if record["kind"] == "rayic" and interpreted["work_scope"] in {
+            "material_and_labor", "execution_unspecified", "demolition"
+        }:
+            blockers = sorted(set(blockers + ["SOURCE_RAYIC_NOT_INSTALLATION_POZ"]))
         reviews = sorted(set(
             technical["review_flags"] + family_reviews + scope_reviews
             + interpreted["review_flags"]
