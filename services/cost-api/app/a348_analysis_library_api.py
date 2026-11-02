@@ -200,8 +200,9 @@ def _formula_only_entries(
             compact = re.sub(r"\s+", "", text).replace("×", "x")
             if not re.search(r"F=Mx\(H-2\)xK", compact, re.I):
                 continue
-            m = re.search(r"\bM\s*:\s*(0,\d+)", text)
-            if not m or unit.strip() != "m³":
+            m = re.search(r"\bM\s*:\s*(\d+,\d+)", text)
+            source_m = {"15.110.1001": "0,50", "15.110.1002": "1,00"}[code]
+            if not m or m.group(1) != source_m or unit.strip() != "m³":
                 continue
             # The final price line is present but the printed value is empty.
             final_prices = [
