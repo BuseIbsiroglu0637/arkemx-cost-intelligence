@@ -558,3 +558,19 @@
 .a346Help{font-size:11px;color:#65788c;line-height:1.6;margin:0}
 @media(max-width:820px){.a346ReasonGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.a346Header{flex-direction:column}}
 @media(max-width:520px){.a346ReasonGrid{grid-template-columns:1fr}}
+
+/* A3.47 evidence-first card: only essential fields visible, quotes collapsed. */
+.a347Facts{display:grid;gap:10px;border:1px solid #cfddec;border-radius:10px;background:#f8fbff;padding:13px;margin:12px 0}
+.a347FactsHeading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.a347FactsHeading strong{font-size:13px;color:#23456b}
+.a347FactsHeading small{font-size:11px;color:#6a7c90}
+.a347Facts>p,.a347Facts>small,.a347Facts details{font-size:11px;color:#526984;line-height:1.6;margin:0}
+.a347Facts summary{cursor:pointer;font-weight:650}
+.a347Facts details p{padding:7px;background:white;border:1px solid #e0e7f0;border-radius:7px;overflow-wrap:anywhere}
+.a347FactList{display:grid;gap:6px}
+.a347FactList>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;padding:8px 10px;border:1px solid #e0e8f1;background:white;border-radius:7px}
+.a347FactList span{font-size:12px;color:#405771}
+.a347FactList strong{font-size:12px;color:#24466d}
+.a347FactList small{grid-column:1/-1;color:#698096;font-size:11px}
+.a347Conflict{padding:9px;border-radius:7px;border:1px solid #edbdb5;background:#fff6f3;color:#9a3a2c!important}
+.a347Missing{padding:9px;border-radius:7px;background:#fff9ea;border:1px solid #eedeb1;color:#775b19!important}
