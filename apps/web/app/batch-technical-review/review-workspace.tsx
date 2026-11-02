@@ -1506,8 +1506,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <span className={styles.a343Rejected}>Uyumsuz</span>
                 </div>)}
             </details>}
-          <div className={styles.a343Manual} aria-label="Manuel poz numarası">
-            <strong>Uygun poz yoksa numarayla ara</strong>
+          <details key={expandedRow.work_item_id} className={styles.a343Manual}
+            aria-label="Manuel poz numarası" open={!expandedSuggestions.length}>
+            <summary>Uygun poz yoksa manuel numarayla ara</summary>
             <p>Numara mevcut analiz PDF'sinde aranır. Bulunamazsa diğer kurum kataloğu veya
               özel analiz gerekebilir; bu ekranda fiyat oluşturulmaz.</p>
             <div className={styles.projectEvidenceActions}>
@@ -1536,7 +1537,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   </button>
                 )}
             </div>}
-          </div>
+          </details>
           <div className={styles.a343Advanced}>
           {(
             <details className={styles.projectEvidence}>
