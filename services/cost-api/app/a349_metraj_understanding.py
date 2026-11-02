@@ -77,7 +77,13 @@ def describe_metraj(
     found_families = _named(plain, FAMILIES)
     binders = _named(plain, BINDERS)
     technical = extract(raw, unit)
-    explicit_layers = extract_layer_measurements(raw)
+    # A1's general measurement regex can also see "60x60 cm" tile sizes
+    # or "3 mm derz" as a raw mm/cm span. An unowned measurement is NOT a
+    # verified layer; retain only material/work-owned layer applications.
+    explicit_layers = tuple(
+        layer for layer in extract_layer_measurements(raw)
+        if layer.work_type is not None
+    )
     layers = [
         {
             "work_type": layer.work_type,
@@ -111,6 +117,8 @@ def describe_metraj(
     flags: list[str] = []
     if not plain:
         flags.append("DESCRIPTION_MISSING")
+    elif not found_families:
+        flags.append("MATERIAL_FAMILY_UNRECOGNIZED")
     if not unit:
         flags.append("UNIT_MISSING")
     if quantity is None:
