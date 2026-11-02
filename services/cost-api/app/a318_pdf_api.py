@@ -480,6 +480,9 @@ def _suggestions_result(
         rows.append({
             "clarification": question,
             "work_item_id": current.id, "source_row": current.source_row,
+            "description": current.raw_description,
+            "quantity": str(current.quantity) if current.quantity is not None else None,
+            "unit": current.normalized_unit,
             "revision_id": current.revision_id, "suggestions": scored,
             "excluded_positions": excluded,
             "saved_selection": (
@@ -596,6 +599,8 @@ def full_import_review_coverage(
         items.append({
             "work_item_id": row["work_item_id"],
             "source_row": row["source_row"],
+            "description": row["description"],
+            "quantity": row["quantity"], "unit": row["unit"],
             "state": state,
             "reason": cause,
             "suggested_code": options[0]["code"] if options else None,
