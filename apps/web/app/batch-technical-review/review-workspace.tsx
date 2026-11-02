@@ -240,7 +240,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
   const [coverage, setCoverage] = useState<ReviewCoverage | null>(null);
   const [listSearch, setListSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all"|"no_match"|"needs_info"|"needs_review"|"rule_prechecked">("all");
+  const [statusFilter, setStatusFilter] = useState<"all"|"approved"|"no_match"|"needs_info"|"needs_review"|"rule_prechecked">("all");
   const [costPreview, setCostPreview] = useState<PartialCostPreview|null>(null);
   const [costLoading, setCostLoading] = useState(false);
   const [costError, setCostError] = useState("");
@@ -942,8 +942,10 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       };
     });
   const filterText=listSearch.trim().toLocaleLowerCase("tr-TR");
+  const approvedPreviewIds=new Set(costPreview?.included.map(item=>item.work_item_id)??[]);
   const filteredListRows=listRows.filter(row=>
-    (statusFilter==="all"||row.state===statusFilter)&&
+    (statusFilter==="all"||
+     (statusFilter==="approved"?approvedPreviewIds.has(row.work_item_id):row.state===statusFilter))&&
     (!filterText||[String(row.source_row),row.description,row.reason,row.suggested_code,row.manual_code]
       .filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(filterText))
   );
@@ -1093,6 +1095,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <select aria-label="Poz durum filtresi" value={statusFilter}
                 onChange={e=>setStatusFilter(e.target.value as typeof statusFilter)}>
                 <option value="all">Tüm durumlar</option>
+                <option value="approved">Onaylı ve hesaplanan</option>
                 <option value="no_match">Poz bulunamadı</option>
                 <option value="needs_info">Teknik bilgi eksik</option>
                 <option value="needs_review">İnceleme bekliyor</option>
@@ -1113,7 +1116,8 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 }}>
                 <span className={styles.a344ListRowTop}>
                   <span>Excel {row.source_row}</span>
-                  <em>{row.state==="no_match"?"Poz bulunamadı":
+                  <em>{approvedPreviewIds.has(row.work_item_id)?"Hesaplandı":
+                    row.state==="no_match"?"Poz bulunamadı":
                     row.state==="needs_info"?"Bilgi eksik":
                     row.state==="rule_prechecked"?"Ön kontrol":"İnceleme"}</em>
                 </span>
