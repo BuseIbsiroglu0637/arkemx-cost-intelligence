@@ -106,6 +106,33 @@ type ReviewCoverage = {
   rows: {work_item_id: string; source_row: number; description: string; quantity: string|null; unit: string|null; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
   cost_note: string;
 };
+type AuditRowRef = {work_item_id:string;source_row:number;row_index:number;description:string;cost_allowed:false;engineer_approved:false};
+type AuditReason = "metraj_input_gap"|"technical_conflict"|"manual_code_in_pdf_not_parsed"|"manual_code_outside_loaded_pdf"|"possible_retrieval_gap"|"source_scope_or_description_unknown";
+type MatchingAudit = {
+  schema:"arkemx.a346.matching_audit.v1";read_only:true;approval_allowed:false;cost_allowed:false;
+  source_pdf_sha256:string;import_id:string;import_sha256:string;total_rows:number;
+  missing_count:number;candidate_count:number;
+  missing_reason_counts:Record<AuditReason,number>;
+  candidate_risk_counts:Record<string,number>;
+  source_pdf:{volume:number;year:number;parsed_position_count:number;verified_price_count:number;
+    raw_code_scan_available:boolean;raw_text_position_codes:number|null;
+    codes_in_text_not_extracted_count:number|null;codes_in_text_not_extracted_sample:string[];note:string};
+  missing_rows:(AuditRowRef&{reason_code:AuditReason;reason:string;manual_code:string|null;
+    diagnostic_leads:{code:string;description:string;pdf_page:number;lexical_similarity:number;selectable:false;cost_allowed:false}[];
+    excluded_examples:ExcludedPosition[];technical_exclusions:number})[];
+  candidate_rows:(AuditRowRef&{risk:string;reason:string;excluded_count:number;
+    source_options:{code:string;description:string;pdf_page:number;technical_status:string;
+      source_price_verified:boolean;review_flags:string[];selectable_for_review:true;cost_allowed:false}[]})[];
+  note:string;
+};
+const auditReasonLabels:Record<AuditReason,string>={
+  metraj_input_gap:"Metraj bilgisi eksik",
+  technical_conflict:"Teknik nedenle elendi",
+  manual_code_in_pdf_not_parsed:"PDF metninde var, analiz çıkarılamadı",
+  manual_code_outside_loaded_pdf:"Manuel numara bu PDF'de yok",
+  possible_retrieval_gap:"Arama kaçırmış olabilir",
+  source_scope_or_description_unknown:"Katalog kapsamı veya tarif belirsiz",
+};
 type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
 type PartialCostPreview = {
   schema: "arkemx.a345.partial_cost_preview.v1"; read_only: true; creates_estimate: false;
@@ -239,6 +266,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
   const [coverage, setCoverage] = useState<ReviewCoverage | null>(null);
+  const [audit, setAudit] = useState<MatchingAudit|null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [auditReasonFilter, setAuditReasonFilter] = useState<AuditReason|"all">("all");
+  const auditAbortRef=useRef<AbortController|null>(null);
   const [listSearch, setListSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all"|"approved"|"no_match"|"needs_info"|"needs_review"|"rule_prechecked">("all");
   const [costPreview, setCostPreview] = useState<PartialCostPreview|null>(null);
@@ -361,8 +393,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   }
   function loadItems(id: string, pageOffset = 0, sourceProject = projectId) {
     if (id !== importId || sourceProject !== projectId) {
-      coverageAbortRef.current?.abort();
+      coverageAbortRef.current?.abort(); auditAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setAudit(null); setAuditLoading(false); setAuditError("");
       setCostPreview(null); setCostLoading(false); setCostError("");
     }
     setArchive(null); setSavedList(null); setArchiveRow(null);
@@ -382,6 +415,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     void request<PdfSource>(`/api/projects/${encodeURIComponent(id)}/a318/source`, data => {
       if (data.read_only !== true) throw new Error("PDF kaynak doğrulaması başarısız.");
       setCoverage(old => old && data.sha256 === old.source_sha256 ? old : null);
+      setAudit(old => old && data.sha256 === old.source_pdf_sha256 ? old : null);
       setCostPreview(old => old && data.sha256 === old.source_pdf_sha256 ? old : null);
       setPdfSource(data);
     }, "pdf-source");
@@ -454,6 +488,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       automaticRunKeyRef.current = "";
       coverageAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setAudit(null); setAuditLoading(false); setAuditError("");
       setCostPreview(null); setCostLoading(false); setCostError("");
       setPdfSource(data);
       setPdfFile(null);
@@ -469,7 +504,60 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       setAutoMessage("PDF bağlandı. Excel satırları otomatik eşleştiriliyor.");
     }, "pdf-upload", { method: "POST", body: form });
   }
-  async function scanFullImport() {
+  async function runMatchingAudit() {
+    if (!selection || !projectId || !importId || !pdfSource?.sha256 || auditLoading || busy) return;
+    auditAbortRef.current?.abort();
+    const controller=new AbortController();
+    auditAbortRef.current=controller;
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if(!token){setAuditError("Oturum gerekli.");return;}
+    const source=selection.import_source;
+    const sha=pdfSource.sha256;
+    setAuditLoading(true);setAuditError("");setAudit(null);
+    try{
+      const res=await fetch(
+        `${API}/api/projects/${encodeURIComponent(projectId)}/a346/imports/${encodeURIComponent(importId)}/audit`,
+        {cache:"no-store",signal:controller.signal,headers:{Authorization:"Bearer "+token}}
+      );
+      if(!res.ok)throw Error("Eşleştirme denetimi başarısız (HTTP "+res.status+").");
+      const data=await res.json() as MatchingAudit;
+      if(controller.signal.aborted)return;
+      if(data.schema!=="arkemx.a346.matching_audit.v1" ||
+        data.read_only!==true || data.approval_allowed!==false || data.cost_allowed!==false ||
+        data.source_pdf_sha256!==sha || data.import_id!==importId ||
+        data.import_sha256!==source.sha256 || data.total_rows!==source.row_count ||
+        data.missing_count+data.candidate_count!==data.total_rows ||
+        data.missing_rows.length!==data.missing_count ||
+        data.candidate_rows.length!==data.candidate_count ||
+        Object.values(data.missing_reason_counts).reduce((a,b)=>a+b,0)!==data.missing_count ||
+        Object.values(data.candidate_risk_counts).reduce((a,b)=>a+b,0)!==data.candidate_count ||
+        [...data.missing_rows,...data.candidate_rows].some(row=>
+          row.cost_allowed!==false||row.engineer_approved!==false||
+          row.row_index<0||row.row_index>=data.total_rows)) {
+        throw Error("Denetim kaynak bilgisi veya satır toplamı doğrulanamadı.");
+      }
+      setAudit(data);
+    }catch(e){
+      if(!controller.signal.aborted)setAuditError(e instanceof Error?e.message:"Denetim başarısız.");
+    }finally{
+      if(auditAbortRef.current===controller){
+        auditAbortRef.current=null;setAuditLoading(false);
+      }
+    }
+  }
+
+  function openAuditedRow(row:AuditRowRef) {
+    if(!selection)return;
+    jumpToRowRef.current=row.work_item_id;
+    if(selection.rows.some(x=>x.work_item_id===row.work_item_id)){
+      setCandidateDetailId(row.work_item_id);
+      jumpToRowRef.current=null;
+    }else{
+      loadItems(importId,Math.floor(row.row_index/20)*20);
+    }
+  }
+
+    async function scanFullImport() {
     if (!selection || !projectId || !importId || !pdfSource?.sha256 || coverageLoading) return;
     coverageAbortRef.current?.abort();
     const controller = new AbortController();
@@ -687,7 +775,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {...row, manual_position: data.manual_position} : row),
         } : old);
         setManualCodes(old => ({...old, [id]: code}));
-        setCoverage(null); setCostPreview(null);
+        setCoverage(null); setAudit(null); setCostPreview(null);
         setSaveNotice(data.manual_position.can_select ?
           "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
           "Manuel poz numarası inceleme için kaydedildi. PDF'de doğrulanana kadar maliyet hesabına alınmayacak.");
@@ -718,7 +806,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
-        setCoverage(null); setCostPreview(null);
+        setCoverage(null); setAudit(null); setCostPreview(null);
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
