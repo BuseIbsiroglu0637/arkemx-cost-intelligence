@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {readWorkspace} from "./workspace-context";
 import styles from "./metraj-understanding-preview.module.css";
 
@@ -33,6 +33,42 @@ const flagLabels: Record<string, string> = {
   WORK_SCOPE_UNCLEAR: "İş kapsamı açık değil",
 };
 type ImportEntry = {id: string; filename: string; sheet: string; row_count: number};
+type PdfCandidate = {
+  code: string; description: string; kind: string; unit: string | null;
+  unit_price: string | null; price_status: string; pdf_page: number;
+  pdf_source_sha256: string; analysis_cilt1_linked: boolean;
+  lexical_similarity: number; score_is_probability: false;
+  technical_compliance_verified: false; technical_review_required: true;
+  technical_status: "review" | "blocked";
+  blockers: string[]; review_flags: string[];
+  approval_allowed: false; cost_allowed: false;
+};
+type CandidateSearch = {
+  read_only: true; approval_allowed: false; cost_allowed: false;
+  catalog_matching_performed: true; candidate_selected: false;
+  excel: {source_sha256: string; source_row: number; work_item_id: string; description: string};
+  catalog: {edition_date: string; source_sha256: string; position_count: number};
+  status: string; reason: string | null; scanned_count: number;
+  candidates: PdfCandidate[]; blocked_examples: PdfCandidate[];
+};
+const issueLabels: Record<string, string> = {
+  THICKNESS_MM_MISMATCH: "Kalınlık uyuşmuyor",
+  DIMENSIONS_MISMATCH: "Ebatlar uyuşmuyor",
+  MATERIAL_MISMATCH: "Malzeme uyuşmuyor",
+  MATERIAL_FAMILY_MISMATCH: "İmalat malzemesi farklı",
+  PLASTER_BINDER_MISMATCH: "Çimento / alçı türü farklı",
+  UNIT_MISMATCH: "Metraj ve poz birimi farklı",
+  WORK_SCOPE_DEMOLITION_MISMATCH: "Söküm ile imalat birbirine karışıyor",
+  WORK_SCOPE_MATERIAL_ONLY_MISMATCH: "Malzeme alımı ile uygulama kapsamı farklı",
+  WORK_SCOPE_LABOR_ONLY_MISMATCH: "Yalnız işçilik kapsamı farklı",
+  WORK_SCOPE_COMBINED_MISMATCH: "Malzeme + işçilik kapsamı farklı",
+  PDF_MATERIAL_FAMILY_UNVERIFIED: "PDF'de malzeme açık değil",
+  EXCEL_MATERIAL_FAMILY_UNVERIFIED: "Excel'de malzeme açık değil",
+  PLASTER_BINDER_UNVERIFIED: "Sıva bağlayıcısı doğrulanmalı",
+  PDF_LABOR_ONLY_SCOPE_UNVERIFIED: "PDF'nin yalnız işçilik kapsamı doğrulanmalı",
+  PDF_UNIT_UNVERIFIED: "PDF'de birim doğrulanamadı",
+  PDF_PRICE_UNAVAILABLE: "PDF'de sayısal birim fiyat yok",
+};
 type Understanding = {
   status: string; description: string; unit: string | null; quantity: string | null;
   material_families: string[]; binder_materials: string[];
@@ -70,9 +106,25 @@ export default function MetrajUnderstandingPreview({
   const [result, setResult] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [candidateFor, setCandidateFor] = useState<string>("");
+  const [candidateData, setCandidateData] = useState<CandidateSearch | null>(null);
+  const [candidateError, setCandidateError] = useState("");
+  const [candidateBusy, setCandidateBusy] = useState(false);
+  const candidateController = useRef<AbortController | null>(null);
+  useEffect(() => () => candidateController.current?.abort(), []);
+
+  function clearCandidates() {
+    candidateController.current?.abort();
+    candidateController.current = null;
+    setCandidateFor("");
+    setCandidateData(null);
+    setCandidateError("");
+    setCandidateBusy(false);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
+    clearCandidates();
     setResult(null); setImports([]); setImportId(""); setError("");
     void getJson<ImportEntry[]>("/api/projects/" + project + "/imports", token, controller.signal)
       .then(data => {
@@ -89,6 +141,7 @@ export default function MetrajUnderstandingPreview({
 
   async function load(offset: number) {
     if (!importId || busy) return;
+    clearCandidates();
     setBusy(true); setError("");
     try {
       const url = "/api/projects/" + project + "/a349/imports/" + importId +
@@ -109,14 +162,48 @@ export default function MetrajUnderstandingPreview({
     }
   }
 
+  async function lookupCandidates(row: Preview["rows"][number]) {
+    if (!importId || candidateBusy) return;
+    candidateController.current?.abort();
+    const controller = new AbortController();
+    candidateController.current = controller;
+    setCandidateFor(row.work_item_id);
+    setCandidateData(null); setCandidateError(""); setCandidateBusy(true);
+    try {
+      const url = "/api/projects/" + project + "/a349/imports/" + importId +
+        "/items/" + row.work_item_id + "/candidates";
+      const data = await getJson<CandidateSearch>(url, token, controller.signal);
+      if (controller.signal.aborted) return;
+      if (data.read_only !== true || data.approval_allowed !== false ||
+          data.cost_allowed !== false || data.candidate_selected !== false ||
+          data.catalog_matching_performed !== true ||
+          data.excel.work_item_id !== row.work_item_id ||
+          data.catalog.edition_date !== "01.01.2026" ||
+          [...data.candidates, ...data.blocked_examples].some(
+            item => item.approval_allowed !== false ||
+              item.cost_allowed !== false || item.technical_compliance_verified !== false ||
+              item.pdf_source_sha256 !== data.catalog.source_sha256 ||
+              item.score_is_probability !== false)) {
+        throw Error("Kaynak veya eşleştirme güvenliği doğrulanamadı.");
+      }
+      setCandidateData(data);
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        setCandidateError(err instanceof Error ? err.message : "Poz adayları aranamadı.");
+      }
+    } finally {
+      if (!controller.signal.aborted) setCandidateBusy(false);
+    }
+  }
+
   return <details className={styles.panel}>
-    <summary>Metraj açıklamalarını yorumla <span>Yeni · A3.49.1</span></summary>
+    <summary>Metraj açıklamalarını yorumla <span>A3.49.2 · Poz adayları</span></summary>
     <p className={styles.hint}>Excel'deki imalat türünü, kalınlığı ve iş kapsamını çıkarır.
-      Henüz poz eşleştirme veya maliyet hesabı yapmaz.</p>
+      Her satırda gerçek 2026 PDF poz adaylarını da salt okunur olarak araştırabilirsin. Adaylar henüz onaylı değildir.</p>
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {imports.length > 0 ? <div className={styles.controls}>
       <label>Excel kaynağı
-        <select value={importId} onChange={event => {setImportId(event.target.value); setResult(null);}}>
+        <select value={importId} onChange={event => {clearCandidates(); setImportId(event.target.value); setResult(null);}}>
           {imports.map(item => <option value={item.id} key={item.id}>
             {item.filename} · {item.sheet} ({item.row_count} kalem)
           </option>)}
@@ -134,7 +221,7 @@ export default function MetrajUnderstandingPreview({
       <div className={styles.tableWrap}>
         <table>
           <thead><tr>
-            <th>Excel</th><th>İmalat açıklaması</th><th>ARKEMX ne anladı?</th><th>İnceleme durumu</th>
+            <th>Excel</th><th>İmalat açıklaması</th><th>ARKEMX ne anladı?</th><th>İnceleme durumu</th><th>Poz arama</th>
           </tr></thead>
           <tbody>{result.rows.map(row => {
             const u = row.understanding;
@@ -164,10 +251,57 @@ export default function MetrajUnderstandingPreview({
                   {flagLabels[flag] ?? flag}
                 </small>)}
               </td>
+              <td>
+                <button type="button" className={styles.searchButton}
+                  disabled={candidateBusy} onClick={() => void lookupCandidates(row)}>
+                  {candidateBusy && candidateFor === row.work_item_id ? "Aranıyor…" : "Adayları gör"}
+                </button>
+              </td>
             </tr>;
           })}</tbody>
         </table>
       </div>
+      {(candidateFor || candidateData) && <section className={styles.candidateCard} aria-label="2026 poz adayları">
+        <div className={styles.candidateHead}>
+          <div><strong>2026 poz adayı kontrolü</strong>
+            <p>Bu arama yalnızca kaynak PDF'deki kayıtları önerir; mühendis onayı veya maliyet kaydı yapmaz.</p>
+          </div>
+          <button type="button" className="secondary" onClick={clearCandidates}>Kapat</button>
+        </div>
+        {candidateBusy && <p role="status">Resmî poz tarifleri teknik açıdan karşılaştırılıyor…</p>}
+        {candidateError && <p role="alert" className={styles.error}>{candidateError}</p>}
+        {candidateData && <>
+          <p className={styles.hint}>Excel satırı {candidateData.excel.source_row} ·
+            2026 kaynağından {candidateData.catalog.position_count.toLocaleString("tr-TR")} kayıt ·
+            {candidateData.scanned_count} aday ön taramadan geçti</p>
+          {candidateData.reason && <p className={styles.warn}>{candidateData.reason}</p>}
+          {candidateData.candidates.length > 0 && <div className={styles.candidateList}>
+            {candidateData.candidates.map(candidate => <article className={styles.candidate} key={candidate.code}>
+              <div className={styles.candidateHead}>
+                <strong>{candidate.code}</strong>
+                <span className={styles.reviewFlag}>Teknik inceleme gerekli</span>
+              </div>
+              <p>{candidate.description}</p>
+              <p>{candidate.unit ?? "Birimi eksik"} ·
+                {candidate.unit_price === null ? "Fiyatı belirtilmemiş" : " 2026 birim fiyatı: " + candidate.unit_price + " TL"} ·
+                PDF s. {candidate.pdf_page}</p>
+              <small>{candidate.analysis_cilt1_linked ? "Cilt 1 analiz bağlantısı mevcut" :
+                "Cilt 1 analizi bağlı değil"}</small>
+              {!!candidate.review_flags.length && <small>
+                Kontrol: {candidate.review_flags.map(issue => issueLabels[issue] ?? issue).join(" · ")}
+              </small>}
+            </article>)}
+          </div>}
+          {candidateData.blocked_examples.length > 0 && <details className={styles.blocked}>
+            <summary>Teknik nedenle elenen örnekler ({candidateData.blocked_examples.length})</summary>
+            {candidateData.blocked_examples.map(candidate => <div key={candidate.code}>
+              <strong>{candidate.code}</strong> — {candidate.description}
+              <small>Engel: {candidate.blockers.map(issue => issueLabels[issue] ?? issue).join(" · ")}</small>
+            </div>)}
+          </details>}
+          <small>Benzerlik puanları onay olasılığı değildir; sonuçlar hiçbir poz seçimi oluşturmaz.</small>
+        </>}
+      </section>}
       <div className={styles.pager}>
         <button type="button" className="secondary" disabled={busy || result.offset === 0}
           onClick={() => void load(Math.max(0, result.offset - PAGE_SIZE))}>Önceki</button>
