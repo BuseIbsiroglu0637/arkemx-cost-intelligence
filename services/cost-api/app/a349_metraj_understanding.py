@@ -61,7 +61,7 @@ def _named(text: str, patterns: dict[str, str]) -> list[str]:
 
 
 def _str_decimal(value: Decimal | None) -> str | None:
-    return format(value, "f") if value is not None else None
+    return format(value.normalize(), "f") if value is not None else None
 
 
 def describe_metraj(
