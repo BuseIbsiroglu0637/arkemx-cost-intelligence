@@ -11,6 +11,7 @@ import M4LinkPanel from "./m4-link-panel";
 import HandoffDecisionPanel from "./handoff-decision-panel";
 import EditableEngineeringReview from "./editable-engineering-review";
 import PlasterEvidenceComparison from "./plaster-evidence-comparison";
+import SourceFactCard, {type SourceCompletion} from "./source-fact-card";
 
 type Project = { id: string; name: string };
 type Import = { id: string; filename: string; row_count: number; sheet: string; sha256: string };
@@ -258,6 +259,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [specFile, setSpecFile] = useState<File | null>(null);
   const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
+  const [completedFacts, setCompletedFacts] = useState<{key:string;data:SourceCompletion}|null>(null);
+  const [factLoading, setFactLoading] = useState(false);
+  const [factError, setFactError] = useState("");
   const [specEvidence, setSpecEvidence] = useState<{ rowId: string; data: DocumentEvidence } | null>(null);
   const [engineerHandoff, setEngineerHandoff] = useState<EngineerHandoff | null>(null);
   const [pilotRefreshTick, setPilotRefreshTick] = useState(0);
@@ -376,7 +380,26 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function chooseProject(id: string, rememberedImport: string | null = null) {
+  // The specification can already exist from an earlier browser session.
+  // Discover it without requiring another upload or relying on client memory.
+  useEffect(()=>{
+    if(!authenticated || !projectId)return;
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if(!token)return;
+    const controller=new AbortController();
+    void fetch(`${API}/api/projects/${encodeURIComponent(projectId)}/a326/source`,
+      {cache:"no-store",signal:controller.signal,headers:{Authorization:"Bearer "+token}})
+      .then(response=>response.ok?response.json() as Promise<ProjectSpec>:null)
+      .then(data=>{
+        if(controller.signal.aborted)return;
+        if(data?.present===true&&data.read_only===true&&data.sha256) {
+          setProjectSpec(old=>old?.sha256?old:data);
+        }
+      }).catch(()=>{ /* Other workflows remain available without the spec. */});
+    return ()=>controller.abort();
+  },[authenticated,projectId]);
+
+    function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(0);
     setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setSpecFile(null); setProjectSpec(null); setSpecEvidence(null); setEngineerHandoff(null); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
@@ -1010,7 +1033,53 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     return [...extra, ...suggestions].sort((a, b) =>
       Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode));
   })() : [];
-  const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
+  const factPositionCode=expandedSelectedCode||expandedSuggestions[0]?.code||"";
+  const activeFactKey=[
+    projectId,importId,expandedRow?.work_item_id,expandedRow?.revision_id,
+    factPositionCode,projectSpec?.sha256,pdfSource?.sha256,selection?.import_source.sha256
+  ].join("|");
+  useEffect(()=>{
+    const rowId=expandedRow?.work_item_id;
+    const revision=expandedRow?.revision_id??null;
+    const specSha=projectSpec?.sha256;
+    const sourceSha=pdfSource?.sha256??null;
+    const importSha=selection?.import_source.sha256;
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if(!rowId||!projectId||!importId||!specSha||!importSha||!token) {
+      setCompletedFacts(null);setFactLoading(false);setFactError("");return;
+    }
+    const controller=new AbortController();
+    const key=activeFactKey;
+    setCompletedFacts(null);setFactLoading(true);setFactError("");
+    const code=factPositionCode;
+    const params=code?`?position_code=${encodeURIComponent(code)}`:"";
+    void fetch(
+      `${API}/api/projects/${encodeURIComponent(projectId)}/a347/imports/${encodeURIComponent(importId)}/items/${encodeURIComponent(rowId)}/completion${params}`,
+      {signal:controller.signal,cache:"no-store",headers:{Authorization:"Bearer "+token}}
+    ).then(async response=>{
+      if(!response.ok)throw Error("Teknik şartname karşılaştırılamadı (HTTP "+response.status+").");
+      return await response.json() as SourceCompletion;
+    }).then(data=>{
+      if(controller.signal.aborted)return;
+      if(data.schema!=="arkemx.a347.completion.v1" ||
+        data.read_only!==true||data.engineering_approved!==false||data.cost_allowed!==false ||
+        data.project_id!==projectId||data.import_id!==importId ||
+        data.work_item_id!==rowId||data.revision_id!==revision||
+        data.import_sha256!==importSha||data.spec_sha256!==specSha||
+        data.pdf_sha256!==sourceSha||data.candidate_code!==(code||null)||
+        data.fields.some(field=>field.suggested_from_spec!==null &&
+          (field.status==="conflict"||field.pdf_value===null))) {
+        throw Error("Şartname kanıtı veya metraj/poz kaynağı doğrulanamadı.");
+      }
+      setCompletedFacts({key,data});
+    }).catch(error=>{
+      if(!controller.signal.aborted)setFactError(error instanceof Error?error.message:"Teknik kontrol başarısız.");
+    }).finally(()=>{if(!controller.signal.aborted)setFactLoading(false);});
+    return ()=>controller.abort();
+    // All inputs are encoded in activeFactKey; old requests are aborted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activeFactKey]);
+    const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
   type ListedRow = {work_item_id:string; source_row:number; description:string; quantity:string|null; unit:string|null;
     state:"no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason:string;
     suggested_code:string|null; manual_code:string|null; pageIndex:number;};
@@ -1336,7 +1405,19 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <small>İlişkili Excel satırları: {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş doğrulanmadan tutarlar birleştirilmez.</small>}
             <small>Bu satır beklerken diğer onaylı metrajların maliyet hesabı devam edebilir.</small>
           </div>
-          {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
+          {projectSpec?.sha256 && factLoading && <p className={styles.a347Progress} role="status">
+            Şartnamedeki teknik bilgiler kontrol ediliyor…
+          </p>}
+          {projectSpec?.sha256 && factError && <p className={styles.a330Warning} role="alert">
+            {factError} Belgeleri kontrol edip satırı tekrar aç.
+          </p>}
+          {completedFacts?.key===activeFactKey &&
+            <SourceFactCard data={completedFacts.data}/>}
+          {!projectSpec?.sha256 && <p className={styles.a347MissingSpec}>
+            Teknik bilgiler için proje şartnamesini aşağıdaki “Şartname ve kaynak belgeler” bölümünden bağla.
+            Şartname olmadan poz uygunluğu doğrulanmış sayılmaz.
+          </p>}
+                    {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
             <strong>{expandedClarification.prompt}</strong>
             <p>{expandedClarification.hint}</p>
             <div className={styles.simpleCeramicChoices}>
@@ -1400,7 +1481,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   </button>}
               </div>)}
             {expandedSuggestions.length > 1 && <details className={styles.otherCandidates}>
-              <summary>Diğer poz seçenekleri ({expandedSuggestions.length - 1})</summary>
+              <summary>Alternatif pozları göster ({expandedSuggestions.length - 1})</summary>
               {expandedSuggestions.slice(1).map(option =>
                 <div key={option.code} className={styles.otherCandidateRow}>
                   <div><strong>{option.code}</strong> · {option.description}
@@ -1425,9 +1506,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <span className={styles.a343Rejected}>Uyumsuz</span>
                 </div>)}
             </details>}
-          <div className={styles.a343Manual} aria-label="Manuel poz numarası">
-            <strong>Manuel poz numarası · PDF ile yeniden eşleştir</strong>
-            <p>Numara kaydedilir ve PDF'de tekrar aranır. Bulunamazsa bekleyenlerde kalır; diğer kalemlerin hesabını engellemez.</p>
+          <details key={expandedRow.work_item_id} className={styles.a343Manual}
+            aria-label="Manuel poz numarası" open={!expandedSuggestions.length}>
+            <summary>Uygun poz yoksa manuel numarayla ara</summary>
+            <p>Numara mevcut analiz PDF'sinde aranır. Bulunamazsa diğer kurum kataloğu veya
+              özel analiz gerekebilir; bu ekranda fiyat oluşturulmaz.</p>
             <div className={styles.projectEvidenceActions}>
               <label>Poz numarası
                 <input type="text" maxLength={80} disabled={Boolean(busy)}
@@ -1454,12 +1537,13 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   </button>
                 )}
             </div>}
-          </div>
+          </details>
           <div className={styles.a343Advanced}>
           {(
             <details className={styles.projectEvidence}>
-              <summary>Teknik belge / şartname kanıtları (isteğe bağlı)</summary>
-              <p>Belgeyi bir kez bağla; yalnız gerektiğinde ilgili satırın kanıtlarını incele.</p>
+              <summary>Şartname ve kaynak belgeler · yükle / ayrıntıyı aç</summary>
+              <p>Şartnameyi bir kez bağla. Bağlandığında satırın eksik teknik bilgileri otomatik kontrol edilir;
+              asıl PDF alıntıları gerektiğinde açılır.</p>
               <div className={styles.projectEvidenceActions}>
                 <label>Şartname PDF (en fazla 8 MB)
                   <input type="file" accept=".pdf,application/pdf"
