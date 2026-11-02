@@ -21,3 +21,20 @@
 .pager{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:13px;font-size:12px;color:#667d95}
 .pager button{font-size:12px}
 @media(max-width:650px){.panel{padding:12px}.tableWrap th,.tableWrap td{padding:8px}.tableWrap{max-width:100%}}
+
+.searchButton{white-space:nowrap;font-size:11px;padding:7px 9px;background:#eaf2ff;border:1px solid #c5d9f2;border-radius:7px;color:#214c84;cursor:pointer}
+.searchButton:disabled{opacity:.55;cursor:not-allowed}
+.candidateCard{margin-top:13px;border:1px solid #d4e2f2;border-radius:10px;padding:14px;background:#f8fbff;display:grid;gap:10px}
+.candidateHead{display:flex;align-items:start;justify-content:space-between;gap:10px}
+.candidateHead strong{color:#143e65;font-size:14px}
+.candidateHead p{margin:6px 0 0;color:#72879e;font-size:12px}
+.candidateHead button{font-size:11px}
+.candidateList{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:9px}
+.candidate{border:1px solid #dbe8f4;border-radius:9px;padding:12px;background:white;display:grid;gap:7px}
+.candidate p{margin:0;line-height:1.5;font-size:12px;color:#364d65}
+.candidate small{font-size:11px;color:#667b92}
+.reviewFlag{border:1px solid #f5dfaa;border-radius:5px;background:#fff9e8;color:#8e5a12;font-size:10px;font-weight:600;padding:5px 7px}
+.blocked{border-top:1px solid #d7e4f1;padding-top:10px;font-size:12px}
+.blocked>summary{cursor:pointer;font-weight:700;color:#8d5527}
+.blocked>div{padding:8px 0;border-top:1px solid #e5ecf5;color:#4b617a}
+.blocked small{display:block;margin-top:4px;color:#a25a34}
