@@ -1,5 +1,6 @@
 """A3.48.4: formula-only official depth surcharges and safe source reindex."""
 import json
+import hashlib
 
 import pymupdf
 
@@ -90,11 +91,18 @@ def test_reindex_old_source_without_modifying_original_pdf_or_index(client, auth
     pdf_file = folder / "source.pdf"
     prior_pdf = pdf_file.read_bytes()
     before_index = (folder / mod.INDEX_FILE).read_bytes()
+    legacy_index = folder / "analysis.json"
+    legacy_index.write_bytes(before_index)
+    (root / "current.json").write_text(json.dumps({
+        "source_sha256": uploaded.json()["source_sha256"],
+        "index_sha256": hashlib.sha256(before_index).hexdigest(),
+    }), encoding="utf-8")
     first = client.post("/api/a348/catalog/analysis/reindex", headers=auth)
     assert first.status_code == 200, first.text
     assert first.json()["position_count"] == 1
     assert pdf_file.read_bytes() == prior_pdf
     assert (folder / mod.INDEX_FILE).read_bytes() == before_index
+    assert legacy_index.read_bytes() == before_index
     pointer = json.loads((root / "current.json").read_text(encoding="utf-8"))
     assert pointer["index_file"] == mod.INDEX_FILE
     assert client.post("/api/a348/catalog/analysis/reindex", headers=auth).status_code == 200
