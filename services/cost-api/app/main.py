@@ -381,6 +381,10 @@ app.include_router(a346_matching_audit_router)
 from .a347_spec_completion import router as a347_spec_completion_router
 app.include_router(a347_spec_completion_router)
 
+# A3.48.2: separate PDF-only, read-only poz catalog library.
+from .a348_catalog_library_api import router as a348_catalog_library_router
+app.include_router(a348_catalog_library_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
