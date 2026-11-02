@@ -150,7 +150,7 @@ def _summarize(source, catalog, pdf_text_index, result, effective):
     risk_counts = Counter()
     missing_rows = []
     candidate_rows = []
-    for row in result["rows"]:
+    for row_index, row in enumerate(result["rows"]):
         code_set = {option["code"] for option in row["suggestions"]}
         code_set.update(option["code"] for option in row.get("excluded_positions", ()))
         if row["suggestions"]:
@@ -158,6 +158,7 @@ def _summarize(source, catalog, pdf_text_index, result, effective):
             risk_counts[risk] += 1
             candidate_rows.append({
                 "work_item_id": row["work_item_id"], "source_row": row["source_row"],
+                "row_index": row_index,
                 "description": row["description"], "risk": risk,
                 "reason": detail,
                 "source_options": [
