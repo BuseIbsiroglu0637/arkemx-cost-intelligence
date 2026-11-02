@@ -52,7 +52,8 @@ def test_upload_link_by_exact_code_and_display_inputs(client, auth, monkeypatch)
     before = client.get(DETAIL, headers=auth).json()
     assert before["available"] is False and before["reason"] == "analysis_pdf_not_uploaded"
 
-    uploaded = client.post(ANALYSIS, headers=auth, files={"file": ("cilt1.pdf", fake_analysis_pdf())})
+    analysis_binary = fake_analysis_pdf()
+    uploaded = client.post(ANALYSIS, headers=auth, files={"file": ("cilt1.pdf", analysis_binary)})
     assert uploaded.status_code == 201, uploaded.text
     status = uploaded.json()
     assert status["present"] is True
@@ -83,7 +84,7 @@ def test_upload_link_by_exact_code_and_display_inputs(client, auth, monkeypatch)
                       headers=auth).status_code == 422
     assert client.get("/api/projects", headers=auth).json() == []
     # Uploading again keeps the exact same source version, no overwrites.
-    again = client.post(ANALYSIS, headers=auth, files={"file": ("again.pdf", fake_analysis_pdf())})
+    again = client.post(ANALYSIS, headers=auth, files={"file": ("again.pdf", analysis_binary)})
     assert again.status_code == 201 and again.json()["source_sha256"] == status["source_sha256"]
 
 
