@@ -62,7 +62,13 @@ def work_scope(description: str) -> str:
     content = normalized(description)
     if DEMOLITION.search(content):
         return "demolition"
-    material = bool(MATERIAL_ONLY.search(content))
+    # An explicit exclusion must not be interpreted as material supply.
+    excludes_material = (
+        "malzeme haric" in content or
+        "malzeme dahil degil" in content or
+        "malzemesiz" in content
+    )
+    material = bool(MATERIAL_ONLY.search(content)) and not excludes_material
     labor = bool(LABOR_ONLY.search(content))
     if material and labor:
         return "material_and_labor"
