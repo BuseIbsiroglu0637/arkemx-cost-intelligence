@@ -921,7 +921,33 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode));
   })() : [];
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
-  const Container = projectScope ? "div" : "main";
+  type ListedRow = {work_item_id:string; source_row:number; description:string; quantity:string|null; unit:string|null;
+    state:"no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason:string;
+    suggested_code:string|null; manual_code:string|null; pageIndex:number;};
+  const listRows:ListedRow[] = coverage
+    ? coverage.rows.map((row,index)=>({...row,pageIndex:index}))
+    : visibleQueueRows.map((row,index)=>{
+      const item=autoCandidates?.rows.find(x=>x.work_item_id===row.work_item_id);
+      const options=item?.suggestions??[];
+      const state:ListedRow["state"]=!options.length?"no_match":
+        item?.triage?.group==="needs_info"?"needs_info":
+        item?.triage?.group==="prechecked"?"rule_prechecked":"needs_review";
+      return {
+        work_item_id:row.work_item_id,source_row:row.source_row,
+        description:row.effective_description,quantity:row.quantity,unit:row.unit,
+        state, reason:item?.triage?.reason??(options.length?"Teknik inceleme bekliyor":"Uygun poz bulunamadı"),
+        suggested_code:options[0]?.code??null,
+        manual_code:item?.manual_position?.position_code??null,
+        pageIndex:offset+index,
+      };
+    });
+  const filterText=listSearch.trim().toLocaleLowerCase("tr-TR");
+  const filteredListRows=listRows.filter(row=>
+    (statusFilter==="all"||row.state===statusFilter)&&
+    (!filterText||[String(row.source_row),row.description,row.reason,row.suggested_code,row.manual_code]
+      .filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(filterText))
+  );
+    const Container = projectScope ? "div" : "main";
   const Heading = projectScope ? "h2" : "h1";
   return <Container className={projectScope ? styles.page : `page ${styles.page}`}>
     {!projectScope && <><WorkflowNav active="technical" />
@@ -1058,36 +1084,48 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <section className={styles.a344List} aria-label="Metraj listesi">
             <div className={styles.a344ListHeading}>
               <strong>Metraj kalemleri</strong>
-              <small>Satırı seç, ayrıntısını sağda incele.</small>
+              <small>{coverage?`Tüm projeden ${filteredListRows.length} / ${coverage.total_rows} satır`:
+                "İlk 20 satır görüntüleniyor. Tümünde aramak için önce tarama yap."}</small>
+            </div>
+            <div className={styles.a345Filters}>
+              <input type="search" aria-label="Metraj veya poz ara" placeholder="İmalat, satır veya poz ara…"
+                value={listSearch} onChange={e=>setListSearch(e.target.value)}/>
+              <select aria-label="Poz durum filtresi" value={statusFilter}
+                onChange={e=>setStatusFilter(e.target.value as typeof statusFilter)}>
+                <option value="all">Tüm durumlar</option>
+                <option value="no_match">Poz bulunamadı</option>
+                <option value="needs_info">Teknik bilgi eksik</option>
+                <option value="needs_review">İnceleme bekliyor</option>
+                <option value="rule_prechecked">Kural ön kontrolü</option>
+              </select>
             </div>
             <div className={styles.a344ListItems}>
-              {visibleQueueRows.map(row => {
-                const item = autoCandidates?.rows.find(x => x.work_item_id === row.work_item_id);
-                const options = item?.suggestions ?? [];
-                const saved = item?.saved_selection?.current === true &&
-                  item?.saved_selection?.stale !== true;
-                const code = saved ? item?.saved_selection?.code : options[0]?.code;
-                const status = item?.triage?.group === "needs_info" ? "Bilgi eksik" :
-                  !options.length ? "Poz bulunamadı" :
-                  item?.triage?.group === "prechecked" ? "Kural ön kontrolü" : "İnceleme bekliyor";
-                return <button type="button" key={row.work_item_id}
-                  aria-pressed={candidateDetailId === row.work_item_id}
-                  className={styles.a344ListRow}
-                  onClick={() => setCandidateDetailId(row.work_item_id)}>
-                  <span className={styles.a344ListRowTop}>
-                    <span>Excel {row.source_row}</span><em>{status}</em>
-                  </span>
-                  <strong>{row.effective_description}</strong>
-                  <small>{row.quantity ?? "Miktar eksik"} {row.unit ?? ""} · {code ?
-                    `Poz: ${code}` : item?.manual_position?.position_code ?
-                    `Manuel poz: ${item.manual_position.position_code}` : "Poz belirlenmedi"}</small>
-                </button>;
-              })}
+              {filteredListRows.map(row=><button type="button" key={row.work_item_id}
+                aria-pressed={candidateDetailId===row.work_item_id}
+                className={styles.a344ListRow}
+                onClick={()=>{
+                  if(selection?.rows.some(item=>item.work_item_id===row.work_item_id)){
+                    setCandidateDetailId(row.work_item_id);
+                  }else{
+                    jumpToRowRef.current=row.work_item_id;
+                    loadItems(importId,Math.floor(row.pageIndex/20)*20);
+                  }
+                }}>
+                <span className={styles.a344ListRowTop}>
+                  <span>Excel {row.source_row}</span>
+                  <em>{row.state==="no_match"?"Poz bulunamadı":
+                    row.state==="needs_info"?"Bilgi eksik":
+                    row.state==="rule_prechecked"?"Ön kontrol":"İnceleme"}</em>
+                </span>
+                <strong>{row.description}</strong>
+                <small>{row.quantity??"Miktar eksik"} {row.unit??""} ·
+                  {" "}{row.suggested_code?`Poz: ${row.suggested_code}`:
+                    row.manual_code?`Manuel poz: ${row.manual_code}`:"Poz bekliyor"}</small>
+              </button>)}
+              {!filteredListRows.length&&<p className={styles.a345EmptyList}>
+                Bu arama ve filtre için eşleşen metraj bulunamadı.
+              </p>}
             </div>
-        {autoCandidates && visibleQueueRows.length === 0 && <p className={styles.queueEmpty}>
-          {queueView === "prechecked" ? "Henüz ön kontrolü tamamlanmış poz yok. Bu, teknik uygunluk onayı verilmediği anlamına gelmez; eksik bilgiler incelenmeli." :
-            "Bu bölümde gösterilecek imalat yok."}
-        </p>}
             <div className={styles.tableFooter}>
           <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
           <div className={styles.pager}>
