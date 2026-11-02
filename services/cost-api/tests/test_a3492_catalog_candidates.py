@@ -183,3 +183,41 @@ def test_prefilter_is_deterministic_and_bounded():
     matches = _ranked_prefilter("10 cm gazbeton duvar", pool)
     assert len(matches) == 180
     assert matches[0][1]["code"] == "15.225.0000"
+
+
+def test_unknown_excel_material_does_not_offer_thin_cement_coatings_from_generic_words():
+    """Regression: screenshot showed 1.5 / 2 / 3 mm coating codes with no source material."""
+    source = catalog(
+        row("15.540.1427", "Beton, sıva ve benzeri yüzeylere 1,5 mm çimento esaslı kaplama yapılması", price="465.38"),
+        row("15.540.1428", "Beton, sıva ve benzeri yüzeylere 2 mm çimento esaslı kaplama yapılması", price="469.15"),
+        row("15.540.1429", "Beton, sıva ve benzeri yüzeylere 3 mm çimento esaslı kaplama yapılması", price="543.74"),
+    )
+    # Neither this source nor a code number specifies an actual material family.
+    data = discover_candidates(
+        "Özel yüzey hazırlanması, uygulama ve kaplama işleri",
+        "m²", Decimal("25"), source,
+    )
+    assert data["understanding"]["material_families"] == []
+    assert data["status"] == "needs_input_review"
+    assert data["candidates"] == []
+    assert data["candidate_count"] == 0
+    assert data["scanned_count"] == 0
+    assert "güvenilir biçimde" in data["reason"]
+    assert data["approval_allowed"] is False and data["cost_allowed"] is False
+
+
+def test_unknown_work_with_explicit_poz_code_still_needs_material_review():
+    source = catalog(
+        row("15.540.1428", "2 mm çimento esaslı kaplama yapılması"),
+    )
+    data = discover_candidates("15.540.1428 özel kaplama işi", "m²", Decimal("5"), source)
+    assert data["status"] == "needs_input_review"
+    assert data["candidates"] == []
+    assert "MATERIAL_FAMILY_UNRECOGNIZED" in data["understanding"]["review_flags"]
+
+
+def test_recognized_gazbeton_can_still_retrieve_verified_source_poz():
+    source = catalog(row("15.225.1004", "10 cm gazbeton duvar yapılması"))
+    data = discover_candidates("10 cm gazbeton duvar", "m²", Decimal("20"), source)
+    assert data["candidates"][0]["code"] == "15.225.1004"
+    assert data["candidates"][0]["technical_compliance_verified"] is False
