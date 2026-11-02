@@ -231,7 +231,7 @@ export default function Home() {
       projectRequestRef.current += 1;
       clearWorkspace();
       setProject(""); setItems([]); setPreview(null); setInspection(null);
-      setFile(null); setActiveExcel(""); setReviewOpened(false);
+      setFile(null); setActiveExcel("");
       setDeleteConfirmName("");
       setProjects(await request<Project[]>("/api/projects", token));
       setTab("metraj");
@@ -245,7 +245,7 @@ export default function Home() {
   async function chooseProject(id:string) {
     const generation = ++projectRequestRef.current;
     if (token) rememberProject(token, id);
-    setReviewOpened(false); setDeleteConfirmName("");
+    setDeleteConfirmName("");
     setProject(id); setInspection(null); setPreview(null); setFile(null); setItems([]);
     setShowAllItems(false); setJobSummary(null); setQueueSummary(null); setError(""); setMessage("");
     if (!token || !id) return;
