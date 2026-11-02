@@ -19,6 +19,7 @@ import pymupdf
 from fastapi import APIRouter, Depends, File, HTTPException, Path as ApiPath, Response, UploadFile
 
 from .a318_pdf_engine import POSITION_CODE, read_positions, verified_price_audit
+from .a348_persistent_catalog import catalog_root
 from .a348_catalog_library_api import (
     NO_STORE, _atomic_new, _atomic_pointer, _json_bytes, _source as price_list_source,
 )
@@ -34,7 +35,10 @@ FORMULA_CODES = {"15.110.1001", "15.110.1002"}
 
 
 def _root(user: User) -> Path:
-    path = Path(os.getenv("UPLOAD_DIR", "uploads")) / "_a348_official_analysis_library" / user.organization_id
+    try:
+        path = catalog_root(user.organization_id, "analysis")
+    except (ValueError, OSError, KeyError, json.JSONDecodeError) as exc:
+        raise HTTPException(409, "Persistent analysis catalog cannot be verified", headers=NO_STORE) from exc
     if path.is_symlink() or path.parent.is_symlink():
         raise HTTPException(409, "Unsafe analysis source path", headers=NO_STORE)
     return path
