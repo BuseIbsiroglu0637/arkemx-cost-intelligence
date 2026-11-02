@@ -103,10 +103,17 @@ type ReviewCoverage = {
   total_rows: number; scanned_rows: number; complete: boolean;
   counts: {no_match: number; needs_info: number; needs_review: number; rule_prechecked: number; manual_codes: number; rows_with_exclusions: number};
   top_reasons: {reason: string; count: number}[];
-  rows: {work_item_id: string; source_row: number; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
+  rows: {work_item_id: string; source_row: number; description: string; quantity: string|null; unit: string|null; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
   cost_note: string;
 };
 type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
+type PartialCostPreview = {
+  schema: "arkemx.a345.partial_cost_preview.v1"; read_only: true; creates_estimate: false;
+  source_pdf_sha256: string; import_id: string; import_sha256: string; total_rows: number;
+  included_count: number; pending_count: number; partial_total: string; currency: "TRY";
+  is_partial: boolean; included: {work_item_id: string;source_row:number;description:string;position_code:string;quantity:string;unit:string;unit_price:string;amount:string;source_pdf_page:number}[];
+  pending: {work_item_id:string;source_row:number;description:string;reason:string;amount:null}[];
+};
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -232,6 +239,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
   const [coverage, setCoverage] = useState<ReviewCoverage | null>(null);
+  const [listSearch, setListSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all"|"no_match"|"needs_info"|"needs_review"|"rule_prechecked">("all");
+  const [costPreview, setCostPreview] = useState<PartialCostPreview|null>(null);
+  const [costLoading, setCostLoading] = useState(false);
+  const [costError, setCostError] = useState("");
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [coverageError, setCoverageError] = useState("");
   const coverageAbortRef = useRef<AbortController | null>(null);
@@ -351,6 +363,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     if (id !== importId || sourceProject !== projectId) {
       coverageAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setCostPreview(null); setCostLoading(false); setCostError("");
     }
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(pageOffset);
@@ -369,6 +382,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     void request<PdfSource>(`/api/projects/${encodeURIComponent(id)}/a318/source`, data => {
       if (data.read_only !== true) throw new Error("PDF kaynak doğrulaması başarısız.");
       setCoverage(old => old && data.sha256 === old.source_sha256 ? old : null);
+      setCostPreview(old => old && data.sha256 === old.source_pdf_sha256 ? old : null);
       setPdfSource(data);
     }, "pdf-source");
   }
@@ -440,6 +454,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       automaticRunKeyRef.current = "";
       coverageAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setCostPreview(null); setCostLoading(false); setCostError("");
       setPdfSource(data);
       setPdfFile(null);
       setPdfRightsConfirmed(false);
@@ -494,6 +509,34 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setCoverageLoading(false);
       }
     }
+  }
+
+    async function calculateSignedPartialCost() {
+    if (!selection || !projectId || !importId || !pdfSource?.sha256 || costLoading) return;
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if (!token) {setCostError("Oturum bulunamadı.");return;}
+    setCostLoading(true);setCostError("");setCostPreview(null);
+    const source=selection.import_source;
+    const expectedPdf=pdfSource.sha256;
+    try {
+      const response=await fetch(
+        `${API}/api/projects/${encodeURIComponent(projectId)}/a345/imports/${encodeURIComponent(importId)}/cost-preview`,
+        {cache:"no-store",headers:{Authorization:"Bearer "+token}}
+      );
+      if(!response.ok)throw Error("Kısmi maliyet önizlemesi hesaplanamadı (HTTP "+response.status+").");
+      const data=await response.json() as PartialCostPreview;
+      if(data.schema!=="arkemx.a345.partial_cost_preview.v1" ||
+        data.read_only!==true || data.creates_estimate!==false ||
+        data.source_pdf_sha256!==expectedPdf || data.import_id!==importId ||
+        data.import_sha256!==source.sha256 || data.total_rows!==source.row_count ||
+        data.included_count+data.pending_count!==data.total_rows ||
+        data.included.length!==data.included_count ||
+        data.pending.length!==data.pending_count ||
+        data.pending.some(x=>x.amount!==null))throw Error("Maliyet önizlemesinin kaynak veya tutarlılık kontrolü başarısız.");
+      setCostPreview(data);
+    }catch(e){
+      setCostError(e instanceof Error?e.message:"Maliyet önizlemesi alınamadı.");
+    }finally{setCostLoading(false);}
   }
 
     function findAutomaticCandidates() {
@@ -644,7 +687,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {...row, manual_position: data.manual_position} : row),
         } : old);
         setManualCodes(old => ({...old, [id]: code}));
-        setCoverage(null);
+        setCoverage(null); setCostPreview(null);
         setSaveNotice(data.manual_position.can_select ?
           "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
           "Manuel poz numarası inceleme için kaydedildi. PDF'de doğrulanana kadar maliyet hesabına alınmayacak.");
@@ -675,7 +718,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
-        setCoverage(null);
+        setCoverage(null); setCostPreview(null);
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
@@ -1104,7 +1147,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
                     projectId={projectId} importId={importId}
                     rowId={expandedRow.work_item_id} position={option}
-                    onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
+                    onPilotChanged={() => {setPilotRefreshTick(old => old + 1);setCostPreview(null);}} /> :
                   <details>
                     <summary>PDF kanıtı ve analiz girdileri</summary>
                     <p>Analiz tablosunu düzenleyebilmek için önce bu pozu kaynak PDF'ye bağlı şekilde kaydet. Bu işlem maliyet onayı değildir.</p>
