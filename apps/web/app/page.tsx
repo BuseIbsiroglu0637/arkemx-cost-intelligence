@@ -10,6 +10,7 @@ import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 
 import MatchPanel from "./match-panel";
 import PdfPozLibrary from "./pdf-poz-library";
+import MetrajUnderstandingPreview from "./metraj-understanding-preview";
 
 
 import CatalogPanel from "./catalog-panel";
@@ -567,6 +568,9 @@ export default function Home() {
              </div>
            </> : <div className={metrajStyle.emptyState}>Bu projede henüz kaydedilmiş metraj bulunmuyor. Aşağıdan Excel yükleyerek başlayabilirsin.</div>}
          </section>
+
+         {project && items.length > 0 && <MetrajUnderstandingPreview
+           key={project} token={token} project={project} revision={revisionTick} />}
 
          <section className={metrajStyle.panel} aria-labelledby="upload-heading">
            <div className={metrajStyle.sectionHead}>
