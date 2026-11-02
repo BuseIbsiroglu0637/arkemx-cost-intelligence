@@ -221,3 +221,53 @@ def test_recognized_gazbeton_can_still_retrieve_verified_source_poz():
     data = discover_candidates("10 cm gazbeton duvar", "m²", Decimal("20"), source)
     assert data["candidates"][0]["code"] == "15.225.1004"
     assert data["candidates"][0]["technical_compliance_verified"] is False
+
+
+def test_ceramic_floor_covering_never_suggests_ceramic_plumbing_fixtures():
+    """Real 2026 screenshot: 25.130.1115/1202 taps are not tile positions."""
+    source = catalog(
+        row("15.300.1001", "60x60 cm seramik karo zemin kaplaması yapılması", unit="m²"),
+        row("25.130.1115", '3/4" seramik salmastralı Osmanlı musluğu rozet dahil', kind="mekanik", unit="m²"),
+        row("25.130.1202", '1/2" ara musluk 90 derece seramik salmastralı rozet dahil',
+            kind="mekanik", unit=None),
+    )
+    data = discover_candidates(
+        "60x60 cm seramik zemin kaplaması yapılması", "m²", Decimal("20"), source,
+    )
+    assert any(item["code"] == "15.300.1001" for item in data["candidates"])
+    assert all(not item["code"].startswith("25.130.") for item in data["candidates"])
+    blocked = {item["code"]: item["blockers"] for item in data["blocked_examples"]}
+    assert "TRADE_CONTEXT_PLUMBING_MISMATCH" in blocked["25.130.1115"]
+    assert "TRADE_CONTEXT_PLUMBING_MISMATCH" in blocked["25.130.1202"]
+    assert "PDF_UNIT_MISSING" in blocked["25.130.1202"]
+
+
+def test_ceramic_plumbing_is_not_automatically_replaced_with_surface_tile():
+    source = catalog(
+        row("25.130.1115", "Seramik salmastralı musluk montajı", kind="mekanik", unit="Ad"),
+        row("15.300.1001", "Seramik fayans duvar kaplaması", unit="Ad"),
+    )
+    data = discover_candidates("Seramik salmastralı musluk montajı", "Ad", Decimal("2"), source)
+    assert any(item["code"] == "25.130.1115" for item in data["candidates"])
+    assert all(item["code"] != "15.300.1001" for item in data["candidates"])
+
+
+def test_raw_10_series_material_raycast_not_full_wall_finish():
+    source = catalog(
+        row("10.240.8002", "Seramik mozaikler", kind="rayic", unit="m²"),
+        row("15.300.1001", "Seramik karo zemin kaplaması yapılması", kind="insaat", unit="m²"),
+    )
+    data = discover_candidates("Seramik zemin kaplaması yapılması", "m²", Decimal("30"), source)
+    assert any(item["code"] == "15.300.1001" for item in data["candidates"])
+    assert all(item["code"] != "10.240.8002" for item in data["candidates"])
+    blocked = next(item for item in data["blocked_examples"] if item["code"] == "10.240.8002")
+    assert "SOURCE_RAYIC_NOT_INSTALLATION_POZ" in blocked["blockers"]
+
+
+def test_candidate_response_has_engine_version_for_runtime_diagnostics():
+    data = discover_candidates(
+        "10 cm gazbeton duvar", "m²", Decimal("10"),
+        catalog(row("15.225.1004", "10 cm gazbeton duvar")),
+    )
+    assert data["version"] == "a3492-safe-context-v2"
+    assert data["candidates"][0]["technical_compliance_verified"] is False
