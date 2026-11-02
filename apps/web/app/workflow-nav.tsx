@@ -7,7 +7,7 @@ export type WorkflowSection = "overview" | "metraj" | "technical" | "cost" | "ca
 
 const sections: { id: WorkflowSection; title: string; hint: string }[] = [
   { id: "metraj", title: "1. Metraj", hint: "Excel ve düzeltmeler" },
-  { id: "technical", title: "2. Pozları incele", hint: "Adaylar, farklar ve kanıtlar" },
+  { id: "technical", title: "2. PDF Poz Kütüphanesi", hint: "Poz numaraları ve kaynak verisi" },
   { id: "cost", title: "3. Maliyet", hint: "Taslak ve karşılaştırmalar" },
 ];
 
