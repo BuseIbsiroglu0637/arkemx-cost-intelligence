@@ -99,7 +99,10 @@ def _source(user: User) -> dict | None:
     if not pointer:
         return None
     root, info = pointer
-    index_file = root / info["source_sha256"] / "catalog.json"
+    version_folder = root / info["source_sha256"]
+    if version_folder.is_symlink():
+        raise HTTPException(409, "Unsafe catalog source version", headers=NO_STORE)
+    index_file = version_folder / "catalog.json"
     try:
         data = _load_index(str(index_file), info["index_sha256"])
         if data["source_sha256"] != info["source_sha256"]:
@@ -167,6 +170,8 @@ async def upload_catalog_source(
     root = _base(user)
     sha = data["source_sha256"]
     folder = root / sha
+    if folder.is_symlink():
+        raise HTTPException(409, "Unsafe catalog source version", headers=NO_STORE)
     folder.mkdir(parents=True, exist_ok=True)
     index = _json_bytes(data)
     index_hash = hashlib.sha256(index).hexdigest()
