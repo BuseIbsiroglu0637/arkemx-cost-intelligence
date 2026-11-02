@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import styles from "./pdf-poz-library.module.css";
+import {PdfAnalysisSource, PdfAnalysisDetail} from "./pdf-poz-analysis";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 const labels: Record<string, string> = {
@@ -63,6 +64,7 @@ export default function PdfPozLibrary({ token }: {token: string}) {
   const [rowsError, setRowsError] = useState("");
   const [selected, setSelected] = useState<PdfPosition | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [analysisRevision, setAnalysisRevision] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -190,6 +192,8 @@ export default function PdfPozLibrary({ token }: {token: string}) {
           </details>
         </div>
 
+        <PdfAnalysisSource token={token} onChange={() => setAnalysisRevision(n => n + 1)} />
+
         <div className={styles.filters}>
           <label>PDF'de ara
             <input type="search" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }}
@@ -253,10 +257,11 @@ export default function PdfPozLibrary({ token }: {token: string}) {
                   "Belirsiz · kontrol gerekli" : "PDF'de fiyat bulunamadı"}</dd></div>
               </dl>
               <small>Kaynak: 2026 fiyat listesi · {source.source_sha256?.slice(0,12)}…</small>
+              <PdfAnalysisDetail token={token} code={selected.code} priceListSourceSha={source.source_sha256 ?? null} revision={analysisRevision}/>
             </> : <div className={styles.selectHint}>PDF kaydını görmek için listeden bir poz numarasına tıkla.</div>}
           </aside>
         </div>
-        <p className={styles.footnote}>Bu sayfa yalnızca PDF'den çıkarılan poz verilerini gösterir. Burada eşleştirme, teknik onay veya maliyet işlemi yapılmaz.</p>
+        <p className={styles.footnote}>Bu sayfa yalnızca iki PDF'nin kaynak verilerini ve poz numarasıyla bağlantılarını gösterir. Metraj eşleştirme, teknik onay veya maliyet işlemi yapılmaz.</p>
       </>}
     </div>
   );
