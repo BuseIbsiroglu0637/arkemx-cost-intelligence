@@ -345,6 +345,57 @@ async def upload_analysis_source(
     return _summary(data)
 
 
+@router.post("/analysis/reindex")
+def reindex_existing_analysis_pdf(
+    response: Response, user: Annotated[User, Depends(current_user)],
+):
+    """Upgrade the local analysis index using its verified stored source PDF.
+
+    Keep the previous analysis.json untouched; put the new index under
+    analysis-a3484.json and atomically update only current.json. The user
+    does not need to reupload the same copyrighted PDF.
+    """
+    pointer = _source_pointer(user)
+    if pointer is None:
+        raise HTTPException(409, "Upload an analysis PDF first", headers=NO_STORE)
+    root, info = pointer
+    folder = root / info["source_sha256"]
+    if folder.is_symlink():
+        raise HTTPException(409, "Unsafe analysis source folder", headers=NO_STORE)
+    original = folder / "source.pdf"
+    if original.is_symlink() or not original.is_file():
+        raise HTTPException(409, "Source PDF missing", headers=NO_STORE)
+    raw = original.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != info["source_sha256"]:
+        raise HTTPException(409, "Source PDF fingerprint does not match", headers=NO_STORE)
+    try:
+        data = _extract(raw)
+    except (ValueError, RuntimeError, pymupdf.FileDataError, pymupdf.EmptyFileError) as exc:
+        raise HTTPException(422, str(exc), headers=NO_STORE) from exc
+    payload = _json_bytes(data)
+    target = folder / INDEX_FILE
+    if target.is_symlink():
+        raise HTTPException(409, "Unsafe new index path", headers=NO_STORE)
+    if target.exists():
+        if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(payload).digest():
+            raise HTTPException(409, "Indexed version already exists with different data", headers=NO_STORE)
+    else:
+        try:
+            _atomic_new(target, payload)
+        except FileExistsError:
+            raise HTTPException(409, "Another index rebuild is in progress", headers=NO_STORE) from None
+    try:
+        _atomic_pointer(root / "current.json", _json_bytes({
+            "source_sha256": data["source_sha256"],
+            "index_sha256": hashlib.sha256(payload).hexdigest(),
+            "index_file": INDEX_FILE,
+        }))
+    except FileExistsError:
+        raise HTTPException(409, "Another catalog refresh is in progress", headers=NO_STORE) from None
+    response.headers.update(NO_STORE)
+    return _summary(data)
+
+
 @router.get("/positions/{code}/analysis")
 def get_position_analysis(
     response: Response, user: Annotated[User, Depends(current_user)],
