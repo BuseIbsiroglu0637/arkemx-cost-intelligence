@@ -80,3 +80,47 @@ def test_local_private_export_does_not_overwrite_data(tmp_path):
     with pytest.raises(FileExistsError):
         export_local(pdf, index)
     assert pdf.read_bytes() == original
+
+
+def test_full_height_source_grid_row_keeps_technical_description_and_separate_prices():
+    """A 455pt row is valid if the PDF really draws both boundaries."""
+    from app.a348_official_price_list import _parse_row, _row_boundaries
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    for y in (95, 550):
+        page.draw_line((44, y), (570, y), width=0.7)
+    page.insert_text((45, 110), "25.615.1300", fontsize=8)
+    page.insert_text((110, 110), "Uzun teknik tarif", fontsize=8)
+    page.insert_text((110, 498), "Teknik aciklama devam ediyor", fontsize=8)
+    page.insert_text((462, 110), "323.797,43", fontsize=8)
+    page.insert_text((532, 110), "9.422,43", fontsize=8)
+    words = page.get_text("words", sort=False)
+    code = next(w for w in words if w[4] == "25.615.1300")
+    row, reason = _parse_row(code, words, _row_boundaries(page), 1)
+    assert reason == "ok" and row is not None
+    assert row["code"] == "25.615.1300"
+    assert row["pdf_page"] == 1
+    assert "Teknik aciklama devam ediyor" in row["description"]
+    assert row["unit_price"] == "323797.43"
+    assert row["installation_price"] == "9422.43"
+    assert row["cost_allowed"] is False
+    document.close()
+
+
+def test_multiple_poz_numbers_without_divider_are_rejected_not_mixed():
+    """The long-row fallback must not merge two different official poz entries."""
+    from app.a348_official_price_list import _parse_row, _row_boundaries
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    for y in (95, 550):
+        page.draw_line((44, y), (570, y), width=0.7)
+    page.insert_text((45, 110), "25.615.1300", fontsize=8)
+    page.insert_text((110, 110), "Ilk kayit", fontsize=8)
+    page.insert_text((45, 350), "25.615.1400", fontsize=8)
+    page.insert_text((110, 350), "Ikinci kayit", fontsize=8)
+    words = page.get_text("words", sort=False)
+    codes = [w for w in words if w[4] in {"25.615.1300", "25.615.1400"}]
+    for code in codes:
+        row, reason = _parse_row(code, words, _row_boundaries(page), 1)
+        assert row is None and reason == "ambiguous_row_boundaries"
+    doc.close()
