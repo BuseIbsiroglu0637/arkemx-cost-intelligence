@@ -15,6 +15,7 @@ from app.main import app
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("ARKEMX_CATALOG_HOME", str(tmp_path / "persistent-catalogs"))
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     Session = sessionmaker(engine)

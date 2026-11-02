@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 from sqlalchemy.orm import Session
 
 from .a348_official_price_list import CODE, MAX_BYTES, ingest_pdf
+from .a348_persistent_catalog import catalog_root
 from .models import User
 from .security import current_user
 
@@ -29,7 +30,10 @@ KIND_FILTERS = {"all", "rayic", "insaat", "mekanik", "elektrik"}
 
 
 def _base(user: User) -> Path:
-    directory = Path(os.getenv("UPLOAD_DIR", "uploads")) / "_a348_official_price_library" / user.organization_id
+    try:
+        directory = catalog_root(user.organization_id, "price-list")
+    except (ValueError, OSError, KeyError, json.JSONDecodeError) as exc:
+        raise HTTPException(409, "Persistent poz catalog cannot be verified", headers=NO_STORE) from exc
     # Prevent a symlink from redirecting local user-owned source data.
     if directory.is_symlink() or directory.parent.is_symlink():
         raise HTTPException(409, "Unsafe catalog path", headers=NO_STORE)

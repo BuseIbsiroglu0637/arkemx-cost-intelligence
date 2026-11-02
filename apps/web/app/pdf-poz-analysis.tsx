@@ -77,23 +77,6 @@ export function PdfAnalysisSource({ token, onChange }: {token: string; onChange:
     return () => controller.abort();
   }, [token, refresh]);
 
-  async function rebuildFromStoredPdf() {
-    if (busy) return;
-    setBusy(true); setError("");
-    try {
-      const res = await fetch(API + "/api/a348/catalog/analysis/reindex", {
-        method: "POST", headers: {Authorization: "Bearer " + token},
-        cache: "no-store",
-      });
-      if (!res.ok) throw Error(await failure(res));
-      const data = await res.json() as AnalysisSource;
-      if (!checkSafety(data) || !data.present) throw Error("Yeni analiz indeksi doğrulanamadı.");
-      setSource(data); setRefresh(n => n + 1); onChange();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kayıtlı PDF tekrar analiz edilemedi.");
-    } finally {setBusy(false);}
-  }
-
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file || busy) return;
@@ -119,41 +102,23 @@ export function PdfAnalysisSource({ token, onChange }: {token: string; onChange:
     } finally { setBusy(false); }
   }
 
-  return (
-    <section className={styles.analysisSource} aria-label="2026 analiz PDF kaynağı">
-      <div>
-        <strong>2. PDF — Detaylı Analizler Cilt 1</strong>
-        {source?.present ?
-          <p>{source.position_count?.toLocaleString("tr-TR")} poz analizi okundu · {source.pdf_pages} PDF sayfası ·
-            ayrıca kontrol edilecek başlık: {source.audit?.unparsed_header_count ?? "—"}</p> :
-          <p>Analiz PDF'sini yükle: girdiler, işçilik miktarları ve hesaplar poz numarasıyla bağlanacak.</p>}
-      </div>
-      <form onSubmit={event => void upload(event)}>
-        <input type="file" accept=".pdf,application/pdf" aria-label="2026 İnşaat Birim Fiyat Analizleri Cilt 1"
-          onChange={event => setFile(event.target.files?.[0] ?? null)}/>
-        <button type="submit" disabled={busy || !file}>{busy ? "Analizler okunuyor…" :
-          source?.present ? "Analiz PDF'sini güncelle" : "Analiz PDF'sini yükle"}</button>
-      </form>
-      {source?.present && <div>
-        <button type="button" className={styles.secondary} disabled={busy}
-          onClick={() => void rebuildFromStoredPdf()}>
-          {busy ? "PDF kontrol ediliyor…" : "Kayıtlı analizleri yeniden kontrol et"}
-        </button>
-        <small>PDF dosyasını tekrar seçmeden, kayıtlı belgeyi yeniden tarar.</small>
-      </div>}
-      {loading && <small role="status">Analiz kaynağı kontrol ediliyor…</small>}
-      {error && <div role="alert" className={styles.error}>{error}</div>}
-      {source?.present && <small>
-        Kaynak: 01.01.2026 · {source.source_sha256?.slice(0, 12)}…
-        {source.audit?.parameterized_formula_count !== undefined ?
-          " · Formüllü poz: " + source.audit.parameterized_formula_count : ""}
-        {source.audit?.missing_analysis_title_count !== undefined ?
-          " · Başlık hücresi boş: " + source.audit.missing_analysis_title_count : ""}
-        {source.audit?.analysis_price_needs_review_count ?
-          " · Bazı analiz hesapları ek kontrol gerektiriyor." : ""}
-      </small>}
-    </section>
-  );
+  // The user has already taught ARKEMX this catalog. Do not ask for it
+  // again or clutter the poz library with upload/update controls.
+  if (loading || (source?.present && !error)) return null;
+
+  return <section className={styles.analysisSource} aria-label="İlk analiz PDF kurulumu">
+    <strong>Analiz PDF'si henüz kaydedilmemiş</strong>
+    <p>Bir kez yükledikten sonra program yeniden açıldığında otomatik kullanılacak.</p>
+    <form onSubmit={event => void upload(event)}>
+      <input type="file" accept=".pdf,application/pdf"
+        aria-label="2026 İnşaat Birim Fiyat Analizleri Cilt 1"
+        onChange={event => setFile(event.target.files?.[0] ?? null)}/>
+      <button type="submit" disabled={busy || !file}>
+        {busy ? "Analizler kaydediliyor…" : "Analiz PDF'sini ilk kez yükle"}
+      </button>
+    </form>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+  </section>;
 }
 
 export function PdfAnalysisDetail({token, code, priceListSourceSha, revision}: {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import styles from "./pdf-poz-library.module.css";
-import {PdfAnalysisSource, PdfAnalysisDetail, PdfLinkageAudit} from "./pdf-poz-analysis";
+import {PdfAnalysisSource, PdfAnalysisDetail} from "./pdf-poz-analysis";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 const labels: Record<string, string> = {
@@ -160,9 +160,11 @@ export default function PdfPozLibrary({ token }: {token: string}) {
       <div className={styles.heading}>
         <div>
           <h1>PDF Poz Kütüphanesi</h1>
-          <p>2026 ÇŞİDB / Yüksek Fen Kurulu · Resmî fiyat listesi</p>
+          <p>ÇŞİDB / Yüksek Fen Kurulu · Kalıcı poz kütüphanesi</p>
         </div>
-        {source?.present && <strong className={styles.count}>{trNumber(source.total_records ?? 0)} poz kaydı</strong>}
+        {source?.present && <strong className={styles.count}>
+          {source.edition_date?.split(".").pop() ?? "Yılı belirsiz"} pozları yüklü
+        </strong>}
       </div>
 
       {loadingSource && <p role="status" className={styles.empty}>Kaynak kontrol ediliyor…</p>}
@@ -182,24 +184,7 @@ export default function PdfPozLibrary({ token }: {token: string}) {
       </section>}
 
       {source?.present && <>
-        <div className={styles.source}>
-          <span><b>{source.edition_date}</b> tarihli PDF</span>
-          <span>{trNumber(source.pdf_pages ?? 0)} sayfa</span>
-          <span>Okunamayan: <b>{source.audit?.unparsed_count ?? "—"}</b></span>
-          <details>
-            <summary>Başka PDF yükle</summary>
-            <form onSubmit={event => void upload(event)}>
-              <input aria-label="Yeni fiyat listesi PDF" type="file" accept=".pdf,application/pdf"
-                onChange={event => setFile(event.target.files?.[0] ?? null)}/>
-              <button type="submit" disabled={!file || uploading}>
-                {uploading ? "PDF okunuyor…" : "PDF kaynağını güncelle"}
-              </button>
-            </form>
-          </details>
-        </div>
-
         <PdfAnalysisSource token={token} onChange={() => setAnalysisRevision(n => n + 1)} />
-        <PdfLinkageAudit token={token} priceListSha={source.source_sha256 ?? null} revision={analysisRevision} />
 
         <div className={styles.filters}>
           <label>PDF'de ara
