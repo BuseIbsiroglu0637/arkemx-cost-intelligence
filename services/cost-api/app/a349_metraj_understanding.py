@@ -20,6 +20,7 @@ from .a347_spec_completion import work_scope
 from .database import get_db
 from .excel import normalized
 from .models import User, WorkItem
+from .measurement_context import extract_measurements
 from .revisions import effective_item
 from .security import current_user
 from .technical import extract
@@ -77,12 +78,15 @@ def describe_metraj(
     found_families = _named(plain, FAMILIES)
     binders = _named(plain, BINDERS)
     technical = extract(raw, unit)
-    # A1's general measurement regex can also see "60x60 cm" tile sizes
-    # or "3 mm derz" as a raw mm/cm span. An unowned measurement is NOT a
-    # verified layer; retain only material/work-owned layer applications.
+    # A1's broad mm/cm lexer can see a 60x60 cm tile size or 3 mm grout
+    # even in a clause mentioning plaster. Validate every measured layer
+    # against the independent dimension/joint-aware parser before using it.
+    thickness_candidates = extract_measurements(raw, ceramic=False)["thickness_mm"]
     explicit_layers = tuple(
         layer for layer in extract_layer_measurements(raw)
         if layer.work_type is not None
+        and (layer.thickness_mm is None
+             or round(float(layer.thickness_mm), 3) in thickness_candidates)
     )
     layers = [
         {
