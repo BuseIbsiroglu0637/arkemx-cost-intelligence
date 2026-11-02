@@ -385,6 +385,10 @@ app.include_router(a347_spec_completion_router)
 from .a348_catalog_library_api import router as a348_catalog_library_router
 app.include_router(a348_catalog_library_router)
 
+# A3.48.3: analysis Cilt 1 stored separately and linked by exact code.
+from .a348_analysis_library_api import router as a348_analysis_library_router
+app.include_router(a348_analysis_library_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
