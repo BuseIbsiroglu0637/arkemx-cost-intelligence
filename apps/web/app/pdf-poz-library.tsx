@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import styles from "./pdf-poz-library.module.css";
-import {PdfAnalysisSource, PdfAnalysisDetail} from "./pdf-poz-analysis";
+import {PdfAnalysisSource, PdfAnalysisDetail, PdfLinkageAudit} from "./pdf-poz-analysis";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 const labels: Record<string, string> = {
@@ -111,6 +111,12 @@ export default function PdfPozLibrary({ token }: {token: string}) {
           throw Error("Katalog kaynağı veya sonuçları doğrulanamadı.");
         }
         setResults(data);
+        // When the user searches for one complete poz code, open its linked
+        // PDF details automatically; a second click must not be required.
+        if (/^\d{2}\.\d{3}\.\d{4}$/.test(query.trim()) &&
+            data.total === 1 && data.items[0]?.code === query.trim()) {
+          setSelected(data.items[0]);
+        }
       }).catch(error => {
         if (!controller.signal.aborted) setRowsError(error instanceof Error ? error.message : "Poz listesi yüklenemedi.");
       }).finally(() => {
@@ -193,14 +199,15 @@ export default function PdfPozLibrary({ token }: {token: string}) {
         </div>
 
         <PdfAnalysisSource token={token} onChange={() => setAnalysisRevision(n => n + 1)} />
+        <PdfLinkageAudit token={token} priceListSha={source.source_sha256 ?? null} revision={analysisRevision} />
 
         <div className={styles.filters}>
           <label>PDF'de ara
-            <input type="search" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }}
+            <input type="search" value={query} onChange={event => { setQuery(event.target.value); setPage(1); setSelected(null); }}
               placeholder="Poz numarası veya açıklaması"/>
           </label>
           <label>Poz grubu
-            <select value={kind} onChange={event => {setKind(event.target.value);setPage(1);}}>
+            <select value={kind} onChange={event => {setKind(event.target.value);setPage(1);setSelected(null);}}>
               {Object.entries(labels).map(([key, value]) => <option value={key} key={key}>{value}</option>)}
             </select>
           </label>
