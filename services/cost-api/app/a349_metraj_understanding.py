@@ -34,7 +34,7 @@ VERSION = "a3491-rules-v1"
 FAMILIES = {
     "gazbeton": r"\bgazbeton\b",
     "siva": r"\bsiva\w*\b",
-    "seramik": r"\b(?:seramik\w*|porselen\w*|karo\w*|fayans\w*)\b",
+    "seramik": r"\b(?:seramik\w*|porselen\w*|karo(?:s\w*|l\w*|n\w*|d\w*)?|fayans\w*)\b",
     "pvc": r"\bpvc\b",
     "boya": r"\b(?:boya\w*|boyan\w*)\b",
     "beton": r"\bbeton\b",
