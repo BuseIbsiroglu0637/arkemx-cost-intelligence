@@ -558,3 +558,30 @@
 .a346Help{font-size:11px;color:#65788c;line-height:1.6;margin:0}
 @media(max-width:820px){.a346ReasonGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.a346Header{flex-direction:column}}
 @media(max-width:520px){.a346ReasonGrid{grid-template-columns:1fr}}
+
+/* A3.47 — source-cited, read-only fact completion; compact technical panel. */
+.a347Facts{margin:10px 0;border:1px solid #cadceb;border-radius:10px;padding:12px;background:#f9fbfe;display:grid;gap:10px}
+.a347FactHeading{display:flex;justify-content:space-between;align-items:start;gap:10px}
+.a347FactHeading>div{display:grid;gap:3px;min-width:0}
+.a347FactHeading strong{font-size:13px;color:#22486f}
+.a347FactHeading small{font-size:10px;color:#7a8ca2}
+.a347FactHeading>span{font-size:10px;border-radius:7px;padding:5px 7px;white-space:nowrap;font-weight:700}
+.a347ReviewLabel{background:#e5f0fa;color:#24577e}
+.a347ConflictLabel{background:#fff0e8;color:#8a3e1b}
+.a347Facts>p{margin:0;font-size:11px;color:#445d77;line-height:1.5}
+.a347FieldList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.a347Field{display:grid;gap:4px;padding:9px;border:1px solid #dfE7f1;border-radius:8px;background:white;min-width:0}
+.a347Field>strong{font-size:11px;color:#294b70}
+.a347Field>span{font-size:10px;color:#6b7992}
+.a347Field>small{font-size:10px;line-height:1.45;color:#58708b;overflow-wrap:anywhere}
+.a347Field b{color:#204e7b}
+.a347Summary{border-top:1px solid #dfe7f0;padding-top:8px;font-size:11px;color:#4a6482;line-height:1.5}
+.a347Facts>details{border-top:1px solid #dfe7f0;padding-top:8px}
+.a347Facts>details>summary{font-size:11px;color:#375b82;font-weight:700;cursor:pointer}
+.a347Facts blockquote{margin:8px 0;padding:8px 10px;border-left:3px solid #b8cde2;background:white;border-radius:4px}
+.a347Facts blockquote small{font-size:10px;color:#47688a}
+.a347Facts blockquote p{font-size:11px;line-height:1.5;margin:5px 0 0;color:#516783;white-space:normal;overflow-wrap:anywhere}
+.a347Facts .a347Disclaimer{font-size:10px;color:#6a7b8e}
+.a347Special{padding:9px;background:#fff8ee;border:1px solid #f0ddc1;border-radius:7px;color:#78502d !important}
+.a347Progress,.a347MissingSpec{padding:10px;border:1px solid #dce6f1;border-radius:8px;background:#f7fafd;color:#5d7692;font-size:11px;line-height:1.55}
+@media(max-width:850px){.a347FieldList{grid-template-columns:1fr}}
