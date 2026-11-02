@@ -526,3 +526,35 @@
 .a345Filters input:focus-visible,.a345Filters select:focus-visible{outline:2px solid #326dc3;outline-offset:1px}
 .a345EmptyList{font-size:12px;color:#667c97;text-align:center;padding:15px 8px}
 @media (max-width:1050px){.a345Toolbar{align-items:flex-start;flex-direction:column}.a345Actions{width:100%}}
+
+/* A3.46 read-only matching audit: grouped findings, no approval visual cues. */
+.a346Audit{border:1px solid #d4deeb;border-radius:12px;background:#fff;padding:16px;margin:0 0 16px;display:grid;gap:13px}
+.a346Header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.a346Header h3{font-size:15px;color:#1c3d65;margin:0}
+.a346Header p{font-size:12px;color:#576f88;margin:7px 0 0;line-height:1.5}
+.a346Header>span{font-size:11px;font-weight:700;white-space:nowrap;color:#655b48;background:#f4f2ed;padding:7px 9px;border-radius:7px}
+.a346AuditSource{display:grid;gap:5px;background:#f5f8fc;border:1px solid #dbe5f1;padding:12px;border-radius:9px}
+.a346AuditSource>strong{font-size:12px;color:#22496f}
+.a346AuditSource span{font-size:12px;color:#445f7d}
+.a346AuditSource small{font-size:11px;color:#63788e;line-height:1.5}
+.a346ReasonGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.a346Reason{display:flex;gap:9px;align-items:center;justify-content:flex-start;text-align:left;min-height:50px;padding:9px 12px;border:1px solid #dce4ed;background:#fcfdff;border-radius:9px;cursor:pointer}
+.a346Reason:hover{background:#f2f7fd}
+.a346Reason[aria-pressed="true"]{border-color:#426fb5;background:#edf4ff;box-shadow:inset 3px 0 0 #426fb5}
+.a346Reason>strong{font-size:19px;color:#1f4b7d;font-variant-numeric:tabular-nums}
+.a346Reason>span{font-size:11px;color:#536c87;line-height:1.35}
+.a346Rows{border:1px solid #dde5f0;border-radius:9px;padding:11px 12px;background:#fff;min-width:0}
+.a346Rows>summary{font-size:12px;color:#2b5483;font-weight:750;cursor:pointer}
+.a346Rows>.a346Help{margin:10px 2px}
+.a346Filter{margin:10px 0}
+.a346Filter label{display:grid;gap:5px;font-size:11px;color:#61768d}
+.a346Filter select{width:100%;min-height:35px;padding:6px 9px;border-radius:7px;border:1px solid #cdd9e7;color:#304d71;background:#fff}
+.a346RowList{max-height:360px;overflow:auto;display:grid;gap:6px;margin-top:9px}
+.a346RowList button{display:grid;gap:4px;background:#fbfcff;border:1px solid #e1e8f1;border-radius:8px;padding:10px;text-align:left;cursor:pointer}
+.a346RowList button:hover{background:#edf4fd;border-color:#9ebce4}
+.a346RowList span{font-size:11px;color:#466f9c}
+.a346RowList strong{font-size:12px;color:#263f5d;line-height:1.45;overflow-wrap:anywhere}
+.a346RowList small{font-size:11px;color:#61768a;line-height:1.45}
+.a346Help{font-size:11px;color:#65788c;line-height:1.6;margin:0}
+@media(max-width:820px){.a346ReasonGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.a346Header{flex-direction:column}}
+@media(max-width:520px){.a346ReasonGrid{grid-template-columns:1fr}}
