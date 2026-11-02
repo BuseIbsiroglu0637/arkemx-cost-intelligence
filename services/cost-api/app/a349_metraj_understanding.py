@@ -115,7 +115,7 @@ def describe_metraj(
         if layer["thickness_mm"] is not None
     })
     if not measurements and technical["thickness_mm"] is not None:
-        measurements = [str(technical["thickness_mm"])]
+        measurements = [_str_decimal(Decimal(str(technical["thickness_mm"])))]
     scope = work_scope(raw)
     explicit_scopes = extract_work_scopes(raw)
     flags: list[str] = []
