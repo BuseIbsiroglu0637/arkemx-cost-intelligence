@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -105,9 +106,16 @@ def _summary(data: dict | None) -> dict:
     }
 
 
-def _observed_headers(raw: bytes) -> dict[str, int]:
-    """Count analysis headings only, not reference/input codes inside the text."""
+def _observed_headers(raw: bytes) -> tuple[dict[str, int], int, int]:
+    """Count all actual header blocks; reject neither multi-line nor reference text.
+
+    Some pages mention an *additional* position code in the technical scope
+    immediately below the header. For diagnostic purposes the nearest code
+    after each header is the candidate; report these ambiguous areas too.
+    """
     seen: dict[str, int] = {}
+    total_headings = 0
+    ambiguous_near_header = 0
     with pymupdf.open(stream=raw, filetype="pdf") as pdf:
         for pageno, page in enumerate(pdf, start=1):
             words = page.get_text("words", sort=False)
@@ -116,19 +124,22 @@ def _observed_headers(raw: bytes) -> dict[str, int]:
                 if w[4] == "Analizin" and 250 < w[0] < 320 and w[1] < 790
             ]
             for header in headings:
-                nearby = [
-                    w[4] for w in words
+                total_headings += 1
+                nearby = sorted((
+                    w for w in words
                     if w[0] < 95 and POSITION_CODE.fullmatch(w[4])
                     and header[1] + 12 < w[1] < header[1] + 90
-                ]
-                if len(nearby) == 1:
-                    seen[nearby[0]] = pageno
-    return seen
+                ), key=lambda w: w[1])
+                if len(nearby) > 1:
+                    ambiguous_near_header += 1
+                if nearby:
+                    seen[nearby[0][4]] = pageno
+    return seen, total_headings, ambiguous_near_header
 
 
 def _extract(raw: bytes) -> dict:
     positions = read_positions(raw)
-    expected = _observed_headers(raw)
+    expected, heading_count, ambiguous_header_count = _observed_headers(raw)
     parsed_codes = {position.id for position in positions}
     missing = sorted(set(expected) - parsed_codes)
     records = []
@@ -152,9 +163,11 @@ def _extract(raw: bytes) -> dict:
         "read_only": True, "approval_allowed": False, "cost_allowed": False,
         "records": records,
         "audit": {
-            "headers_detected": len(expected),
+            "headers_detected": heading_count,
+            "position_codes_detected": len(expected),
+            "ambiguous_near_header_count": ambiguous_header_count,
             "positions_extracted": len(records),
-            "unparsed_header_count": len(missing),
+            "unparsed_header_count": len(missing) + max(0, heading_count - len(expected)),
             "unparsed_header_codes_sample": [
                 {"code": code, "pdf_page": expected[code]} for code in missing[:100]
             ],
@@ -260,7 +273,7 @@ def get_position_analysis(
     # or cost approval. Rates can differ between analysis and price-list PDFs.
     list_price = catalog_position["unit_price"]
     equal_price = list_price is not None and linked["analysis_price"] is not None and (
-        __import__("decimal").Decimal(list_price) == __import__("decimal").Decimal(linked["analysis_price"])
+        Decimal(list_price) == Decimal(linked["analysis_price"])
     )
     return {
         **base, "available": True, "reason": None, "analysis": linked,
