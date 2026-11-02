@@ -174,7 +174,7 @@ def _formula_only_entries(
                 continue
             end = next((w[1] for w in headings if w[1] > header[1]), 780)
             subhead = next(
-                (w for w in words if w[4] == "Tanımı"
+                (w for w in words if w[4] in {"Tanımı", "Tanimi"}
                  and 135 < w[0] < 250 and code_word[1] < w[1] < end),
                 None,
             )
@@ -206,7 +206,7 @@ def _formula_only_entries(
             # The final price line is present but the printed value is empty.
             final_prices = [
                 w for w in words
-                if w[4] == "Fiyatı" and header[1] < w[1] < end
+                if w[4] in {"Fiyatı", "Fiyati"} and header[1] < w[1] < end
                 and 105 < w[0] < 300
             ]
             if not final_prices:
