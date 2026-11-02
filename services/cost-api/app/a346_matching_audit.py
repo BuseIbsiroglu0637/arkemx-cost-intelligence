@@ -6,6 +6,7 @@ exists in another volume, discipline, or institution.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter, defaultdict
 from functools import lru_cache
@@ -245,8 +246,17 @@ def matching_audit(
         raise HTTPException(409, "Connect the PDF source first", headers=NO_STORE)
     digest, positions = found
     source_path = _path(user)
-    # The validated source reader already checked symlink parents and hash.
-    raw_codes = _raw_position_codes(digest, source_path.read_bytes())
+    # Re-read only the validated tenant-owned file; detect concurrent source
+    # replacement rather than mixing raw PDF text from a different edition.
+    if source_path.is_symlink() or source_path.parent.is_symlink():
+        raise HTTPException(409, "Unsafe PDF source path", headers=NO_STORE)
+    try:
+        raw = source_path.read_bytes()
+    except OSError:
+        raise HTTPException(409, "PDF source changed during audit", headers=NO_STORE) from None
+    if hashlib.sha256(raw).hexdigest() != digest:
+        raise HTTPException(409, "PDF source changed during audit", headers=NO_STORE)
+    raw_codes = _raw_position_codes(digest, raw)
     result = _suggestions_result(
         project_id, import_id, response, user, db, 0, MAX_FULL_REVIEW_ROWS
     )
