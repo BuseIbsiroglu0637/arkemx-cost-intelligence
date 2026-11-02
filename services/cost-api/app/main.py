@@ -377,6 +377,10 @@ app.include_router(a345_cost_preview_router)
 from .a346_matching_audit import router as a346_matching_audit_router
 app.include_router(a346_matching_audit_router)
 
+# A3.47 automatic source-cited *advisory* technical fact extraction, never approval.
+from .a347_spec_completion import router as a347_spec_completion_router
+app.include_router(a347_spec_completion_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
