@@ -69,7 +69,7 @@ def work_scope(description: str) -> str:
         "malzemesiz" in content
     )
     material = bool(MATERIAL_ONLY.search(content)) and not excludes_material
-    labor = bool(LABOR_ONLY.search(content))
+    labor = bool(LABOR_ONLY.search(content)) or "iscilig" in content or "is cilig" in content
     if material and labor:
         return "material_and_labor"
     if material:
