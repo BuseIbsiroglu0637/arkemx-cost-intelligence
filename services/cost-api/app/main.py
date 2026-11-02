@@ -393,6 +393,10 @@ app.include_router(a348_analysis_library_router)
 from .a349_metraj_understanding import router as a349_metraj_understanding_router
 app.include_router(a349_metraj_understanding_router)
 
+# A3.49.2: verified PDF poz candidate suggestions (never automatic approval).
+from .a3492_catalog_candidates import router as a3492_catalog_candidates_router
+app.include_router(a3492_catalog_candidates_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
