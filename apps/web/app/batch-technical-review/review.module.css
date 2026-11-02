@@ -503,3 +503,26 @@
 .a344Placeholder p{color:#6a7e92;font-size:12px;line-height:1.5}
 @media(max-width:1100px){.a344Workspace{grid-template-columns:minmax(250px,.9fr) minmax(0,1.25fr)}.a344CoverageCounts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:850px){.a344Workspace{grid-template-columns:1fr}.a344List{position:static;max-height:390px}.a344ScanBar{align-items:flex-start;flex-direction:column}.a344AllScroll>button{grid-template-columns:60px 90px minmax(0,1fr)}.a344AllScroll>button span:last-child{display:none}}
+
+/* A3.45 — quiet professional review workspace. */
+.a343Overview h2{color:#f8fbff}
+.a343Overview p{color:#d5e4ff}
+.a345Toolbar{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:13px 15px;background:#f4f8fd;border:1px solid #d4e3f4;border-radius:10px;margin-bottom:13px}
+.a345Toolbar>div:first-child{display:grid;gap:4px;min-width:0}
+.a345Toolbar strong{font-size:13px;color:#254b79}
+.a345Toolbar small{font-size:11px;color:#617992}
+.a345Actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.a345Actions button{font-size:12px;white-space:nowrap;min-height:36px}
+.a345CostDetail{border:1px solid #d3e3d9;border-radius:10px;margin:0 0 14px;padding:12px;background:#f7fbf8}
+.a345CostDetail>summary{font-size:13px;font-weight:750;color:#245b43;cursor:pointer}
+.a345CostDetail>p{font-size:12px;color:#4c6859;line-height:1.5;margin:9px 0}
+.a345CostLines{display:grid;gap:7px;max-height:230px;overflow:auto}
+.a345CostLines>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;border:1px solid #dbe8df;border-radius:8px;padding:10px;background:white;font-size:11px}
+.a345CostLines strong{color:#2b5944}
+.a345CostLines span{color:#335947}
+.a345CostLines small{flex-basis:100%;color:#6d8074}
+.a345Filters{display:grid;grid-template-columns:minmax(0,1fr);gap:7px}
+.a345Filters input,.a345Filters select{width:100%;min-width:0;min-height:36px;padding:8px 10px;font-size:12px;border:1px solid #d0ddeb;background:#fff;border-radius:8px;color:#254361}
+.a345Filters input:focus-visible,.a345Filters select:focus-visible{outline:2px solid #326dc3;outline-offset:1px}
+.a345EmptyList{font-size:12px;color:#667c97;text-align:center;padding:15px 8px}
+@media (max-width:1050px){.a345Toolbar{align-items:flex-start;flex-direction:column}.a345Actions{width:100%}}

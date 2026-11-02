@@ -103,10 +103,17 @@ type ReviewCoverage = {
   total_rows: number; scanned_rows: number; complete: boolean;
   counts: {no_match: number; needs_info: number; needs_review: number; rule_prechecked: number; manual_codes: number; rows_with_exclusions: number};
   top_reasons: {reason: string; count: number}[];
-  rows: {work_item_id: string; source_row: number; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
+  rows: {work_item_id: string; source_row: number; description: string; quantity: string|null; unit: string|null; state: "no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason: string; suggested_code: string|null; candidate_count: number; manual_code: string|null; cost_allowed: false; engineering_approved: false}[];
   cost_note: string;
 };
 type ExcludedPosition = {code: string; description: string; source_page: number; reason: string; cost_allowed: false; selectable: false};
+type PartialCostPreview = {
+  schema: "arkemx.a345.partial_cost_preview.v1"; read_only: true; creates_estimate: false;
+  source_pdf_sha256: string; import_id: string; import_sha256: string; total_rows: number;
+  included_count: number; pending_count: number; partial_total: string; currency: "TRY";
+  is_partial: boolean; included: {work_item_id: string;source_row:number;description:string;position_code:string;quantity:string;unit:string;unit_price:string;amount:string;source_pdf_page:number}[];
+  pending: {work_item_id:string;source_row:number;description:string;reason:string;amount:null}[];
+};
 type SavedList = { read_only: boolean; approval_allowed: boolean; records: { id: string; title: string; created_at: string; row_count: number }[]; next_offset: number | null };
 type SavedReview = { schema: string; read_only: boolean; approval_allowed: boolean; record: { id: string; title: string; created_at: string; snapshot_sha256: string; row_count: number }; report: Report; currentness: { status: string; flags: string[]; engineering_approval: boolean }; resume_allowed: boolean; resume_rows: Item[] };
 const freshnessLabels: Record<string, string> = {
@@ -232,6 +239,11 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [catalogVersion, setCatalogVersion] = useState("");
   const [autoCandidates, setAutoCandidates] = useState<CandidateResponse | null>(null);
   const [coverage, setCoverage] = useState<ReviewCoverage | null>(null);
+  const [listSearch, setListSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all"|"approved"|"no_match"|"needs_info"|"needs_review"|"rule_prechecked">("all");
+  const [costPreview, setCostPreview] = useState<PartialCostPreview|null>(null);
+  const [costLoading, setCostLoading] = useState(false);
+  const [costError, setCostError] = useState("");
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [coverageError, setCoverageError] = useState("");
   const coverageAbortRef = useRef<AbortController | null>(null);
@@ -351,6 +363,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     if (id !== importId || sourceProject !== projectId) {
       coverageAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setCostPreview(null); setCostLoading(false); setCostError("");
     }
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setImportId(id); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(pageOffset);
@@ -369,6 +382,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
     void request<PdfSource>(`/api/projects/${encodeURIComponent(id)}/a318/source`, data => {
       if (data.read_only !== true) throw new Error("PDF kaynak doğrulaması başarısız.");
       setCoverage(old => old && data.sha256 === old.source_sha256 ? old : null);
+      setCostPreview(old => old && data.sha256 === old.source_pdf_sha256 ? old : null);
       setPdfSource(data);
     }, "pdf-source");
   }
@@ -440,6 +454,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       automaticRunKeyRef.current = "";
       coverageAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
+      setCostPreview(null); setCostLoading(false); setCostError("");
       setPdfSource(data);
       setPdfFile(null);
       setPdfRightsConfirmed(false);
@@ -494,6 +509,34 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         setCoverageLoading(false);
       }
     }
+  }
+
+    async function calculateSignedPartialCost() {
+    if (!selection || !projectId || !importId || !pdfSource?.sha256 || costLoading) return;
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if (!token) {setCostError("Oturum bulunamadı.");return;}
+    setCostLoading(true);setCostError("");setCostPreview(null);
+    const source=selection.import_source;
+    const expectedPdf=pdfSource.sha256;
+    try {
+      const response=await fetch(
+        `${API}/api/projects/${encodeURIComponent(projectId)}/a345/imports/${encodeURIComponent(importId)}/cost-preview`,
+        {cache:"no-store",headers:{Authorization:"Bearer "+token}}
+      );
+      if(!response.ok)throw Error("Kısmi maliyet önizlemesi hesaplanamadı (HTTP "+response.status+").");
+      const data=await response.json() as PartialCostPreview;
+      if(data.schema!=="arkemx.a345.partial_cost_preview.v1" ||
+        data.read_only!==true || data.creates_estimate!==false ||
+        data.source_pdf_sha256!==expectedPdf || data.import_id!==importId ||
+        data.import_sha256!==source.sha256 || data.total_rows!==source.row_count ||
+        data.included_count+data.pending_count!==data.total_rows ||
+        data.included.length!==data.included_count ||
+        data.pending.length!==data.pending_count ||
+        data.pending.some(x=>x.amount!==null))throw Error("Maliyet önizlemesinin kaynak veya tutarlılık kontrolü başarısız.");
+      setCostPreview(data);
+    }catch(e){
+      setCostError(e instanceof Error?e.message:"Maliyet önizlemesi alınamadı.");
+    }finally{setCostLoading(false);}
   }
 
     function findAutomaticCandidates() {
@@ -644,7 +687,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {...row, manual_position: data.manual_position} : row),
         } : old);
         setManualCodes(old => ({...old, [id]: code}));
-        setCoverage(null);
+        setCoverage(null); setCostPreview(null);
         setSaveNotice(data.manual_position.can_select ?
           "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
           "Manuel poz numarası inceleme için kaydedildi. PDF'de doğrulanana kadar maliyet hesabına alınmayacak.");
@@ -675,7 +718,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
-        setCoverage(null);
+        setCoverage(null); setCostPreview(null);
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
@@ -878,7 +921,35 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       Number(b.code === expandedSelectedCode) - Number(a.code === expandedSelectedCode));
   })() : [];
   const views: { key: View; title: string }[] = [{ key: "attention", title: "Farklar ve inceleme" }, { key: "all", title: "Tümü" }, ...["incompatible", "review_required", "out_of_scope", "checked_features_match"].map(key => ({ key: key as View, title: label(key) }))];
-  const Container = projectScope ? "div" : "main";
+  type ListedRow = {work_item_id:string; source_row:number; description:string; quantity:string|null; unit:string|null;
+    state:"no_match"|"needs_info"|"needs_review"|"rule_prechecked"; reason:string;
+    suggested_code:string|null; manual_code:string|null; pageIndex:number;};
+  const listRows:ListedRow[] = coverage
+    ? coverage.rows.map((row,index)=>({...row,pageIndex:index}))
+    : visibleQueueRows.map((row,index)=>{
+      const item=autoCandidates?.rows.find(x=>x.work_item_id===row.work_item_id);
+      const options=item?.suggestions??[];
+      const state:ListedRow["state"]=!options.length?"no_match":
+        item?.triage?.group==="needs_info"?"needs_info":
+        item?.triage?.group==="prechecked"?"rule_prechecked":"needs_review";
+      return {
+        work_item_id:row.work_item_id,source_row:row.source_row,
+        description:row.effective_description,quantity:row.quantity,unit:row.unit,
+        state, reason:item?.triage?.reason??(options.length?"Teknik inceleme bekliyor":"Uygun poz bulunamadı"),
+        suggested_code:options[0]?.code??null,
+        manual_code:item?.manual_position?.position_code??null,
+        pageIndex:offset+index,
+      };
+    });
+  const filterText=listSearch.trim().toLocaleLowerCase("tr-TR");
+  const approvedPreviewIds=new Set(costPreview?.included.map(item=>item.work_item_id)??[]);
+  const filteredListRows=listRows.filter(row=>
+    (statusFilter==="all"||
+     (statusFilter==="approved"?approvedPreviewIds.has(row.work_item_id):row.state===statusFilter))&&
+    (!filterText||[String(row.source_row),row.description,row.reason,row.suggested_code,row.manual_code]
+      .filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(filterText))
+  );
+    const Container = projectScope ? "div" : "main";
   const Heading = projectScope ? "h2" : "h1";
   return <Container className={projectScope ? styles.page : `page ${styles.page}`}>
     {!projectScope && <><WorkflowNav active="technical" />
@@ -915,31 +986,54 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-label="Poz inceleme çalışma listesi">
         <header className={styles.a343Overview}>
           <div>
-            <h2>Poz inceleme</h2>
-            <p>Doğru pozları kontrol et; eksikleri beklet, diğerlerinin hesabını durdurma.</p>
+            <h2>Poz eşleştirme</h2>
+            <p>Metrajı doğrula, PDF analizini düzenle; onaylıları hesapla, eksikleri beklet.</p>
           </div>
-          <Link href="/#cost" className={styles.a343CostLink}>Kısmi maliyet ekranı →</Link>
+          <Link href="/#cost" className={styles.a343CostLink}>Maliyet çalışma alanı →</Link>
         </header>
-        <div className={styles.a343Summary} aria-label="Sayfa ve kaynak özeti">
+        <div className={styles.a343Summary} aria-label="Proje kontrol ve maliyet özeti">
           <div><small>Toplam metraj</small><strong>{selection.import_source.row_count}</strong></div>
-          <div><small>{coverage ? "Tüm projede poz seçenekli" : "Bu sayfada poz seçenekli"}</small><strong>{coverage ? coverage.total_rows - coverage.counts.no_match : autoCandidates ? countSuggested : "—"}</strong></div>
-          <div><small>{coverage ? "Tüm projede poz bulunamayan" : "Bu sayfada poz bulunamayan"}</small><strong>{coverage ? coverage.counts.no_match : autoCandidates ? countMissing : "—"}</strong></div>
-          <div className={styles.a343Source}><small>Kaynak PDF</small><strong>{pdfSource?.present ? "2026 analiz PDF bağlı" : "PDF bekleniyor"}</strong></div>
+          <div><small>{coverage?"PDF'de poz seçenekli":"Bu sayfada poz seçenekli"}</small>
+            <strong>{coverage?coverage.total_rows-coverage.counts.no_match:autoCandidates?countSuggested:"—"}</strong></div>
+          <div><small>Onaylı ve hesaplanabilir</small><strong>{costPreview?costPreview.included_count:"—"}</strong></div>
+          <div className={styles.a343Source}><small>Kısmi maliyet</small>
+            <strong>{costPreview&&costPreview.included_count?
+              Number(costPreview.partial_total).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" TL":"—"}</strong></div>
         </div>
-        <p className={styles.a343SummaryNote}>{coverage ?
-  "Tüm proje tarandı. Sayılar bütün metrajın PDF bazlı ön değerlendirmesidir." :
-  `Tüm proje henüz taranmadı; mevcut sayılar yalnızca ekrandaki ${selection.rows.length} satır içindir.`}
-  Poz seçeneği bulunması teknik onay veya maliyete alınma anlamına gelmez.</p>
-        {pdfSource?.present && <div className={styles.a344ScanBar}>
-          <div><strong>Toplu poz incelemesi</strong>
-            <small>{coverage ? `Tüm ${coverage.scanned_rows} satır kaynak PDF ile tarandı.` :
-              `Toplam ${selection.import_source.row_count} metraj kalemini kaynak PDF ile sınıflandır.`}</small>
+        <p className={styles.a343SummaryNote}>
+          {coverage?`Kaynak PDF ile ${coverage.total_rows} satır incelendi.`:
+          `Henüz tüm metraj taranmadı; yalnızca bu sayfadaki ${selection.rows.length} satır gösteriliyor.`}
+          {" "}Kaynak: {pdfSource?.present?"2026 analiz PDF":"PDF bekleniyor"}.
+          Poz seçeneği veya kural ön kontrolü mühendis onayı değildir.
+        </p>
+        {pdfSource?.present && <div className={styles.a345Toolbar}>
+          <div><strong>Proje kontrolü</strong><small>Eksikler diğer kalemlerin hesabını durdurmaz.</small></div>
+          <div className={styles.a345Actions}>
+            <button type="button" disabled={coverageLoading||Boolean(busy)} onClick={()=>void scanFullImport()}>
+              {coverageLoading?"Pozlar taranıyor…":coverage?"Taramayı yenile":"Tüm metrajı tara"}
+            </button>
+            <button type="button" className="secondary" disabled={costLoading||Boolean(busy)}
+              onClick={()=>void calculateSignedPartialCost()}>
+              {costLoading?"Hesaplanıyor…":"Onaylı maliyeti hesapla"}
+            </button>
           </div>
-          <button type="button" disabled={coverageLoading || Boolean(busy)}
-            onClick={() => void scanFullImport()}>
-            {coverageLoading ? "Tüm satırlar taranıyor…" : coverage ? "Taramayı yenile" : "Tüm metrajı tara"}
-          </button>
         </div>}
+        {costError && <p role="alert" className={styles.a330Warning}>{costError}</p>}
+        {costPreview && <details className={styles.a345CostDetail}>
+          <summary>Kısmi maliyet: {costPreview.included_count} onaylı, {costPreview.pending_count} bekleyen
+            {costPreview.included_count>0?" · "+Number(costPreview.partial_total).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" TL":""}
+          </summary>
+          <p>Bu yalnızca geçerli mühendis imzalı, kaynaklı proje analizlerinin önizlemesidir; M5 teklifi değildir.
+            Bekleyen kalemler sıfır fiyatlı kabul edilmez.</p>
+          {costPreview.included_count>0 && <div className={styles.a345CostLines}>
+            {costPreview.included.map(line=><div key={line.work_item_id}>
+              <strong>Excel {line.source_row} · {line.position_code}</strong>
+              <span>{line.quantity} {line.unit} × {line.unit_price} TL = <b>{line.amount} TL</b></span>
+              <small>PDF sayfa {line.source_pdf_page} · Onaylı proje analizi</small>
+            </div>)}
+          </div>}
+          {costPreview.pending_count>0 && <p>{costPreview.pending_count} kalem onay, kaynak veya analiz doğrulaması bekliyor.</p>}
+        </details>}
         {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
         {coverage && <div className={styles.a344Coverage} aria-label="Tüm metraj inceleme özeti">
           <div className={styles.a344CoverageCounts}>
@@ -992,36 +1086,50 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
           <section className={styles.a344List} aria-label="Metraj listesi">
             <div className={styles.a344ListHeading}>
               <strong>Metraj kalemleri</strong>
-              <small>Satırı seç, ayrıntısını sağda incele.</small>
+              <small>{coverage?`Tüm projeden ${filteredListRows.length} / ${coverage.total_rows} satır`:
+                "İlk 20 satır görüntüleniyor. Tümünde aramak için önce tarama yap."}</small>
+            </div>
+            <div className={styles.a345Filters}>
+              <input type="search" aria-label="Metraj veya poz ara" placeholder="İmalat, satır veya poz ara…"
+                value={listSearch} onChange={e=>setListSearch(e.target.value)}/>
+              <select aria-label="Poz durum filtresi" value={statusFilter}
+                onChange={e=>setStatusFilter(e.target.value as typeof statusFilter)}>
+                <option value="all">Tüm durumlar</option>
+                <option value="approved">Onaylı ve hesaplanan</option>
+                <option value="no_match">Poz bulunamadı</option>
+                <option value="needs_info">Teknik bilgi eksik</option>
+                <option value="needs_review">İnceleme bekliyor</option>
+                <option value="rule_prechecked">Kural ön kontrolü</option>
+              </select>
             </div>
             <div className={styles.a344ListItems}>
-              {visibleQueueRows.map(row => {
-                const item = autoCandidates?.rows.find(x => x.work_item_id === row.work_item_id);
-                const options = item?.suggestions ?? [];
-                const saved = item?.saved_selection?.current === true &&
-                  item?.saved_selection?.stale !== true;
-                const code = saved ? item?.saved_selection?.code : options[0]?.code;
-                const status = item?.triage?.group === "needs_info" ? "Bilgi eksik" :
-                  !options.length ? "Poz bulunamadı" :
-                  item?.triage?.group === "prechecked" ? "Kural ön kontrolü" : "İnceleme bekliyor";
-                return <button type="button" key={row.work_item_id}
-                  aria-pressed={candidateDetailId === row.work_item_id}
-                  className={styles.a344ListRow}
-                  onClick={() => setCandidateDetailId(row.work_item_id)}>
-                  <span className={styles.a344ListRowTop}>
-                    <span>Excel {row.source_row}</span><em>{status}</em>
-                  </span>
-                  <strong>{row.effective_description}</strong>
-                  <small>{row.quantity ?? "Miktar eksik"} {row.unit ?? ""} · {code ?
-                    `Poz: ${code}` : item?.manual_position?.position_code ?
-                    `Manuel poz: ${item.manual_position.position_code}` : "Poz belirlenmedi"}</small>
-                </button>;
-              })}
+              {filteredListRows.map(row=><button type="button" key={row.work_item_id}
+                aria-pressed={candidateDetailId===row.work_item_id}
+                className={styles.a344ListRow}
+                onClick={()=>{
+                  if(selection?.rows.some(item=>item.work_item_id===row.work_item_id)){
+                    setCandidateDetailId(row.work_item_id);
+                  }else{
+                    jumpToRowRef.current=row.work_item_id;
+                    loadItems(importId,Math.floor(row.pageIndex/20)*20);
+                  }
+                }}>
+                <span className={styles.a344ListRowTop}>
+                  <span>Excel {row.source_row}</span>
+                  <em>{approvedPreviewIds.has(row.work_item_id)?"Hesaplandı":
+                    row.state==="no_match"?"Poz bulunamadı":
+                    row.state==="needs_info"?"Bilgi eksik":
+                    row.state==="rule_prechecked"?"Ön kontrol":"İnceleme"}</em>
+                </span>
+                <strong>{row.description}</strong>
+                <small>{row.quantity??"Miktar eksik"} {row.unit??""} ·
+                  {" "}{row.suggested_code?`Poz: ${row.suggested_code}`:
+                    row.manual_code?`Manuel poz: ${row.manual_code}`:"Poz bekliyor"}</small>
+              </button>)}
+              {!filteredListRows.length&&<p className={styles.a345EmptyList}>
+                Bu arama ve filtre için eşleşen metraj bulunamadı.
+              </p>}
             </div>
-        {autoCandidates && visibleQueueRows.length === 0 && <p className={styles.queueEmpty}>
-          {queueView === "prechecked" ? "Henüz ön kontrolü tamamlanmış poz yok. Bu, teknik uygunluk onayı verilmediği anlamına gelmez; eksik bilgiler incelenmeli." :
-            "Bu bölümde gösterilecek imalat yok."}
-        </p>}
             <div className={styles.tableFooter}>
           <span>{selection.rows.length} satır · {Math.floor(offset / 20)+1}. sayfa</span>
           <div className={styles.pager}>
@@ -1104,7 +1212,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                   <EditableEngineeringReview key={[expandedRow.work_item_id, option.code, expandedRow.revision_id ?? "", pdfSource?.sha256 ?? "", projectSpec?.sha256 ?? ""].join(":")}
                     projectId={projectId} importId={importId}
                     rowId={expandedRow.work_item_id} position={option}
-                    onPilotChanged={() => setPilotRefreshTick(old => old + 1)} /> :
+                    onPilotChanged={() => {setPilotRefreshTick(old => old + 1);setCostPreview(null);}} /> :
                   <details>
                     <summary>PDF kanıtı ve analiz girdileri</summary>
                     <p>Analiz tablosunu düzenleyebilmek için önce bu pozu kaynak PDF'ye bağlı şekilde kaydet. Bu işlem maliyet onayı değildir.</p>
