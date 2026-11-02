@@ -9,7 +9,7 @@ import metrajStyle from "./metraj-home.module.css";
 import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 
 import MatchPanel from "./match-panel";
-import ReviewWorkspace from "./batch-technical-review/review-workspace";
+import PdfPozLibrary from "./pdf-poz-library";
 
 
 import CatalogPanel from "./catalog-panel";
@@ -33,7 +33,7 @@ type JobSummary = {status:string;total_rows:number;processed_rows:number;candida
 type QueueSummary = {run:null|{row_count:number;candidate_count:number};summary?:{decisions?:Record<string,number>}};
 
 const sectionTitles: Record<WorkflowSection, string> = {
-  overview: "Proje özeti", metraj: "Metraj", technical: "Pozları incele",
+  overview: "Proje özeti", metraj: "Metraj", technical: "PDF Poz Kütüphanesi",
   cost: "Maliyet", catalog: "Kaynaklar",
 };
 const validTabs: Tab[] = ["overview", "metraj", "technical", "catalog", "bulk", "review", "cost"];
@@ -96,7 +96,6 @@ export default function Home() {
   const [showLegacy,setShowLegacy] = useState(false);
 
   const [tab,setTab] = useState<Tab>("metraj");
-  const [reviewOpened, setReviewOpened] = useState(false);
 
   const [showAllItems,setShowAllItems] = useState(false);
 
@@ -118,7 +117,7 @@ export default function Home() {
   useEffect(() => {
     const readSection = () => {
       const hash = window.location.hash.slice(1) as Tab;
-      if (validTabs.includes(hash)) { setTab(hash); if (hash === "technical") setReviewOpened(true); }
+      if (validTabs.includes(hash)) setTab(hash);
     };
     readSection();
     window.addEventListener("hashchange", readSection);
@@ -158,7 +157,6 @@ export default function Home() {
   const goTo=(next:Tab)=>{
 
     setTab(next);
-    if (next === "technical") setReviewOpened(true);
     window.history.pushState(null, "", `#${next}`);
 
     document.getElementById("workspace-main")?.scrollIntoView({behavior:"smooth",block:"start"});
@@ -446,46 +444,7 @@ export default function Home() {
           </button>
           <button type="button" disabled={!project} onClick={() => goTo("technical")}>
             <span className={metrajStyle.stepNumber}>2</span>
-            <span><strong>Poz inceleme</strong><small>Adaylar ve kanıtlar</small></span>
-          </button>
-          <button type="button" disabled={!project} onClick={() => goTo("cost")}>
-            <span className={metrajStyle.stepNumber}>3</span>
-            <span><strong>Maliyet</strong><small>Taslak ve farklar</small></span>
-          </button>
-        </nav>
-      </>}
-      {tab === "technical" && <>
-        <section className={metrajStyle.hero} aria-label="Poz inceleme çalışma alanı">
-          <div>
-            <span className={metrajStyle.kicker}>ÇALIŞMA ALANI / METRAJ / POZ İNCELEME</span>
-            <h1>Poz inceleme</h1>
-            <p>Excel metrajın için poz adaylarını otomatik bul, teknik farkları kontrol et.</p>
-          </div>
-          <div className={metrajStyle.projectActions}>
-            <label className={metrajStyle.projectSelect}>
-              <span>Aktif proje</span>
-              <select aria-label="Aktif proje seç" value={project} onChange={e => chooseProject(e.target.value)}>
-                <option value="">Proje seçin</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </label>
-            <details className={metrajStyle.newProject}>
-              <summary>+ Yeni proje</summary>
-              <form className="stack" onSubmit={createProject}>
-                <label>Proje adı<input required minLength={2} value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Yeni proje adı" /></label>
-                <button type="submit" disabled={busy}>Proje oluştur</button>
-              </form>
-            </details>
-          </div>
-        </section>
-        <nav className={metrajStyle.steps} aria-label="Çalışma aşamaları">
-          <button type="button" onClick={() => goTo("metraj")}>
-            <span className={metrajStyle.stepNumber}>1</span>
-            <span><strong>Metraj</strong><small>Excel ve kayıtlar</small></span>
-          </button>
-          <button type="button" className={metrajStyle.stepActive} aria-current="step">
-            <span className={metrajStyle.stepNumber}>2</span>
-            <span><strong>Poz inceleme</strong><small>Adaylar ve kanıtlar</small></span>
+            <span><strong>Poz kütüphanesi</strong><small>PDF poz kayıtları</small></span>
           </button>
           <button type="button" disabled={!project} onClick={() => goTo("cost")}>
             <span className={metrajStyle.stepNumber}>3</span>
@@ -507,12 +466,11 @@ export default function Home() {
         <p>{tab === "bulk" ? "Bu işlem aday üretir. Kanıtlı teknik uygunluk kontrolü veya mühendis onayı yerine geçmez." : "Bu bölüm kayıtlı karar akışıdır. PDF teknik karşılaştırmasının sonuçları burada otomatik onaylanmaz."}</p>
       </div>}
 
-      {project && (reviewOpened || tab === "technical") && <section hidden={tab !== "technical"} style={{display: tab === "technical" ? "block" : "none"}} aria-label="Poz inceleme çalışma alanı">
-        <ReviewWorkspace key={`${token}:${project}:${revisionTick}`} projectScope={project}
-          onImportSelected={setActiveExcel} onSessionExpired={logout} />
+      {tab === "technical" && <section aria-label="2026 PDF Poz Kütüphanesi">
+        <PdfPozLibrary key={token} token={token} />
       </section>}
 
-      {!project?<section className="card empty">Yukarıdan bir proje seçin veya yeni proje oluşturun.</section>:
+      {!project && tab !== "technical"?<section className="card empty">Yukarıdan bir proje seçin veya yeni proje oluşturun.</section>:
 
        tab==="overview"?<div className="stack">
 
