@@ -62,9 +62,16 @@ def _parse_row(code_word: tuple, words: list[tuple], bounds: list[float],
     y = code_word[1]
     bottom = max((v for v in bounds if v <= y), default=None)
     top = min((v for v in bounds if v > y), default=None)
-    if bottom is None or top is None or top - bottom > 320:
+    if bottom is None or top is None or top <= bottom:
         return None, "no_row_borders"
+    # Some valid mechanical/electrical descriptions occupy almost a whole
+    # PDF page. A fixed 320-point height cap silently dropped 18 official
+    # code rows despite BOTH observed grid lines being present. Keep the
+    # observed boundaries, but refuse to mix two codes in one inferred row.
     row = [w for w in words if bottom - 1 <= w[1] < top - 1 and w[0] > 37]
+    row_codes = [w[4] for w in row if 38 <= w[0] < 65 and CODE.fullmatch(w[4])]
+    if row_codes != [code]:
+        return None, "ambiguous_row_boundaries"
     # Material rayics use x=427 for units; construction and labor use x=489.
     material_unit = any(415 <= w[0] < 448 and abs(w[1] - y) < 4
                         and UNIT.fullmatch(w[4]) for w in row)
