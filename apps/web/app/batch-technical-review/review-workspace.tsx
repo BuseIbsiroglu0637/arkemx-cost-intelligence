@@ -486,7 +486,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         throw new Error("PDF analizi doğrulanamadı.");
       }
       automaticRunKeyRef.current = "";
-      coverageAbortRef.current?.abort();
+      coverageAbortRef.current?.abort(); auditAbortRef.current?.abort();
       setCoverage(null); setCoverageLoading(false); setCoverageError("");
       setAudit(null); setAuditLoading(false); setAuditError("");
       setCostPreview(null); setCostLoading(false); setCostError("");
@@ -775,6 +775,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
             {...row, manual_position: data.manual_position} : row),
         } : old);
         setManualCodes(old => ({...old, [id]: code}));
+        auditAbortRef.current?.abort();
         setCoverage(null); setAudit(null); setCostPreview(null);
         setSaveNotice(data.manual_position.can_select ?
           "Poz numarası PDF'de bulundu. Teknik özellikleri kontrol edip 'Pozu kaydet' ile bağlayabilirsin." :
@@ -806,11 +807,12 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setCandidates(prev => ({ ...prev, [id]: targetCode }));
         setSavedCandidates(prev => ({ ...prev, [id]: targetCode }));
+        auditAbortRef.current?.abort();
         setCoverage(null); setAudit(null); setCostPreview(null);
         setSpecEvidence(null); // Old evidence comparison was for the previous chosen code.
         setEngineerHandoff(null);
         setSelected(prev => [...new Set([...prev, id])]);
-        setSaveNotice(`${targetCode} poz seçimi onaylandı. Teknik kontrol ve mühendis onayı bekliyor.`);
+        setSaveNotice(`${targetCode} poz seçimi kaydedildi. Teknik kontrol ve mühendis onayı bekliyor.`);
         automaticRunKeyRef.current = ""; // Read current triage from the server after saving.
       }, "candidate-save", {
         method: "POST", body: JSON.stringify({
