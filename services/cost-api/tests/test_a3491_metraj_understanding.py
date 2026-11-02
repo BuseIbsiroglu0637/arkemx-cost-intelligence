@@ -132,3 +132,24 @@ def test_another_tenant_cannot_examine_private_metraj(client):
     project, batch, _ = project_with_metraj(client, owner)
     url = f"/api/projects/{project}/a349/imports/{batch}/understanding"
     assert client.get(url, headers=other).status_code == 404
+
+
+def test_karot_is_not_ceramic_karo_and_unknown_family_is_reviewed():
+    result = describe_metraj("Beton karot delgi yapılması", "adet", Decimal(2))
+    assert "seramik" not in result["material_families"]
+    assert result["material_family"] == "beton"
+    assert result["match_selected"] is False
+
+
+def test_generic_insulation_measurement_is_not_lost_when_a1_has_no_layer_type():
+    row = describe_metraj("5 cm XPS ısı yalıtımı uygulanması", "m²", Decimal(10))
+    assert row["material_family"] == "yalitim"
+    assert row["thicknesses_mm"] == ["50"]
+    assert row["match_selected"] is False
+
+
+def test_tile_size_is_not_assigned_to_adjacent_unmeasured_plaster():
+    row = describe_metraj("60x60 cm seramik kaplama ve sıva yapılması", "m²", Decimal(10))
+    assert row["technical_facts"]["dimensions"] == [[60, 60]]
+    assert row["thicknesses_mm"] == []
+    assert row["status"] == "multiple_works_for_review"
