@@ -10,7 +10,7 @@ from test_a348_analysis_library_api import fake_analysis_pdf, sample_position
 
 
 def _org_id(client, auth):
-    user = client.get("/api/auth/me", headers=auth)
+    user = client.get("/api/me", headers=auth)
     assert user.status_code == 200, user.text
     return user.json()["organization_id"]
 
