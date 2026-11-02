@@ -50,6 +50,16 @@ type ReviewTriage = {
 };
 type QueueView = "attention" | "prechecked" | "all";
 type ProjectSpec = { present: boolean; filename?: string; sha256?: string; page_count?: number; read_only: true };
+type SpecCompletion = {
+  schema:"arkemx.a347.spec_completion.v1";read_only:true;approval_allowed:false;
+  engineering_approved:false;cost_allowed:false;
+  work_item_id:string;source_row:number;revision_id:string|null;
+  document_sha256:string|null;document_status:string;
+  selected_position_code:string|null;position_status:string;technical_flags:string[];
+  facts:{key:string;label:string;value:string|number|null;excel_value:string|number|null;position_value?:string|number|null;
+    state:"found_for_review"|"missing"|"conflict";evidence:{page:number;quote:string;value:string|number}[];additional_evidence_count:number}[];
+  missing:string[];conflicts:string[];status:string;note:string;
+};
 type DocumentEvidence = {
   status: "no_document" | "not_found" | "unreadable_text" | "found_for_review" | "conflicting";
   source_row?: number; source_sha256?: string;
@@ -258,6 +268,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [specFile, setSpecFile] = useState<File | null>(null);
   const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
+  const [specCompletion, setSpecCompletion] = useState<SpecCompletion|null>(null);
+  const [completionLoading, setCompletionLoading] = useState(false);
+  const [completionError, setCompletionError] = useState("");
   const [specEvidence, setSpecEvidence] = useState<{ rowId: string; data: DocumentEvidence } | null>(null);
   const [engineerHandoff, setEngineerHandoff] = useState<EngineerHandoff | null>(null);
   const [pilotRefreshTick, setPilotRefreshTick] = useState(0);
@@ -379,7 +392,7 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   function chooseProject(id: string, rememberedImport: string | null = null) {
     setArchive(null); setSavedList(null); setArchiveRow(null);
     invalidate(); setProjectId(id); setImports([]); setImportId(""); setSelection(null); setSelected([]); setCandidates({}); setSavedCandidates({}); setOffset(0);
-    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setSpecFile(null); setProjectSpec(null); setSpecEvidence(null); setEngineerHandoff(null); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
+    setCatalogs([]); setCatalogVersion(""); setPdfSource(null); setPdfFile(null); setPdfRightsConfirmed(false); setSpecFile(null); setProjectSpec(null); setSpecEvidence(null); setSpecCompletion(null); setEngineerHandoff(null); setAutoCandidates(null); setAutoMessage(""); automaticRunKeyRef.current = "";
     setCandidateDetailId(null); setRowSearch(""); setAutoFilter("all");
     setBulkCode("");
     const token = sessionStorage.getItem("arkemx_dev_token");
@@ -433,9 +446,9 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
         }
         setProjectSpec(data);
         setSpecFile(null);
-        setSpecEvidence(null);
+        setSpecEvidence(null); setSpecCompletion(null);
         setEngineerHandoff(null);
-        setSaveNotice("Proje şartnamesi bağlandı. 'Belgede ara' ile kanıtları kontrol et.");
+        setSaveNotice("Şartname bağlandı. Teknik bilgiler seçili satır için otomatik incelenecek.");
       }, "spec-upload", { method: "POST", body: form },
     );
   }
@@ -693,6 +706,44 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       }, "auto"
     );
   }
+
+  // Restore project specification on reload; fail closed if inaccessible.
+  useEffect(() => {
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if(!projectId||!authenticated||!token)return;
+    const controller=new AbortController();
+    void fetch(`${API}/api/projects/${encodeURIComponent(projectId)}/a326/source`,
+      {cache:"no-store",signal:controller.signal,headers:{Authorization:"Bearer "+token}})
+      .then(async res=>{if(!res.ok)throw Error("spec unavailable");return await res.json() as ProjectSpec;})
+      .then(data=>{if(!controller.signal.aborted)setProjectSpec(data.present&&data.read_only===true&&data.sha256?data:null);})
+      .catch(()=>{if(!controller.signal.aborted)setProjectSpec(null);});
+    return ()=>controller.abort();
+  },[projectId,authenticated]);
+
+  // Automatic evidence lookup for selected metraj; no silent approval.
+  useEffect(()=>{
+    setSpecCompletion(null);setCompletionError("");setCompletionLoading(false);
+    const row=selection?.rows.find(item=>item.work_item_id===candidateDetailId);
+    const token=sessionStorage.getItem("arkemx_dev_token");
+    if(!row||!token||!projectId||!importId||!projectSpec?.sha256)return;
+    const controller=new AbortController();
+    setCompletionLoading(true);
+    void fetch(`${API}/api/projects/${encodeURIComponent(projectId)}/a347/imports/${encodeURIComponent(importId)}/items/${encodeURIComponent(row.work_item_id)}/completion`,
+      {cache:"no-store",signal:controller.signal,headers:{Authorization:"Bearer "+token}})
+      .then(async res=>{if(!res.ok)throw Error("Şartname incelemesi başarısız (HTTP "+res.status+").");return await res.json() as SpecCompletion;})
+      .then(data=>{
+        if(controller.signal.aborted)return;
+        if(data.schema!=="arkemx.a347.spec_completion.v1"||
+          data.read_only!==true||data.approval_allowed!==false||
+          data.engineering_approved!==false||data.cost_allowed!==false||
+          data.work_item_id!==row.work_item_id||data.source_row!==row.source_row||
+          data.revision_id!==row.revision_id||data.document_sha256!==projectSpec.sha256)
+          throw Error("Kanıtın kaynak veya metraj kimliği doğrulanamadı.");
+        setSpecCompletion(data);
+      }).catch(error=>{if(!controller.signal.aborted)setCompletionError(error instanceof Error?error.message:"Kanıt incelenemedi.");})
+      .finally(()=>{if(!controller.signal.aborted)setCompletionLoading(false);});
+    return ()=>controller.abort();
+  },[selection,candidateDetailId,projectId,importId,projectSpec?.sha256,pilotRefreshTick]);
 
   // Reconcile Excel-only flags with the current saved candidate and the
   // matching technical specification. Read-only; no engineering approval.
@@ -1336,6 +1387,27 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
               <small>İlişkili Excel satırları: {autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.related_excel_rows?.join(", ")}. Aynı iş doğrulanmadan tutarlar birleştirilmez.</small>}
             <small>Bu satır beklerken diğer onaylı metrajların maliyet hesabı devam edebilir.</small>
           </div>
+          {projectSpec?.sha256 && <section className={styles.a347Facts} aria-label="Şartname teknik bilgileri">
+            <div className={styles.a347FactsHeading}><strong>Şartnamede bulunan bilgiler</strong><small>Otomatik inceleme · PDF kanıtı</small></div>
+            {completionLoading&&<p>Şartname inceleniyor…</p>}
+            {completionError&&<p role="alert">{completionError}</p>}
+            {specCompletion?.work_item_id===expandedRow.work_item_id&&<>
+              {specCompletion.conflicts.length>0&&<p className={styles.a347Conflict}>Çelişki: {specCompletion.conflicts.join(" · ")}</p>}
+              {specCompletion.facts.length>0?<div className={styles.a347FactList}>
+                {specCompletion.facts.map(fact=><div key={fact.key}>
+                  <span>{fact.label}</span>
+                  <strong>{fact.state==="conflict"?"Çelişki":fact.state==="missing"?"Bulunamadı":String(fact.value)}</strong>
+                  {fact.evidence[0]&&<small>PDF sayfa {fact.evidence[0].page} · {fact.state==="conflict"?"Uyuşmazlık var":"Kanıt bulundu"}</small>}
+                </div>)}
+              </div>:<p>Bu imalat için ayıklanabilen teknik özellik bulunamadı.</p>}
+              {specCompletion.missing.length>0&&<p className={styles.a347Missing}>Eksik: {specCompletion.missing.join(" · ")}</p>}
+              <details><summary>Belgedeki ifadeleri göster</summary>
+                {specCompletion.facts.flatMap(fact=>fact.evidence.map((ev,i)=>
+                  <p key={fact.key+"-"+i}>PDF s. {ev.page}: {ev.quote}</p>))}
+              </details>
+              <small>Bulunan kanıt teknik onay, poz seçimi veya maliyet yetkisi değildir.</small>
+            </>}
+          </section>}
           {expandedClarification && <section className={styles.simpleCeramicQuestion} aria-label="Seramik türü seçimi">
             <strong>{expandedClarification.prompt}</strong>
             <p>{expandedClarification.hint}</p>
