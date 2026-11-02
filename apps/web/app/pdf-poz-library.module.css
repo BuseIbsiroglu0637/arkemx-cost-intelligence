@@ -76,3 +76,11 @@
 .analysisTableWrap th,.analysisTableWrap td{padding:6px 8px;border:1px solid #e5edf5;line-height:1.4}
 .analysisDetail .analysisScope{white-space:pre-wrap;color:#344b61}
 .analysisDetail>small{color:#8194ab;font-size:10px}
+
+.linkageAudit{border:1px solid #d5e4f3;background:#f8fbff;padding:14px 18px;border-radius:10px;display:grid;gap:8px}
+.linkageAudit>strong{font-size:13px;color:#21496b}
+.linkageAudit p{font-size:12px;color:#5f7489;margin:0}
+.linkageAudit small{font-size:10px;color:#8496aa}
+.linkStats{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.linkStats>span{padding:8px 11px;border:1px solid #e1eaf5;background:white;border-radius:7px;font-size:12px;color:#566e8b}
+.linkStats b{color:#14518a;font-variant-numeric:tabular-nums}
