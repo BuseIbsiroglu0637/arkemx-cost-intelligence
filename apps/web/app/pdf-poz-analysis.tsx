@@ -319,7 +319,7 @@ export function PdfLinkageAudit({token, priceListSha, revision}: {
         Analiz PDF'sinde olup fiyat listesinde bulunmayan kodlar:
         {" "}{audit.analyses_without_catalog_code_sample.join(", ")}.
         Bunlar otomatik olarak yeni resmî fiyat pozuna dönüştürülmez.
-      </p>
+      </p>}
       <small>Yalnız birebir poz numarası bağlantısı sayılır; teknik onay anlamına gelmez.</small>
     </>}
   </section>;
