@@ -120,3 +120,26 @@ def test_cross_tenant_read_is_hidden(client,monkeypatch):
     other=register(client,"A347 outsider","a347outsider@example.com")
     pid,iid,ids,_=setup_source(client,owner,monkeypatch)
     assert client.get(url(pid,iid,ids[0]),headers=other).status_code==404
+
+
+def test_numeric_formatting_does_not_create_false_conflict():
+    # 400 / 400.0 / 400,00 all represent the same density.
+    fields, conflict, missing=_compare_fields(
+        "gazbeton","10 cm gazbeton duvar",
+        [{"page":4,"quote":"Gazbeton 400 kg/m3",
+          "facts":{"gazbeton_density_kg_m3":400}}],
+        replace(gasbeton_poz(),description="10 cm gazbeton 2,50 N/mm2 400,00 kg/m3"),
+    )
+    density=next(f for f in fields if f["key"]=="gazbeton_density_kg_m3")
+    assert density["status"]=="supported"
+    assert conflict is False
+
+
+def test_material_supply_cannot_borrow_installation_or_demolition_spec_facts():
+    # Identical product tokens do not authorize transporting another work's facts.
+    material="60x60 porselen seramik zemin malzemesi"
+    blocks=[
+        (2,"60x60 porselen seramik kaplamanin sokulmesi, malzeme ve iscilik."),
+        (3,"60x60 porselen seramik kaplamasi yapilmasi, malzeme ve iscilik dahil."),
+    ]
+    assert _matches(material,blocks)==[]
