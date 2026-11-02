@@ -71,6 +71,7 @@ const issueLabels: Record<string, string> = {
   PDF_PRICE_UNAVAILABLE: "PDF'de sayısal birim fiyat yok",
   PDF_UNIT_MISSING: "PDF pozunun ölçü birimi eksik",
   TRADE_CONTEXT_PLUMBING_MISMATCH: "Seramik tesisat armatürü ile yüzey/kaplama imalatı farklı",
+  SOURCE_RAYIC_NOT_INSTALLATION_POZ: "Malzeme rayici, tamamlanmış imalat pozu değildir",
 };
 type Understanding = {
   status: string; description: string; unit: string | null; quantity: string | null;
