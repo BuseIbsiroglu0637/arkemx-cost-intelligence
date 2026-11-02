@@ -153,6 +153,28 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
             "candidates": [], "blocked_examples": [], "scanned_count": 0,
             "candidate_count": 0, "approval_allowed": False, "cost_allowed": False,
         }
+    # A3.49.2.1 — When the source itself has no recognized work/material
+    # family, generic words (kaplama, yapilmasi, vb.) can float arbitrary
+    # cement coating/insulation positions to the top. A candidate would look
+    # credible simply because its code and price exist. Require positive
+    # *source-side* material evidence before searching and never silently
+    # infer a family from the retrieved position.
+    #
+    # A user-supplied position code alone is not proof of technical equality:
+    # the dedicated PDF library can still display that code for inspection.
+    if not interpreted["material_families"]:
+        return {
+            "version": VERSION, "status": "needs_input_review",
+            "reason": (
+                "Excel açıklamasında imalat veya malzeme türü güvenilir biçimde "
+                "belirlenemedi. Sadece ortak kelimelerle poz önermek yanıltıcı "
+                "olacağından aday gösterilmiyor; metraj tarifi, proje şartnamesi "
+                "veya resmî poz kapsamı insan tarafından kontrol edilmeli."
+            ),
+            "understanding": interpreted,
+            "candidates": [], "blocked_examples": [], "scanned_count": 0,
+            "candidate_count": 0, "approval_allowed": False, "cost_allowed": False,
+        }
     records = catalog["records"]
     preselected = _ranked_prefilter(description, records)
     analysis_codes = {
