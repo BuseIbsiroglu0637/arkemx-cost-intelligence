@@ -20,7 +20,8 @@ from .a318_pdf_api import _read as analysis_pdf, _pdf_candidate_check
 from .a326_project_evidence import (
     _block_matches, _evidence_status, _file_path, _read_file, _scan,
 )
-from .a343_work_scope import scope_blocker
+from .a343_work_scope import scope_blocker, DEMOLITION, MATERIAL_ONLY, LABOR_ONLY, EXECUTION
+from .excel import normalized
 from .database import get_db
 from .matching import family
 from .models import PdfCandidateSelection, User, WorkItem
@@ -54,6 +55,24 @@ REQUIRED_BY_FAMILY = {
     "beton": ("concrete_class",),
     "boya": ("paint_base",),
 }
+
+
+def work_scope(description: str) -> str:
+    """Classify only explicit work intent; unknown is NOT an installation claim."""
+    content = normalized(description)
+    if DEMOLITION.search(content):
+        return "demolition"
+    material = bool(MATERIAL_ONLY.search(content))
+    labor = bool(LABOR_ONLY.search(content))
+    if material and labor:
+        return "material_and_labor"
+    if material:
+        return "material_only"
+    if labor:
+        return "labor_only"
+    if EXECUTION.search(content):
+        return "execution_unspecified"
+    return "unspecified"
 
 
 def _clean(value):
@@ -208,6 +227,14 @@ def specification_completion(
         item=current, document_sha=document_sha, document_status=document_status,
         candidate=pos_code, position_status=position_status,
         flags=flags, facts=facts, scope_conflict=scope_conflict,
+    )
+    result["work_scope"] = work_scope(current.raw_description)
+    result["position_scope"] = work_scope(position.description) if position else None
+    result["scope_conflict"] = scope_conflict
+    result["missing_position_next_step"] = (
+        "Bu kaynakta doğrulanmış poz bulunamadı. Diğer yetkili katalogları "
+        "incele veya kaynak ve mühendis kontrolüyle özel analiz hazırla."
+        if not position else None
     )
     response.headers.update(NO_STORE)
     return result
