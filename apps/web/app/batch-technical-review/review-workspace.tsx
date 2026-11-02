@@ -1040,16 +1040,30 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
   ));
   const remainingCandidateFlags = (option: CandidateChoice): string[] => {
     const flags = [...option.blockers, ...option.review_flags];
-    const matching = currentEvidenceMatch &&
+    const existingProof = currentEvidenceMatch &&
       option.code === (expandedProof?.saved_candidate ?? expandedEvidence?.saved_candidate);
-    if (!matching) return flags.filter(flag => flag !== "MATERIAL_UNVERIFIED");
-    // These two flags come solely from missing attributes in the original Excel,
-    // not from any source/poz contradiction. A3.27 separately verifies both.
-    return flags.filter(flag => ![
-      "MATERIAL_UNVERIFIED",
-      "GAZBETON_STRENGTH_N_MM2_UNVERIFIED",
-      "GAZBETON_DENSITY_KG_M3_UNVERIFIED",
-    ].includes(flag));
+    // Only consider a source fact when both the loaded project PDF and the
+    // currently saved PDF position are the ones verified by the server.
+    const linkedCompletion = specCompletion?.work_item_id === expandedRow?.work_item_id &&
+      specCompletion?.document_sha256 === projectSpec?.sha256 &&
+      specCompletion?.selected_position_code === option.code &&
+      specCompletion?.position_status !== "blocked" &&
+      specCompletion?.status !== "technical_conflict";
+    const supported = (field: string) => Boolean(linkedCompletion &&
+      specCompletion?.facts.some(fact =>
+        fact.key === field && fact.state === "found_for_review" &&
+        fact.value !== null && fact.position_value !== null &&
+        fact.position_value !== undefined));
+    const strength = supported("gazbeton_strength_n_mm2");
+    const density = supported("gazbeton_density_kg_m3");
+    return flags.filter(flag => {
+      if (flag === "MATERIAL_UNVERIFIED") return false;
+      if (flag === "GAZBETON_STRENGTH_N_MM2_UNVERIFIED")
+        return !(strength || existingProof);
+      if (flag === "GAZBETON_DENSITY_KG_M3_UNVERIFIED")
+        return !(density || existingProof);
+      return true;
+    });
   };
   const expandedManual = expandedRow
     ? autoCandidates?.rows.find(item => item.work_item_id === expandedRow.work_item_id)?.manual_position
