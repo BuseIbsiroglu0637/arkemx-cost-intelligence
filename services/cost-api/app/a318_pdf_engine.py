@@ -106,7 +106,11 @@ def _page_positions(page, number_: int) -> list[PdfPosition]:
             )
         )
         units = [w for w in words if start + 10 < w[1] < head_y - 2 and 504 < w[0] < 558]
-        if not descr or not units:
+        # A valid official 2026 analysis (e.g. 15.341.5001) has a blank
+        # title cell but a complete, priced ingredient table. Keep the source
+        # description empty and mark it for display fallback at the linked
+        # price-list level; never invent a description from surrounding rows.
+        if not units:
             continue
         raw_unit = " ".join(w[4] for w in sorted(units, key=lambda w: (w[1], w[0])))
         subtotal_y = None
