@@ -34,7 +34,7 @@ router = APIRouter(
     prefix="/api/projects/{project_id}/a349",
     tags=["A3.49.2 PDF Catalog Candidate Discovery"],
 )
-VERSION = "a3492-verified-catalog-lexical-v1"
+VERSION = "a3492-safe-context-v2"
 POSITION_CODE = re.compile(r"(?<!\w)\d{2}\.\d{3}\.\d{4}(?!\w)")
 WORDS = re.compile(r"[a-z0-9]{3,}")
 STOP = frozenset({
@@ -137,6 +137,42 @@ def _scope_guard(excel_desc: str, pdf_desc: str, left_scope: str, right_scope: s
     return blockers, reviews
 
 
+# Ceramics occur in unrelated trades: "seramik mozaik" floor/wall material
+# is not a "seramik salmastrali musluk" plumbing fixture. A shared ceramic
+# word is never enough to establish the same kind of work.
+PLUMBING_TERMS = re.compile(
+    r"\b(?:musluk\w*|batarya\w*|salmastra\w*|armat[uü]r\w*|"
+    r"lavabo\w*|klozet\w*|pisuvar\w*|rozet\w*)\b"
+)
+CERAMIC_FINISH_TERMS = re.compile(
+    r"\b(?:karo(?:s\w*|l\w*|n\w*|d\w*)?|"
+    r"fayans\w*|porselen\w*|mozaik\w*|"
+    r"seramik\w*\s+(?:zemin\w*|duvar\w*|kaplama\w*)|"
+    r"zemin\w*\s+seramik\w*|duvar\w*\s+seramik\w*)\b"
+)
+
+
+def _trade_context_guard(excel: str, pdf: str) -> list[str]:
+    """Block explicitly incompatible trade contexts; unknown stays review.
+
+    This is intentionally narrow: it fixes ceramic sanitary ware leaking into
+    ceramic floor/wall work without claiming to resolve all construction trades.
+    """
+    left = normalized(excel)
+    right = normalized(pdf)
+    left_plumbing = bool(PLUMBING_TERMS.search(left))
+    right_plumbing = bool(PLUMBING_TERMS.search(right))
+    left_finish = bool(CERAMIC_FINISH_TERMS.search(left))
+    right_finish = bool(CERAMIC_FINISH_TERMS.search(right))
+    if (right_plumbing and not left_plumbing) or (left_plumbing and not right_plumbing):
+        return ["TRADE_CONTEXT_PLUMBING_MISMATCH"]
+    if (left_plumbing and right_finish and not right_plumbing) or (
+        right_plumbing and left_finish and not left_plumbing
+    ):
+        return ["TRADE_CONTEXT_PLUMBING_MISMATCH"]
+    return []
+
+
 def discover_candidates(description: str, unit: str | None, quantity: Decimal | None,
                         catalog: dict, analysis: dict | None = None,
                         *, input_review_required: bool = False) -> dict:
@@ -194,7 +230,21 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
             quantity_known=quantity is not None,
             review_required=input_review_required,
         )
-        blockers = sorted(set(technical["blockers"] + family_blockers + scope_blockers))
+        context_blockers = _trade_context_guard(description, text)
+        blockers = sorted(set(
+            technical["blockers"] + family_blockers + scope_blockers + context_blockers
+        ))
+        # A catalogue entry without a trustworthy unit can be investigated
+        # in the PDF library, but not shown as a compatible metraj candidate.
+        if not record["unit"]:
+            blockers = sorted(set(blockers + ["PDF_UNIT_MISSING"]))
+        # A rayiç (10.*) prices an input, not the complete execution of the
+        # work. Do not present raw material prices as turnkey construction
+        # imalat candidates when Excel explicitly describes application.
+        if record["kind"] == "rayic" and interpreted["work_scope"] in {
+            "material_and_labor", "execution_unspecified", "demolition"
+        }:
+            blockers = sorted(set(blockers + ["SOURCE_RAYIC_NOT_INSTALLATION_POZ"]))
         reviews = sorted(set(
             technical["review_flags"] + family_reviews + scope_reviews
             + interpreted["review_flags"]

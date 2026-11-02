@@ -44,6 +44,7 @@ type PdfCandidate = {
   approval_allowed: false; cost_allowed: false;
 };
 type CandidateSearch = {
+  version: string;
   read_only: true; approval_allowed: false; cost_allowed: false;
   catalog_matching_performed: true; candidate_selected: false;
   excel: {source_sha256: string; source_row: number; work_item_id: string; description: string};
@@ -68,6 +69,9 @@ const issueLabels: Record<string, string> = {
   PDF_LABOR_ONLY_SCOPE_UNVERIFIED: "PDF'nin yalnız işçilik kapsamı doğrulanmalı",
   PDF_UNIT_UNVERIFIED: "PDF'de birim doğrulanamadı",
   PDF_PRICE_UNAVAILABLE: "PDF'de sayısal birim fiyat yok",
+  PDF_UNIT_MISSING: "PDF pozunun ölçü birimi eksik",
+  TRADE_CONTEXT_PLUMBING_MISMATCH: "Seramik tesisat armatürü ile yüzey/kaplama imalatı farklı",
+  SOURCE_RAYIC_NOT_INSTALLATION_POZ: "Malzeme rayici, tamamlanmış imalat pozu değildir",
 };
 type Understanding = {
   status: string; description: string; unit: string | null; quantity: string | null;
@@ -174,6 +178,12 @@ export default function MetrajUnderstandingPreview({
         "/items/" + row.work_item_id + "/candidates";
       const data = await getJson<CandidateSearch>(url, token, controller.signal);
       if (controller.signal.aborted) return;
+      if (data.version !== "a3492-safe-context-v2") {
+        throw Error(
+          "Eski API sürümü çalışıyor (" + (data.version || "bilinmiyor") +
+          "). API'yi 8000 portunda güncel klasörden yeniden başlat."
+        );
+      }
       if (data.read_only !== true || data.approval_allowed !== false ||
           data.cost_allowed !== false || data.candidate_selected !== false ||
           data.catalog_matching_performed !== true ||
@@ -274,6 +284,7 @@ export default function MetrajUnderstandingPreview({
           <p className={styles.hint}>Excel satırı {candidateData.excel.source_row} ·
             2026 kaynağından {candidateData.catalog.position_count.toLocaleString("tr-TR")} kayıt ·
             {candidateData.scanned_count} aday ön taramadan geçti</p>
+          <p className={styles.hint}>Arama motoru sürümü: <b>{candidateData.version}</b></p>
           {candidateData.reason && <p className={styles.warn}>{candidateData.reason}</p>}
           {candidateData.candidates.length > 0 && <div className={styles.candidateList}>
             {candidateData.candidates.map(candidate => <article className={styles.candidate} key={candidate.code}>
