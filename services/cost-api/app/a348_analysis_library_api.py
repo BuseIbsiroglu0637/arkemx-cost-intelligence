@@ -28,6 +28,9 @@ from .security import current_user
 router = APIRouter(prefix="/api/a348/catalog", tags=["A3.48.3 PDF Analiz Kütüphanesi"])
 MAX_ANALYSIS_PDF_BYTES = 16 * 1024 * 1024
 SAFE_SHA = re.compile(r"^[0-9a-f]{64}$")
+INDEX_FILE = "analysis-a3484.json"
+VALID_INDEX_FILES = {"analysis.json", INDEX_FILE}
+FORMULA_CODES = {"15.110.1001", "15.110.1002"}
 
 
 def _root(user: User) -> Path:
@@ -80,7 +83,10 @@ def _source(user: User) -> dict | None:
     if version.is_symlink():
         raise HTTPException(409, "Unsafe analysis version directory", headers=NO_STORE)
     try:
-        data = _read_index(str(version / "analysis.json"), info["index_sha256"])
+        filename = info.get("index_file", "analysis.json")
+        if filename not in VALID_INDEX_FILES:
+            raise ValueError("Unexpected index version")
+        data = _read_index(str(version / filename), info["index_sha256"])
         original = version / "source.pdf"
         if (data["source_sha256"] != info["source_sha256"]
                 or not original.is_file() or original.is_symlink()):
@@ -137,23 +143,117 @@ def _observed_headers(raw: bytes) -> tuple[dict[str, int], int, int]:
     return seen, total_headings, ambiguous_near_header
 
 
+def _formula_only_entries(
+    raw: bytes, missing: set[str], observed: dict[str, int],
+) -> list[dict]:
+    """Preserve the two PDF-specific depth-surcharge formulas without a fake TL price.
+
+    These are not missing numeric prices: both *official analysis PDF* tables
+    leave the money cells blank because H and K are project parameters.
+    Only accept an exact printed header code and formula with no value in
+    the final price cell. Do not generalize this fallback to arbitrary PDF text.
+    """
+    recovered: list[dict] = []
+    with pymupdf.open(stream=raw, filetype="pdf") as doc:
+        for code in sorted(FORMULA_CODES & missing):
+            page_number = observed.get(code)
+            if page_number is None:
+                continue
+            page = doc[page_number - 1]
+            words = page.get_text("words", sort=False)
+            code_words = [w for w in words if w[4] == code and w[0] < 95]
+            if len(code_words) != 1:
+                continue
+            code_word = code_words[0]
+            headings = sorted(
+                (w for w in words if w[4] == "Analizin" and 250 < w[0] < 320),
+                key=lambda w: w[1],
+            )
+            header = next((w for w in reversed(headings) if w[1] < code_word[1]), None)
+            if header is None or not 12 < code_word[1] - header[1] < 90:
+                continue
+            end = next((w[1] for w in headings if w[1] > header[1]), 780)
+            subhead = next(
+                (w for w in words if w[4] in {"Tanımı", "Tanimi"}
+                 and 135 < w[0] < 250 and code_word[1] < w[1] < end),
+                None,
+            )
+            if subhead is None:
+                continue
+            description = " ".join(
+                w[4] for w in sorted(
+                    (w for w in words if code_word[1] - 3 < w[1] < subhead[1] - 2
+                     and 98 < w[0] < 505),
+                    key=lambda w: (round(w[1] / 5), w[0]),
+                )
+            ).strip()
+            unit_words = [
+                w for w in words if 504 < w[0] < 558
+                and abs(w[1] - code_word[1]) < 5
+            ]
+            unit = " ".join(w[4] for w in sorted(unit_words, key=lambda w: w[0]))
+            text = page.get_text(
+                "text",
+                clip=pymupdf.Rect(35, header[1], 580, min(end, 780)),
+                sort=True,
+            )
+            compact = re.sub(r"\s+", "", text).replace("×", "x")
+            if not re.search(r"F=Mx\(H-2\)xK", compact, re.I):
+                continue
+            m = re.search(r"\bM\s*:\s*(\d+,\d+)", text)
+            source_m = {"15.110.1001": "0,50", "15.110.1002": "1,00"}[code]
+            if not m or m.group(1) != source_m or unit.strip() != "m³":
+                continue
+            # The final price line is present but the printed value is empty.
+            final_prices = [
+                w for w in words
+                if w[4] in {"Fiyatı", "Fiyati"} and header[1] < w[1] < end
+                and 105 < w[0] < 300
+            ]
+            if not final_prices:
+                continue
+            last_y = final_prices[-1][1]
+            if any(
+                re.fullmatch(r"[\d.,]+", w[4]) and 500 < w[0] < 579
+                for w in words if abs(w[1] - last_y) < 4
+            ):
+                continue
+            recovered.append({
+                "code": code, "description": description, "unit": unit,
+                "analysis_price": None, "analysis_price_reconciled": False,
+                "analysis_audit": None, "analysis_kind": "parameterized_formula",
+                "formula": "F = M × (H − 2) × K",
+                "formula_parameters": {"M": m.group(1), "H": None, "K": None},
+                "description_status": "from_analysis_pdf",
+                "pdf_page": page_number, "inputs": [],
+                "scope": text.strip()[:2500], "cost_allowed": False,
+            })
+    return recovered
+
+
 def _extract(raw: bytes) -> dict:
     positions = read_positions(raw)
     expected, heading_count, ambiguous_header_count = _observed_headers(raw)
     parsed_codes = {position.id for position in positions}
     missing = sorted(set(expected) - parsed_codes)
+    formula_entries = _formula_only_entries(raw, set(missing), expected)
     records = []
     for position in positions:
         audit = verified_price_audit(position)
         records.append({
             "code": position.id, "description": position.description,
             "unit": position.unit, "analysis_price": str(position.price),
+            "analysis_kind": "fixed_price",
+            "formula": None, "formula_parameters": None,
+            "description_status": "from_analysis_pdf" if position.description else "blank_pdf_title",
             "analysis_price_reconciled": bool(position.price_verified and audit is not None),
             "analysis_audit": audit,
             "pdf_page": position.pdf_page, "inputs": list(position.ingredients),
             "scope": position.scope,
             "cost_allowed": False,
         })
+    records.extend(formula_entries)
+    unresolved = sorted(set(missing) - {entry["code"] for entry in formula_entries})
     with pymupdf.open(stream=raw, filetype="pdf") as pdf:
         count_pages = len(pdf)
     return {
@@ -167,15 +267,20 @@ def _extract(raw: bytes) -> dict:
             "position_codes_detected": len(expected),
             "ambiguous_near_header_count": ambiguous_header_count,
             "positions_extracted": len(records),
-            "unparsed_header_count": len(missing) + max(0, heading_count - len(expected)),
+            "unparsed_header_count": len(unresolved) + max(0, heading_count - len(expected)),
             "unparsed_header_codes_sample": [
-                {"code": code, "pdf_page": expected[code]} for code in missing[:100]
+                {"code": code, "pdf_page": expected[code]} for code in unresolved[:100]
             ],
+            "parameterized_formula_count": len(formula_entries),
+            "missing_analysis_title_count": sum(
+                row["description_status"] == "blank_pdf_title" for row in records
+            ),
             "analysis_price_reconciled_count": sum(
                 bool(row["analysis_price_reconciled"]) for row in records
             ),
             "analysis_price_needs_review_count": sum(
-                not row["analysis_price_reconciled"] for row in records
+                row["analysis_kind"] == "fixed_price" and not row["analysis_price_reconciled"]
+                for row in records
             ),
             "notes": [
                 "Analysis Cilt 1 is not the complete price list or other analysis volumes.",
@@ -215,7 +320,7 @@ async def upload_analysis_source(
     version.mkdir(parents=True, exist_ok=True)
     index_bytes = _json_bytes(data)
     index_hash = hashlib.sha256(index_bytes).hexdigest()
-    for name, payload in (("source.pdf", raw), ("analysis.json", index_bytes)):
+    for name, payload in (("source.pdf", raw), (INDEX_FILE, index_bytes)):
         target = version / name
         if target.is_symlink():
             raise HTTPException(409, "Unsafe analysis file", headers=NO_STORE)
@@ -233,9 +338,61 @@ async def upload_analysis_source(
     try:
         _atomic_pointer(pointer, _json_bytes({
             "source_sha256": data["source_sha256"], "index_sha256": index_hash,
+            "index_file": INDEX_FILE,
         }))
     except FileExistsError:
         raise HTTPException(409, "Concurrent analysis source activation", headers=NO_STORE) from None
+    response.headers.update(NO_STORE)
+    return _summary(data)
+
+
+@router.post("/analysis/reindex")
+def reindex_existing_analysis_pdf(
+    response: Response, user: Annotated[User, Depends(current_user)],
+):
+    """Upgrade the local analysis index using its verified stored source PDF.
+
+    Keep the previous analysis.json untouched; put the new index under
+    analysis-a3484.json and atomically update only current.json. The user
+    does not need to reupload the same copyrighted PDF.
+    """
+    pointer = _source_pointer(user)
+    if pointer is None:
+        raise HTTPException(409, "Upload an analysis PDF first", headers=NO_STORE)
+    root, info = pointer
+    folder = root / info["source_sha256"]
+    if folder.is_symlink():
+        raise HTTPException(409, "Unsafe analysis source folder", headers=NO_STORE)
+    original = folder / "source.pdf"
+    if original.is_symlink() or not original.is_file():
+        raise HTTPException(409, "Source PDF missing", headers=NO_STORE)
+    raw = original.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != info["source_sha256"]:
+        raise HTTPException(409, "Source PDF fingerprint does not match", headers=NO_STORE)
+    try:
+        data = _extract(raw)
+    except (ValueError, RuntimeError, pymupdf.FileDataError, pymupdf.EmptyFileError) as exc:
+        raise HTTPException(422, str(exc), headers=NO_STORE) from exc
+    payload = _json_bytes(data)
+    target = folder / INDEX_FILE
+    if target.is_symlink():
+        raise HTTPException(409, "Unsafe new index path", headers=NO_STORE)
+    if target.exists():
+        if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(payload).digest():
+            raise HTTPException(409, "Indexed version already exists with different data", headers=NO_STORE)
+    else:
+        try:
+            _atomic_new(target, payload)
+        except FileExistsError:
+            raise HTTPException(409, "Another index rebuild is in progress", headers=NO_STORE) from None
+    try:
+        _atomic_pointer(root / "current.json", _json_bytes({
+            "source_sha256": data["source_sha256"],
+            "index_sha256": hashlib.sha256(payload).hexdigest(),
+            "index_file": INDEX_FILE,
+        }))
+    except FileExistsError:
+        raise HTTPException(409, "Another catalog refresh is in progress", headers=NO_STORE) from None
     response.headers.update(NO_STORE)
     return _summary(data)
 
@@ -272,12 +429,14 @@ def get_position_analysis(
     # Comparing equal numbers is documentary consistency only; not a technical
     # or cost approval. Rates can differ between analysis and price-list PDFs.
     list_price = catalog_position["unit_price"]
-    equal_price = list_price is not None and linked["analysis_price"] is not None and (
+    equal_price = (
         Decimal(list_price) == Decimal(linked["analysis_price"])
+        if list_price is not None and linked["analysis_price"] is not None
+        else None
     )
     return {
         **base, "available": True, "reason": None, "analysis": linked,
-        "list_analysis_price_equal": equal_price if list_price is not None else None,
+        "list_analysis_price_equal": equal_price,
         "price_comparison_is_approval": False,
     }
 
@@ -307,11 +466,15 @@ def get_pdf_linkage_audit(response: Response, user: Annotated[User, Depends(curr
     unlinked_analyses = sorted(analyses.keys() - prices.keys())
     different_prices = []
     unpriced = 0
+    formulas = 0
     for code in linked:
         price_value = prices[code]["unit_price"]
+        analysis_value = analyses[code]["analysis_price"]
+        if analysis_value is None:
+            formulas += 1
         if price_value is None:
             unpriced += 1
-        elif Decimal(price_value) != Decimal(analyses[code]["analysis_price"]):
+        elif analysis_value is not None and Decimal(price_value) != Decimal(analysis_value):
             different_prices.append(code)
     return {
         "read_only": True, "approval_allowed": False, "cost_allowed": False,
@@ -325,6 +488,7 @@ def get_pdf_linkage_audit(response: Response, user: Annotated[User, Depends(curr
         "analyses_without_catalog_code_count": len(unlinked_analyses),
         "analyses_without_catalog_code_sample": unlinked_analyses[:12],
         "linked_without_list_price_count": unpriced,
+        "linked_formula_only_count": formulas,
         "linked_price_difference_count": len(different_prices),
         "linked_price_difference_sample": different_prices[:12],
         "example_link": next((code for code in ("15.225.1004", "15.100.1001") if code in linked), linked[0] if linked else None),

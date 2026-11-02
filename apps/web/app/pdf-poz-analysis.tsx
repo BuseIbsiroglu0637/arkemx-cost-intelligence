@@ -11,6 +11,7 @@ type AnalysisSource = {
   audit?: {
     headers_detected: number; positions_extracted: number; unparsed_header_count: number;
     analysis_price_reconciled_count: number; analysis_price_needs_review_count: number;
+    parameterized_formula_count?: number; missing_analysis_title_count?: number;
   };
 };
 type Input = {
@@ -18,7 +19,11 @@ type Input = {
   quantity: string | null; unit_price: string | null; amount: string | null;
 };
 type Analysis = {
-  code: string; description: string; unit: string; analysis_price: string;
+  code: string; description: string; unit: string; analysis_price: string | null;
+  analysis_kind?: "fixed_price" | "parameterized_formula";
+  description_status?: "from_analysis_pdf" | "blank_pdf_title";
+  formula?: string | null;
+  formula_parameters?: {M: string; H: null; K: null} | null;
   analysis_price_reconciled: boolean; pdf_page: number;
   scope: string; inputs: Input[]; cost_allowed: false;
   analysis_audit: null | {
@@ -72,6 +77,23 @@ export function PdfAnalysisSource({ token, onChange }: {token: string; onChange:
     return () => controller.abort();
   }, [token, refresh]);
 
+  async function rebuildFromStoredPdf() {
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(API + "/api/a348/catalog/analysis/reindex", {
+        method: "POST", headers: {Authorization: "Bearer " + token},
+        cache: "no-store",
+      });
+      if (!res.ok) throw Error(await failure(res));
+      const data = await res.json() as AnalysisSource;
+      if (!checkSafety(data) || !data.present) throw Error("Yeni analiz indeksi doğrulanamadı.");
+      setSource(data); setRefresh(n => n + 1); onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kayıtlı PDF tekrar analiz edilemedi.");
+    } finally {setBusy(false);}
+  }
+
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file || busy) return;
@@ -112,10 +134,21 @@ export function PdfAnalysisSource({ token, onChange }: {token: string; onChange:
         <button type="submit" disabled={busy || !file}>{busy ? "Analizler okunuyor…" :
           source?.present ? "Analiz PDF'sini güncelle" : "Analiz PDF'sini yükle"}</button>
       </form>
+      {source?.present && <div>
+        <button type="button" className={styles.secondary} disabled={busy}
+          onClick={() => void rebuildFromStoredPdf()}>
+          {busy ? "PDF kontrol ediliyor…" : "Kayıtlı analizleri yeniden kontrol et"}
+        </button>
+        <small>PDF dosyasını tekrar seçmeden, kayıtlı belgeyi yeniden tarar.</small>
+      </div>}
       {loading && <small role="status">Analiz kaynağı kontrol ediliyor…</small>}
       {error && <div role="alert" className={styles.error}>{error}</div>}
       {source?.present && <small>
         Kaynak: 01.01.2026 · {source.source_sha256?.slice(0, 12)}…
+        {source.audit?.parameterized_formula_count !== undefined ?
+          " · Formüllü poz: " + source.audit.parameterized_formula_count : ""}
+        {source.audit?.missing_analysis_title_count !== undefined ?
+          " · Başlık hücresi boş: " + source.audit.missing_analysis_title_count : ""}
         {source.audit?.analysis_price_needs_review_count ?
           " · Bazı analiz hesapları ek kontrol gerektiriyor." : ""}
       </small>}
@@ -171,15 +204,27 @@ export function PdfAnalysisDetail({token, code, priceListSourceSha, revision}: {
         "Bu pozun analizi Cilt 1'de bulunamadı veya PDF okuyucu tarafından ayrıştırılamadı."}
     </p>}
     {detail?.available && detail.analysis && <>
-      <p className={styles.analysisPrice}>Analiz PDF fiyatı: <b>{money(detail.analysis.analysis_price)}</b></p>
+      {detail.analysis.analysis_kind === "parameterized_formula" ? <>
+        <p className={styles.analysisPrice}><b>Bu poz sabit fiyatlı değil, formülle hesaplanır.</b></p>
+        <p>PDF formülü: <b>{detail.analysis.formula}</b></p>
+        <p>M: {detail.analysis.formula_parameters?.M ?? "—"} · H: proje kazı derinliği ·
+          K: düz işçi saat ücreti. Bu değerler olmadan TL fiyatı hesaplanmaz.</p>
+      </> : <p className={styles.analysisPrice}>Analiz PDF fiyatı: <b>{money(detail.analysis.analysis_price)}</b></p>}
+      {detail.analysis.description_status === "blank_pdf_title" && <p>
+        Analiz PDF'sinde poz başlığı boş; açıklama fiyat listesi kaynağından gösteriliyor.
+      </p>}
       <p>PDF sayfa: <b>{detail.analysis.pdf_page}</b> · Birim: <b>{detail.analysis.unit || "—"}</b></p>
-      <p>{detail.list_analysis_price_equal === true ? "Liste ve analiz fiyatı eşit." :
+      <p>{detail.analysis.analysis_kind === "parameterized_formula" ?
+        "Formül sonucu proje parametreleri olmadan fiyatla karşılaştırılmaz." :
+        detail.list_analysis_price_equal === true ? "Liste ve analiz fiyatı eşit." :
         detail.list_analysis_price_equal === false ? "Liste ve analiz fiyatı farklı; kaynak kontrolü gerekli." :
         "Liste fiyatı olmadığı için fiyatlar karşılaştırılamadı."}</p>
-      <p>{detail.analysis.analysis_price_reconciled ?
+      <p>{detail.analysis.analysis_kind === "parameterized_formula" ?
+        "Değişkenli fiyat hesabı; mühendislik ve proje verileri gerekiyor." :
+        detail.analysis.analysis_price_reconciled ?
         "Analiz girdileri ve PDF toplamı mevcut ayrıştırma kuralıyla tutarlı." :
         "Analiz girdileri / toplamı ayrıca kontrol edilmeli; otomatik doğrulanmış sayılmaz."}</p>
-      <details>
+      {detail.analysis.inputs.length > 0 && <details>
         <summary>Malzeme ve işçilik girdileri ({detail.analysis.inputs.length})</summary>
         <div className={styles.analysisTableWrap}>
           <table>
@@ -190,7 +235,7 @@ export function PdfAnalysisDetail({token, code, priceListSourceSha, revision}: {
             </tr>)}</tbody>
           </table>
         </div>
-      </details>
+      </details>}
       {detail.analysis.analysis_audit && <details>
         <summary>Analiz hesabı</summary>
         <p>Girdi toplamı: {money(detail.analysis.analysis_audit.inputs_total)} ·
@@ -219,6 +264,8 @@ type LinkageAudit = {
   analyses_without_catalog_code_count?: number;
   linked_without_list_price_count?: number; linked_price_difference_count?: number;
   example_link?: string | null;
+  linked_formula_only_count?: number;
+  analyses_without_catalog_code_sample?: string[];
 };
 
 export function PdfLinkageAudit({token, priceListSha, revision}: {
@@ -266,7 +313,13 @@ export function PdfLinkageAudit({token, priceListSha, revision}: {
         Cilt 1 analizi bulunmayan liste kayıtları: {audit.catalog_without_cilt1_analysis_count?.toLocaleString("tr-TR")} ·
         Fiyat listesinde kodu olmayan analiz: {audit.analyses_without_catalog_code_count?.toLocaleString("tr-TR")} ·
         Fiyatı farklı bağlı poz: {audit.linked_price_difference_count?.toLocaleString("tr-TR")}
+        {audit.linked_formula_only_count ? " · Formülle hesaplanan: " + audit.linked_formula_only_count : ""}
       </p>
+      {!!audit.analyses_without_catalog_code_sample?.length && <p>
+        Analiz PDF'sinde olup fiyat listesinde bulunmayan kodlar:
+        {" "}{audit.analyses_without_catalog_code_sample.join(", ")}.
+        Bunlar otomatik olarak yeni resmî fiyat pozuna dönüştürülmez.
+      </p>}
       <small>Yalnız birebir poz numarası bağlantısı sayılır; teknik onay anlamına gelmez.</small>
     </>}
   </section>;
