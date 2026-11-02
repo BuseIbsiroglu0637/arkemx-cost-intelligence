@@ -958,31 +958,54 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
       {selection && <section className={`${styles.card} ${styles.simpleMatch}`} aria-label="Poz inceleme çalışma listesi">
         <header className={styles.a343Overview}>
           <div>
-            <h2>Poz inceleme</h2>
-            <p>Doğru pozları kontrol et; eksikleri beklet, diğerlerinin hesabını durdurma.</p>
+            <h2>Poz eşleştirme</h2>
+            <p>Metrajı doğrula, PDF analizini düzenle; onaylıları hesapla, eksikleri beklet.</p>
           </div>
-          <Link href="/#cost" className={styles.a343CostLink}>Kısmi maliyet ekranı →</Link>
+          <Link href="/#cost" className={styles.a343CostLink}>Maliyet çalışma alanı →</Link>
         </header>
-        <div className={styles.a343Summary} aria-label="Sayfa ve kaynak özeti">
+        <div className={styles.a343Summary} aria-label="Proje kontrol ve maliyet özeti">
           <div><small>Toplam metraj</small><strong>{selection.import_source.row_count}</strong></div>
-          <div><small>{coverage ? "Tüm projede poz seçenekli" : "Bu sayfada poz seçenekli"}</small><strong>{coverage ? coverage.total_rows - coverage.counts.no_match : autoCandidates ? countSuggested : "—"}</strong></div>
-          <div><small>{coverage ? "Tüm projede poz bulunamayan" : "Bu sayfada poz bulunamayan"}</small><strong>{coverage ? coverage.counts.no_match : autoCandidates ? countMissing : "—"}</strong></div>
-          <div className={styles.a343Source}><small>Kaynak PDF</small><strong>{pdfSource?.present ? "2026 analiz PDF bağlı" : "PDF bekleniyor"}</strong></div>
+          <div><small>{coverage?"PDF'de poz seçenekli":"Bu sayfada poz seçenekli"}</small>
+            <strong>{coverage?coverage.total_rows-coverage.counts.no_match:autoCandidates?countSuggested:"—"}</strong></div>
+          <div><small>Onaylı ve hesaplanabilir</small><strong>{costPreview?costPreview.included_count:"—"}</strong></div>
+          <div className={styles.a343Source}><small>Kısmi maliyet</small>
+            <strong>{costPreview&&costPreview.included_count?
+              Number(costPreview.partial_total).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" TL":"—"}</strong></div>
         </div>
-        <p className={styles.a343SummaryNote}>{coverage ?
-  "Tüm proje tarandı. Sayılar bütün metrajın PDF bazlı ön değerlendirmesidir." :
-  `Tüm proje henüz taranmadı; mevcut sayılar yalnızca ekrandaki ${selection.rows.length} satır içindir.`}
-  Poz seçeneği bulunması teknik onay veya maliyete alınma anlamına gelmez.</p>
-        {pdfSource?.present && <div className={styles.a344ScanBar}>
-          <div><strong>Toplu poz incelemesi</strong>
-            <small>{coverage ? `Tüm ${coverage.scanned_rows} satır kaynak PDF ile tarandı.` :
-              `Toplam ${selection.import_source.row_count} metraj kalemini kaynak PDF ile sınıflandır.`}</small>
+        <p className={styles.a343SummaryNote}>
+          {coverage?`Kaynak PDF ile ${coverage.total_rows} satır incelendi.`:
+          `Henüz tüm metraj taranmadı; yalnızca bu sayfadaki ${selection.rows.length} satır gösteriliyor.`}
+          {" "}Kaynak: {pdfSource?.present?"2026 analiz PDF":"PDF bekleniyor"}.
+          Poz seçeneği veya kural ön kontrolü mühendis onayı değildir.
+        </p>
+        {pdfSource?.present && <div className={styles.a345Toolbar}>
+          <div><strong>Proje kontrolü</strong><small>Eksikler diğer kalemlerin hesabını durdurmaz.</small></div>
+          <div className={styles.a345Actions}>
+            <button type="button" disabled={coverageLoading||Boolean(busy)} onClick={()=>void scanFullImport()}>
+              {coverageLoading?"Pozlar taranıyor…":coverage?"Taramayı yenile":"Tüm metrajı tara"}
+            </button>
+            <button type="button" className="secondary" disabled={costLoading||Boolean(busy)}
+              onClick={()=>void calculateSignedPartialCost()}>
+              {costLoading?"Hesaplanıyor…":"Onaylı maliyeti hesapla"}
+            </button>
           </div>
-          <button type="button" disabled={coverageLoading || Boolean(busy)}
-            onClick={() => void scanFullImport()}>
-            {coverageLoading ? "Tüm satırlar taranıyor…" : coverage ? "Taramayı yenile" : "Tüm metrajı tara"}
-          </button>
         </div>}
+        {costError && <p role="alert" className={styles.a330Warning}>{costError}</p>}
+        {costPreview && <details className={styles.a345CostDetail}>
+          <summary>Kısmi maliyet: {costPreview.included_count} onaylı, {costPreview.pending_count} bekleyen
+            {costPreview.included_count>0?" · "+Number(costPreview.partial_total).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" TL":""}
+          </summary>
+          <p>Bu yalnızca geçerli mühendis imzalı, kaynaklı proje analizlerinin önizlemesidir; M5 teklifi değildir.
+            Bekleyen kalemler sıfır fiyatlı kabul edilmez.</p>
+          {costPreview.included_count>0 && <div className={styles.a345CostLines}>
+            {costPreview.included.map(line=><div key={line.work_item_id}>
+              <strong>Excel {line.source_row} · {line.position_code}</strong>
+              <span>{line.quantity} {line.unit} × {line.unit_price} TL = <b>{line.amount} TL</b></span>
+              <small>PDF sayfa {line.source_pdf_page} · Onaylı proje analizi</small>
+            </div>)}
+          </div>}
+          {costPreview.pending_count>0 && <p>{costPreview.pending_count} kalem onay, kaynak veya analiz doğrulaması bekliyor.</p>}
+        </details>}
         {coverageError && <p role="alert" className={styles.a330Warning}>{coverageError}</p>}
         {coverage && <div className={styles.a344Coverage} aria-label="Tüm metraj inceleme özeti">
           <div className={styles.a344CoverageCounts}>
