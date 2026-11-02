@@ -72,6 +72,8 @@ const issueLabels: Record<string, string> = {
   PDF_UNIT_MISSING: "PDF pozunun ölçü birimi eksik",
   TRADE_CONTEXT_PLUMBING_MISMATCH: "Seramik tesisat armatürü ile yüzey/kaplama imalatı farklı",
   SOURCE_RAYIC_NOT_INSTALLATION_POZ: "Malzeme rayici, tamamlanmış imalat pozu değildir",
+  PVC_WORK_OBJECT_UNVERIFIED: "PVC ürününün kullanım türü PDF/Excel'de doğrulanamadı",
+  PVC_WORK_OBJECT_MISMATCH: "PVC yer döşemesi, profil, boru veya doğrama farklı işlerdir",
 };
 type Understanding = {
   status: string; description: string; unit: string | null; quantity: string | null;
@@ -178,7 +180,7 @@ export default function MetrajUnderstandingPreview({
         "/items/" + row.work_item_id + "/candidates";
       const data = await getJson<CandidateSearch>(url, token, controller.signal);
       if (controller.signal.aborted) return;
-      if (data.version !== "a3492-safe-context-v2") {
+      if (data.version !== "a3492-positive-evidence-v3") {
         throw Error(
           "Eski API sürümü çalışıyor (" + (data.version || "bilinmiyor") +
           "). API'yi 8000 portunda güncel klasörden yeniden başlat."
@@ -285,6 +287,7 @@ export default function MetrajUnderstandingPreview({
             2026 kaynağından {candidateData.catalog.position_count.toLocaleString("tr-TR")} kayıt ·
             {candidateData.scanned_count} aday ön taramadan geçti</p>
           <p className={styles.hint}>Arama motoru sürümü: <b>{candidateData.version}</b></p>
+          <p className={styles.hint}><b>Excel'deki gerçek açıklama:</b> {candidateData.excel.description}</p>
           {candidateData.reason && <p className={styles.warn}>{candidateData.reason}</p>}
           {candidateData.candidates.length > 0 && <div className={styles.candidateList}>
             {candidateData.candidates.map(candidate => <article className={styles.candidate} key={candidate.code}>
@@ -304,7 +307,7 @@ export default function MetrajUnderstandingPreview({
             </article>)}
           </div>}
           {candidateData.blocked_examples.length > 0 && <details className={styles.blocked}>
-            <summary>Teknik nedenle elenen örnekler ({candidateData.blocked_examples.length})</summary>
+            <summary>Uyumsuz veya kanıtı yetersiz kayıtlar ({candidateData.blocked_examples.length})</summary>
             {candidateData.blocked_examples.map(candidate => <div key={candidate.code}>
               <strong>{candidate.code}</strong> — {candidate.description}
               <small>Engel: {candidate.blockers.map(issue => issueLabels[issue] ?? issue).join(" · ")}</small>

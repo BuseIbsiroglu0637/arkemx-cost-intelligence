@@ -269,5 +269,51 @@ def test_candidate_response_has_engine_version_for_runtime_diagnostics():
         "10 cm gazbeton duvar", "m²", Decimal("10"),
         catalog(row("15.225.1004", "10 cm gazbeton duvar")),
     )
-    assert data["version"] == "a3492-safe-context-v2"
+    assert data["version"] == "a3492-positive-evidence-v3"
     assert data["candidates"][0]["technical_compliance_verified"] is False
+
+
+
+def test_pvc_floor_does_not_suggest_extruded_system_profile_as_compatible():
+    """Screenshot regression: an actual PVC product is not necessarily the same work."""
+    source = catalog(
+        row("10.480.5131",
+            "PVC den mamul toplam 7 cm kalınlıkta geçmeli sistem extrude profil",
+            kind="rayic", unit="m²", page=171, price="2500.00"),
+        row("15.600.1001",
+            "PVC zemin kaplaması yapılması, malzeme ve işçilik dahil",
+            kind="insaat", unit="m²"),
+    )
+    result = discover_candidates(
+        "PVC zemin kaplaması yapılması, malzeme ve işçilik dahil",
+        "m²", Decimal("70"), source,
+    )
+    assert [item["code"] for item in result["candidates"]] == ["15.600.1001"]
+    blocked = {row["code"]: row["blockers"] for row in result["blocked_examples"]}
+    assert "PVC_WORK_OBJECT_MISMATCH" in blocked["10.480.5131"]
+    assert result["version"] == "a3492-positive-evidence-v3"
+
+
+def test_material_unverified_pdf_title_is_not_recommended_from_generic_lexicon():
+    source = catalog(
+        row("10.240.1760", "Tulip Block zemin kaplaması", kind="rayic"),
+        row("10.240.1763", "Silver Black zemin kaplaması", kind="rayic"),
+        row("15.600.1001", "PVC zemin kaplaması yapılması", kind="insaat"),
+    )
+    result = discover_candidates("PVC zemin kaplaması", "m²", Decimal("50"), source)
+    assert [row["code"] for row in result["candidates"]] == ["15.600.1001"]
+    blocked = {row["code"]: row["blockers"] for row in result["blocked_examples"]}
+    assert "PDF_MATERIAL_FAMILY_UNVERIFIED" in blocked["10.240.1760"]
+    assert "PDF_MATERIAL_FAMILY_UNVERIFIED" in blocked["10.240.1763"]
+    assert all(row["technical_compliance_verified"] is False for row in result["candidates"])
+
+
+def test_pvc_without_proven_work_object_is_not_silently_equated_to_a_profile():
+    source = catalog(row(
+        "10.480.5131",
+        "PVC den mamul toplam 7 cm kalınlıkta extrude profil",
+        kind="rayic", unit="m²",
+    ))
+    result = discover_candidates("PVC malzeme alımı", "m²", Decimal("5"), source)
+    assert result["candidates"] == []
+    assert "PVC_WORK_OBJECT_UNVERIFIED" in result["blocked_examples"][0]["blockers"]

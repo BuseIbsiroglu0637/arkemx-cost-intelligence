@@ -34,7 +34,7 @@ router = APIRouter(
     prefix="/api/projects/{project_id}/a349",
     tags=["A3.49.2 PDF Catalog Candidate Discovery"],
 )
-VERSION = "a3492-safe-context-v2"
+VERSION = "a3492-positive-evidence-v3"
 POSITION_CODE = re.compile(r"(?<!\w)\d{2}\.\d{3}\.\d{4}(?!\w)")
 WORDS = re.compile(r"[a-z0-9]{3,}")
 STOP = frozenset({
@@ -99,7 +99,10 @@ def _family_guard(left: dict, right: dict) -> tuple[list[str], list[str]]:
     if source_families and pos_families and not (source_families & pos_families):
         blockers.append("MATERIAL_FAMILY_MISMATCH")
     elif source_families and not pos_families:
-        reviews.append("PDF_MATERIAL_FAMILY_UNVERIFIED")
+        # We cannot infer what a stone/brand/proprietary material is from a
+        # generic PDF title. Do not promote it merely because its other words
+        # look similar; surface this as missing evidence, not a contradiction.
+        blockers.append("PDF_MATERIAL_FAMILY_UNVERIFIED")
     elif not source_families:
         reviews.append("EXCEL_MATERIAL_FAMILY_UNVERIFIED")
     if left["binder_materials"]:
@@ -173,6 +176,35 @@ def _trade_context_guard(excel: str, pdf: str) -> list[str]:
     return []
 
 
+# A broad material word like PVC is not itself an installation type. The
+# official catalog contains PVC floor coverings, extruded profiles, pipework,
+# door/window frames, and other goods that must not cross-match.
+PVC_OBJECTS = {
+    "floor_finish": re.compile(r"\b(?:zemin\w*|doseme\w*|yer\s+kaplam\w*)\b"),
+    "extruded_profile": re.compile(r"\b(?:profil\w*|extrud\w*|ekstrud\w*)\b"),
+    "pipework": re.compile(r"\b(?:boru\w*|dirsek\w*|sifon\w*|tesisat\w*)\b"),
+    "door_window": re.compile(r"\b(?:pencere\w*|kapi\w*|dograma\w*)\b"),
+}
+
+
+def _pvc_work_guard(left: dict, right: dict) -> tuple[list[str], list[str]]:
+    if "pvc" not in left["material_families"]:
+        return [], []
+    source = normalized(left["description"])
+    target = normalized(right["description"])
+    source_objects = {
+        key for key, pattern in PVC_OBJECTS.items() if pattern.search(source)
+    }
+    candidate_objects = {
+        key for key, pattern in PVC_OBJECTS.items() if pattern.search(target)
+    }
+    if not source_objects or not candidate_objects:
+        return ["PVC_WORK_OBJECT_UNVERIFIED"], []
+    if not source_objects.intersection(candidate_objects):
+        return ["PVC_WORK_OBJECT_MISMATCH"], []
+    return [], []
+
+
 def discover_candidates(description: str, unit: str | None, quantity: Decimal | None,
                         catalog: dict, analysis: dict | None = None,
                         *, input_review_required: bool = False) -> dict:
@@ -231,8 +263,10 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
             review_required=input_review_required,
         )
         context_blockers = _trade_context_guard(description, text)
+        pvc_blockers, pvc_reviews = _pvc_work_guard(interpreted, right)
         blockers = sorted(set(
-            technical["blockers"] + family_blockers + scope_blockers + context_blockers
+            technical["blockers"] + family_blockers + scope_blockers
+            + context_blockers + pvc_blockers
         ))
         # A catalogue entry without a trustworthy unit can be investigated
         # in the PDF library, but not shown as a compatible metraj candidate.
@@ -247,7 +281,7 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
             blockers = sorted(set(blockers + ["SOURCE_RAYIC_NOT_INSTALLATION_POZ"]))
         reviews = sorted(set(
             technical["review_flags"] + family_reviews + scope_reviews
-            + interpreted["review_flags"]
+            + pvc_reviews + interpreted["review_flags"]
         ))
         if record["unit"] is None:
             reviews.append("PDF_UNIT_UNVERIFIED")
