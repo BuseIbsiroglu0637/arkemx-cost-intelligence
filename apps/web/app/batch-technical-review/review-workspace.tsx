@@ -59,6 +59,8 @@ type SpecCompletion = {
   facts:{key:string;label:string;value:string|number|null;excel_value:string|number|null;position_value?:string|number|null;
     state:"found_for_review"|"missing"|"conflict";evidence:{page:number;quote:string;value:string|number}[];additional_evidence_count:number}[];
   missing:string[];conflicts:string[];status:string;note:string;
+  work_scope:string;position_scope:string|null;scope_conflict:string|null;
+  missing_position_next_step:string|null;
 };
 type DocumentEvidence = {
   status: "no_document" | "not_found" | "unreadable_text" | "found_for_review" | "conflicting";
@@ -1415,6 +1417,18 @@ export default function ReviewWorkspace({ projectScope, onImportSelected, onSess
                 </div>)}
               </div>:<p>Bu imalat için ayıklanabilen teknik özellik bulunamadı.</p>}
               {specCompletion.missing.length>0&&<p className={styles.a347Missing}>Eksik: {specCompletion.missing.join(" · ")}</p>}
+              <p className={styles.a347Scope}>
+                İş kapsamı: {({
+                  demolition:"Söküm",material_only:"Yalnız malzeme temini",
+                  labor_only:"Yalnız işçilik",material_and_labor:"Malzeme ve işçilik dahil",
+                  execution_unspecified:"Uygulama kapsamı ayrıca incelenmeli",
+                  unspecified:"İş kapsamı net değil",
+                } as Record<string,string>)[specCompletion.work_scope]??"İnceleme gerekli"}
+                {specCompletion.scope_conflict?" · Pozla iş kapsamı çelişiyor":""}
+              </p>
+              {specCompletion.missing_position_next_step&&
+                <p className={styles.a347Missing}>{specCompletion.missing_position_next_step}</p>}
+
               <details><summary>Belgedeki ifadeleri göster</summary>
                 {specCompletion.facts.flatMap(fact=>fact.evidence.map((ev,i)=>
                   <p key={fact.key+"-"+i}>PDF s. {ev.page}: {ev.quote}</p>))}
