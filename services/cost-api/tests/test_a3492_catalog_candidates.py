@@ -269,7 +269,7 @@ def test_candidate_response_has_engine_version_for_runtime_diagnostics():
         "10 cm gazbeton duvar", "m²", Decimal("10"),
         catalog(row("15.225.1004", "10 cm gazbeton duvar")),
     )
-    assert data["version"] == "a3492-positive-evidence-v3"
+    assert data["version"] == "a3501-class-first-v1"
     assert data["candidates"][0]["technical_compliance_verified"] is False
 
 
@@ -291,7 +291,7 @@ def test_pvc_floor_does_not_suggest_extruded_system_profile_as_compatible():
     assert [item["code"] for item in result["candidates"]] == ["15.600.1001"]
     blocked = {row["code"]: row["blockers"] for row in result["blocked_examples"]}
     assert "PVC_WORK_OBJECT_MISMATCH" in blocked["10.480.5131"]
-    assert result["version"] == "a3492-positive-evidence-v3"
+    assert result["version"] == "a3501-class-first-v1"
 
 
 def test_material_unverified_pdf_title_is_not_recommended_from_generic_lexicon():
