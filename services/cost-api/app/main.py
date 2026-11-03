@@ -397,6 +397,12 @@ app.include_router(a349_metraj_understanding_router)
 from .a3492_catalog_candidates import router as a3492_catalog_candidates_router
 app.include_router(a3492_catalog_candidates_router)
 
+# A3.50.1: read-only work class audit across the saved Excel and 2026 PDF.
+from .a350_classification_api import catalog_router as a350_catalog_classification_router
+from .a350_classification_api import metraj_router as a350_metraj_classification_router
+app.include_router(a350_catalog_classification_router)
+app.include_router(a350_metraj_classification_router)
+
 from .a331_pilot_review_api import router as a331_pilot_review_router
 app.include_router(a331_pilot_review_router)
 
