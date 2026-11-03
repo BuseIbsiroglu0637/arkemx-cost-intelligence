@@ -38,3 +38,21 @@
 .blocked>summary{cursor:pointer;font-weight:700;color:#8d5527}
 .blocked>div{padding:8px 0;border-top:1px solid #e5ecf5;color:#4b617a}
 .blocked small{display:block;margin-top:4px;color:#a25a34}
+
+.auditPanel{border:1px solid #d8e5f1;background:#f8fbff;border-radius:9px;padding:12px 14px;margin-top:12px;color:#244b6b}
+.auditPanel>summary{cursor:pointer;color:#1d5082;font-size:13px;font-weight:700}
+.auditPanel>summary span{font-weight:400;font-size:11px;color:#7791a8;margin-left:7px}
+.auditPanel>button{font-size:12px;padding:8px 12px}
+.auditResults{display:grid;gap:13px;margin-top:12px}
+.auditSummary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.auditSummary>section{border:1px solid #dfe9f2;background:#fff;border-radius:8px;padding:13px}
+.auditSummary strong,.auditClassGrid strong{font-size:12px;color:#244769}
+.auditBig{font-size:20px;font-weight:750;color:#153c65;margin:6px 0}
+.auditSummary p{margin:5px 0;font-size:12px;color:#60778e}
+.auditClassGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.auditClassGrid>div{padding:10px 12px;background:white;border:1px solid #e1eaf3;border-radius:8px}
+.auditClassGrid p{margin:8px 0;font-size:11px;display:flex;justify-content:space-between;gap:10px;color:#58718c}
+.auditExamples{font-size:12px;color:#476581;border-top:1px solid #d9e5f0;padding-top:9px}
+.auditExamples>summary{font-weight:700;cursor:pointer}
+.auditExamples p{padding:8px 0;line-height:1.5;border-bottom:1px solid #e0eaf4}
+@media(max-width:650px){.auditSummary,.auditClassGrid{grid-template-columns:1fr}}
