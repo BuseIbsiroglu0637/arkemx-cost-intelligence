@@ -2,6 +2,7 @@
 
 import {useEffect, useRef, useState} from "react";
 import {readWorkspace} from "./workspace-context";
+import ClassificationAudit from "./a350-classification-audit";
 import styles from "./metraj-understanding-preview.module.css";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -33,7 +34,13 @@ const flagLabels: Record<string, string> = {
   WORK_SCOPE_UNCLEAR: "İş kapsamı açık değil",
 };
 type ImportEntry = {id: string; filename: string; sheet: string; row_count: number};
+type WorkClass = {
+  version: string; class_key: string; label: string; trade: string;
+  status: string; source_role: string; review_reasons: string[];
+  technical_approved: false; auto_match_allowed: false; cost_allowed: false;
+};
 type PdfCandidate = {
+  work_class: WorkClass;
   code: string; description: string; kind: string; unit: string | null;
   unit_price: string | null; price_status: string; pdf_page: number;
   pdf_source_sha256: string; analysis_cilt1_linked: boolean;
@@ -50,6 +57,7 @@ type CandidateSearch = {
   excel: {source_sha256: string; source_row: number; work_item_id: string; description: string};
   catalog: {edition_date: string; source_sha256: string; position_count: number};
   status: string; reason: string | null; scanned_count: number;
+  source_work_class: WorkClass;
   candidates: PdfCandidate[]; blocked_examples: PdfCandidate[];
 };
 const issueLabels: Record<string, string> = {
@@ -74,6 +82,11 @@ const issueLabels: Record<string, string> = {
   SOURCE_RAYIC_NOT_INSTALLATION_POZ: "Malzeme rayici, tamamlanmış imalat pozu değildir",
   PVC_WORK_OBJECT_UNVERIFIED: "PVC ürününün kullanım türü PDF/Excel'de doğrulanamadı",
   PVC_WORK_OBJECT_MISMATCH: "PVC yer döşemesi, profil, boru veya doğrama farklı işlerdir",
+  PDF_WORK_CLASS_UNVERIFIED: "PDF'de imalat nesnesi doğrulanamadı",
+  EXCEL_WORK_CLASS_UNVERIFIED: "Excel'de imalat nesnesi doğrulanamadı",
+  WORK_CLASS_MISMATCH: "Excel ve PDF farklı imalat sınıfında",
+  PDF_MULTIPLE_WORK_CLASSES: "PDF tarifinde birden fazla iş sınıfı",
+  EXCEL_MULTIPLE_WORK_CLASSES: "Excel tarifinde birden fazla iş sınıfı",
 };
 type Understanding = {
   status: string; description: string; unit: string | null; quantity: string | null;
@@ -180,7 +193,7 @@ export default function MetrajUnderstandingPreview({
         "/items/" + row.work_item_id + "/candidates";
       const data = await getJson<CandidateSearch>(url, token, controller.signal);
       if (controller.signal.aborted) return;
-      if (data.version !== "a3492-positive-evidence-v3") {
+      if (data.version !== "a3501-class-first-v1") {
         throw Error(
           "Eski API sürümü çalışıyor (" + (data.version || "bilinmiyor") +
           "). API'yi 8000 portunda güncel klasörden yeniden başlat."
@@ -225,6 +238,7 @@ export default function MetrajUnderstandingPreview({
         {busy ? "Okunuyor…" : "Metrajı yorumla"}
       </button>
     </div> : <p className={styles.hint}>Bu projeye Excel metrajı kaydedildiğinde burada görünecek.</p>}
+    {!!importId && <ClassificationAudit key={importId} token={token} project={project} importId={importId} />}
     {result && <>
       <p className={styles.hint}>
         {result.total_rows.toLocaleString("tr-TR")} Excel satırından {result.offset + 1}–{result.offset + result.returned} arası.
@@ -286,7 +300,8 @@ export default function MetrajUnderstandingPreview({
           <p className={styles.hint}>Excel satırı {candidateData.excel.source_row} ·
             2026 kaynağından {candidateData.catalog.position_count.toLocaleString("tr-TR")} kayıt ·
             {candidateData.scanned_count} aday ön taramadan geçti</p>
-          <p className={styles.hint}>Arama motoru sürümü: <b>{candidateData.version}</b></p>
+          <p className={styles.hint}>Arama motoru sürümü: <b>{candidateData.version}</b> ·
+            Excel imalat sınıfı: <b>{candidateData.source_work_class.label}</b></p>
           <p className={styles.hint}><b>Excel'deki gerçek açıklama:</b> {candidateData.excel.description}</p>
           {candidateData.reason && <p className={styles.warn}>{candidateData.reason}</p>}
           {candidateData.candidates.length > 0 && <div className={styles.candidateList}>
@@ -296,6 +311,7 @@ export default function MetrajUnderstandingPreview({
                 <span className={styles.reviewFlag}>Teknik inceleme gerekli</span>
               </div>
               <p>{candidate.description}</p>
+              <small>İmalat sınıfı: {candidate.work_class.label}</small>
               <p>{candidate.unit ?? "Birimi eksik"} ·
                 {candidate.unit_price === null ? "Fiyatı belirtilmemiş" : " 2026 birim fiyatı: " + candidate.unit_price + " TL"} ·
                 PDF s. {candidate.pdf_page}</p>
