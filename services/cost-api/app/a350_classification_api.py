@@ -114,6 +114,16 @@ def metraj_classification_report(
         },
         "total_rows": len(originals),
         "summary": _stats([row["work_class"] for row in classified]),
+        "review_examples": [
+            {
+                "work_item_id": row["work_item_id"],
+                "source_row": row["source_row"],
+                "description": row["description"][:300],
+                "class_key": row["work_class"]["class_key"],
+                "review_reasons": row["work_class"]["review_reasons"],
+            }
+            for row in classified if row["work_class"]["status"] != "classified"
+        ][:12],
         "offset": offset,
         "returned": len(classified[offset:offset + limit]),
         "has_more": offset + limit < len(classified),
