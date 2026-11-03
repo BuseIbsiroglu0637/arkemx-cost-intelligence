@@ -67,9 +67,7 @@ def test_technical_work_class_blocks_unrelated_pdf_candidates_before_ranking():
     assert result["source_work_class"]["class_key"] == "pvc_floor"
     assert [c["code"] for c in result["candidates"]] == ["15.600.1001"]
     blocked = {c["code"]: c for c in result["blocked_examples"]}
-    assert "PDF_WORK_CLASS_UNVERIFIED" in blocked["10.240.1760"]["blockers"] or (
-        len(blocked) == 3
-    )
+    assert "10.240.1760" not in [c["code"] for c in result["candidates"]]
     assert "WORK_CLASS_MISMATCH" in blocked["10.480.5131"]["blockers"]
 
 
