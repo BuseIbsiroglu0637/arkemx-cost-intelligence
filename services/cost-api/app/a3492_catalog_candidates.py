@@ -22,6 +22,7 @@ from .a347_spec_completion import work_scope
 from .a348_catalog_library_api import _source as price_source
 from .a348_analysis_library_api import _source as analysis_source
 from .a349_metraj_understanding import describe_metraj
+from .a350_work_taxonomy import classify_work, compare_work_classes
 from .database import get_db
 from .excel import normalized
 from .matching import similarity
@@ -34,7 +35,7 @@ router = APIRouter(
     prefix="/api/projects/{project_id}/a349",
     tags=["A3.49.2 PDF Catalog Candidate Discovery"],
 )
-VERSION = "a3492-positive-evidence-v3"
+VERSION = "a3501-class-first-v1"
 POSITION_CODE = re.compile(r"(?<!\w)\d{2}\.\d{3}\.\d{4}(?!\w)")
 WORDS = re.compile(r"[a-z0-9]{3,}")
 STOP = frozenset({
@@ -213,11 +214,12 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
         description, unit, quantity,
         input_review_required=input_review_required,
     )
+    excel_work_class = classify_work(description)
     if interpreted["status"] in {"multiple_works_for_review", "insufficient_input"}:
         return {
             "version": VERSION, "status": "needs_input_review",
             "reason": "Excel satırındaki farklı imalatları ayır veya açıklamayı tamamla.",
-            "understanding": interpreted,
+            "understanding": interpreted, "source_work_class": excel_work_class,
             "candidates": [], "blocked_examples": [], "scanned_count": 0,
             "candidate_count": 0, "approval_allowed": False, "cost_allowed": False,
         }
@@ -239,12 +241,34 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
                 "olacağından aday gösterilmiyor; metraj tarifi, proje şartnamesi "
                 "veya resmî poz kapsamı insan tarafından kontrol edilmeli."
             ),
-            "understanding": interpreted,
+            "understanding": interpreted, "source_work_class": excel_work_class,
             "candidates": [], "blocked_examples": [], "scanned_count": 0,
             "candidate_count": 0, "approval_allowed": False, "cost_allowed": False,
         }
     records = catalog["records"]
-    preselected = _ranked_prefilter(description, records)
+    # Class-first retrieval: compare the same work objects before fuzzy text
+    # ranking, otherwise 180 lookalike rayics/brands may crowd out a valid
+    # official application poz. We retain up to 20 mismatched examples for
+    # human diagnostics but NEVER elevate them into admissible candidates.
+    classes = {
+        row["code"]: classify_work(row["description"], catalog_kind=row["kind"])
+        for row in records
+    }
+    if excel_work_class["class_key"] == "unknown":
+        preselected = _ranked_prefilter(description, records)
+    else:
+        same_class = [
+            row for row in records
+            if classes[row["code"]]["class_key"] == excel_work_class["class_key"]
+        ]
+        other_class = [
+            row for row in records
+            if classes[row["code"]]["class_key"] != excel_work_class["class_key"]
+        ]
+        preselected = (
+            _ranked_prefilter(description, same_class)[:160]
+            + _ranked_prefilter(description, other_class)[:20]
+        )
     analysis_codes = {
         row["code"] for row in analysis["records"]
     } if analysis is not None else set()
@@ -253,6 +277,8 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
     for lexical_rank, record in preselected:
         text = record["description"]
         right = describe_metraj(text, record["unit"], None)
+        pdf_work_class = classes[record["code"]]
+        class_blockers = compare_work_classes(excel_work_class, pdf_work_class)
         family_blockers, family_reviews = _family_guard(interpreted, right)
         scope_blockers, scope_reviews = _scope_guard(
             description, text, interpreted["work_scope"], right["work_scope"],
@@ -266,7 +292,7 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
         pvc_blockers, pvc_reviews = _pvc_work_guard(interpreted, right)
         blockers = sorted(set(
             technical["blockers"] + family_blockers + scope_blockers
-            + context_blockers + pvc_blockers
+            + context_blockers + pvc_blockers + class_blockers
         ))
         # A catalogue entry without a trustworthy unit can be investigated
         # in the PDF library, but not shown as a compatible metraj candidate.
@@ -293,6 +319,7 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
         rank = float(lexical_rank) + score * 100
         entry = {
             "code": record["code"], "description": text,
+            "work_class": pdf_work_class,
             "kind": record["kind"], "unit": record["unit"],
             "unit_price": record["unit_price"], "price_status": record["price_status"],
             "pdf_page": record["pdf_page"], "pdf_source_sha256": catalog["source_sha256"],
@@ -316,7 +343,7 @@ def discover_candidates(description: str, unit: str | None, quantity: Decimal | 
         "status": "candidates_for_engineer_review" if admitted else "no_safe_candidates_found",
         "reason": None if admitted else
             "Bu kaynak taramasında teknik çelişkisiz poz adayı bulunamadı; başka kaynak veya teknik şartname kontrolü gerekir.",
-        "understanding": interpreted,
+        "understanding": interpreted, "source_work_class": excel_work_class,
         "candidates": [record for _, record in admitted[:MAX_CANDIDATES]],
         "blocked_examples": [record for _, record in blocked[:MAX_REJECTED]],
         "scanned_count": len(preselected),
